@@ -19,7 +19,7 @@ from safetensors.torch import save_file
 from copy import copy, deepcopy
 from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings
 from modules import scripts, cache
-from modules.sd_models import model_hash, model_path
+from modules.sd_models import model_hash, model_path, checkpoints_loaded
 from modules.timer import Timer
 from modules.ui import create_refresh_button
 
@@ -231,6 +231,21 @@ def to_half(tensor, enable):
 
     return tensor
 
+def get_valid_checkpoint_title():
+    checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
+    # check validity of current checkpoint_info
+    if checkpoint_info is not None:
+        filename = checkpoint_info.filename
+        name = os.path.basename(filename)
+        info = sd_models.get_closet_checkpoint_match(name)
+        if info != checkpoint_info:
+            # this is a fake checkpoint_info
+            # return original title
+            return info.title
+
+        return checkpoint_info.title
+    return ""
+
 class ModelMixerScript(scripts.Script):
     init_model_a_change = False
 
@@ -272,7 +287,7 @@ class ModelMixerScript(scripts.Script):
 
             with gr.Row():
                 model_a = gr.Dropdown(sd_models.checkpoint_tiles(), value=shared.sd_model.sd_checkpoint_info.title, elem_id="model_converter_model_name", label="Model A", interactive=True)
-                create_refresh_button(model_a, sd_models.list_models,lambda: {"choices": sd_models.checkpoint_tiles(), "value": shared.sd_model.sd_checkpoint_info.title},"refresh_checkpoint_Z")
+                create_refresh_button(model_a, sd_models.list_models,lambda: {"choices": sd_models.checkpoint_tiles(), "value": get_valid_checkpoint_title()},"refresh_checkpoint_Z")
 
                 base_model = gr.Dropdown(sd_models.checkpoint_tiles(), elem_id="model_converter_model_name", label="Base Model used for Add-Difference mode", interactive=True)
                 create_refresh_button(base_model, sd_models.list_models,lambda: {"choices": sd_models.checkpoint_tiles()},"refresh_checkpoint_Z")
@@ -301,7 +316,7 @@ class ModelMixerScript(scripts.Script):
                             with gr.Row():
                                 mm_explain[n] = gr.HTML("")
                             with gr.Row():
-                                mm_weights[n] = gr.Textbox(label="Block Level Weights: BASE,IN00,IN02,...IN11,M00,OUT00,...,OUT11",
+                                mm_weights[n] = gr.Textbox(label="Block Level Weights: BASE,IN00,IN02,...IN11,M00,OUT00,...,OUT11", show_copy_button=True,
                                     value="0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5")
                             with gr.Row():
                                 mm_setalpha[n] = gr.Button(elem_id="copytogen", value="↑ set alpha")
@@ -499,9 +514,9 @@ class ModelMixerScript(scripts.Script):
             if enable_sync:
                 shared.opts.data['sd_model_checkpoint'] = model
                 ret.append(gr.update(value=model))
+                modules.sd_models.reload_model_weights()
             else:
                 ret.append(gr.update())
-            modules.sd_models.reload_model_weights()
 
             return ret
 
@@ -889,7 +904,7 @@ class ModelMixerScript(scripts.Script):
                     recipe_all = f"{recipe_all} + ({model_name} - {base_model}) * alpha_{n}"
 
             if n == weight_start:
-                for key in (tqdm(keys, desc="Check uninitialized #{n+2-weight_start}/{stages}")):
+                for key in (tqdm(keys, desc=f"Check uninitialized #{n+2-weight_start}/{stages}")):
                     if "model" in key:
                         for s in selected_blocks:
                             if s in key and key not in theta_0 and key not in checkpoint_dict_skip_on_merge:
@@ -928,6 +943,9 @@ class ModelMixerScript(scripts.Script):
         checkpoint_info.ids = [checkpoint_info.model_name, checkpoint_info.name, checkpoint_info.name_for_extra]
 
         sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=theta_0)
+        if shared.opts.sd_checkpoint_cache > 0:
+            # unload cached merged model
+            checkpoints_loaded.popitem()
 
         del theta_0
 
