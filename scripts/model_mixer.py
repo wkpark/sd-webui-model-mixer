@@ -690,7 +690,7 @@ class ModelMixerScript(scripts.Script):
 
             mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n]], outputs=members)
             mm_usembws[n].change(fn=lambda mbws: gr_enable(len(mbws) == 0), inputs=[mm_usembws[n]], outputs=[mm_alpha[n]], show_progress=False)
-            mm_models[n].change(fn=lambda modelname: gr_show(modelname != ""), inputs=[mm_models[n]], outputs=[model_options[n]])
+            mm_models[n].change(fn=lambda modelname: gr_show(modelname != "None"), inputs=[mm_models[n]], outputs=[model_options[n]])
             mm_modes[n].change(fn=(lambda nd: lambda mode: gr.update(info=merge_method_info[nd][mode]))(n), inputs=[mm_modes[n]], outputs=[mm_modes[n]], show_progress=False)
             mbw_use_advanced[n].change(fn=lambda mode: [gr.update(visible=True), gr.update(visible=False)] if mode==True else [gr.update(visible=False),gr.update(visible=True)], inputs=[mbw_use_advanced[n]], outputs=[mbw_advanced[n], mbw_simple[n]])
 
@@ -702,14 +702,14 @@ class ModelMixerScript(scripts.Script):
             "ModelMixer model a": model_a,
             "ModelMixer max models": mm_max_models,
         }
-        if len(base_model) > 0:
+        if base_model is not None and len(base_model) > 0:
             params.update({"ModelMixer base model": base_model})
 
         for j in range(num_models):
             name = f"{chr(98+j)}"
             params.update({f"ModelMixer use model {name}": args_[j]})
 
-            if len(args_[num_models+j]) > 0:
+            if args_[num_models+j] != "None" and len(args_[num_models+j]) > 0:
                 params.update({
                     f"ModelMixer model {name}": args_[num_models+j],
                     f"ModelMixer merge mode {name}": args_[num_models*2+j],
@@ -729,6 +729,7 @@ class ModelMixerScript(scripts.Script):
         if not enabled:
             return
 
+        base_model = None if base_model == "None" else base_model
         # extract model infos
         num_models = int(mm_max_models)
         mm_use = ["False"]*num_models
@@ -764,8 +765,11 @@ class ModelMixerScript(scripts.Script):
                 if not mbw_use_advanced:
                     usembws = usembws_simple
 
+                model = None if model == "None" else model
                 # ignore some cases
                 if alpha == 0.0 and len(usembws) == 0:
+                    continue
+                if model is None:
                     continue
 
                 mm_models.append(model)
@@ -857,7 +861,7 @@ class ModelMixerScript(scripts.Script):
         # check base_model
         model_base = {}
         if "Add-Diff" in mm_modes:
-            if base_model == "":
+            if base_model is None:
                 # check SD version
                 w = models['model_a']["model.diffusion_model.input_blocks.1.1.proj_in.weight"]
                 if len(w.shape) == 4:
@@ -929,7 +933,7 @@ class ModelMixerScript(scripts.Script):
 
         if model_a:
             add_model_metadata(model_a)
-        if base_model:
+        if base_model is not None:
             add_model_metadata(base_model)
 
         # merge main
