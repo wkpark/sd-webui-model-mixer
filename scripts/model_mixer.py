@@ -893,6 +893,7 @@ class ModelMixerScript(scripts.Script):
         # XXX HACK
         checkpoint_info = deepcopy(checkpoint_info)
 
+        stage = 1
         for n, file in enumerate(mm_models,start=weight_start):
             checkpointinfo = sd_models.get_closet_checkpoint_match(file)
             model_name = checkpointinfo.model_name
@@ -917,7 +918,7 @@ class ModelMixerScript(scripts.Script):
                 print(f"mode = {modes[n]}, mbw mode, alpha = {mm_weights[n]}")
 
             # main routine
-            for key in (tqdm(keys, desc=f"Stage #{n+1-weight_start}/{stages}")):
+            for key in (tqdm(keys, desc=f"Stage #{stage}/{stages}")):
                 if "model_" in key:
                     continue
                 if key in checkpoint_dict_skip_on_merge:
@@ -946,6 +947,7 @@ class ModelMixerScript(scripts.Script):
                     recipe_all = f"{recipe_all} + ({model_name} - {base_model}) * alpha_{n}"
 
             if n == weight_start:
+                stage += 1
                 for key in (tqdm(keys, desc=f"Check uninitialized #{n+2-weight_start}/{stages}")):
                     if "model" in key:
                         for s in selected_blocks:
@@ -953,13 +955,11 @@ class ModelMixerScript(scripts.Script):
                                 print(f" +{k}")
                                 theta_0[key] = theta_1[key]
 
+            stage += 1
             del theta_1
 
         # store unmodified remains
-        if len(keyremains) > 0:
-            print("Save unchanged weights...")
-
-        for key in (tqdm(keyremains, desc=f"Save unchanged remains #{stages}/{stages}")):
+        for key in (tqdm(keyremains, desc=f"Save unchanged weights #{stages}/{stages}")):
             theta_0[key] = models['model_a'][key]
 
         # load theta_0, checkpoint_info was used for model_a
