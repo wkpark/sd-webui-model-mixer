@@ -201,6 +201,14 @@ def _get_selected(mbw, model):
 
     return sel_keys, sel_blocks
 
+def _get_selected_keys(sel_blocks, model):
+    sel_keys = []
+    for i, k in enumerate(sel_blocks):
+        if k in model:
+            sel_keys.append(k)
+
+    return sel_keys
+
 def _weight_index(key):
     num = -1
     offset = [ 0, 1, 13, 14 ]
@@ -274,9 +282,7 @@ class ModelMixerScript(scripts.Script):
 
         model_options = [None]*num_models
         default_use = [False]*num_models
-        default_mode = [""]*num_models
 
-        default_mode[0] = "Sum"
         default_use[0] = True
 
         with gr.Accordion("Checkpoint Model Mixer", open=False):
@@ -311,7 +317,7 @@ class ModelMixerScript(scripts.Script):
 
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
-                                mm_modes[n] = gr.Radio(label=f"Merge Method for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value=default_mode[n])
+                                mm_modes[n] = gr.Radio(label=f"Merge Method for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value="Sum")
                             with gr.Row():
                                 mm_alpha[n] = gr.Slider(label=f"Multiplier for Model {name}", minimum=-1.0, maximum=2, step=0.001, value=0.5)
                             with gr.Row():
@@ -722,9 +728,9 @@ class ModelMixerScript(scripts.Script):
         print("  - weights", mm_weights)
         print("  - alpha", mm_alpha)
 
+        mm_weights_orig = mm_weights
         # prepare for merges
         compact_mode = None
-        # FIXME
         mm_selected = [[]] * num_models
         for j, model in enumerate(mm_models):
             if len(mm_usembws[j]) > 0:
@@ -733,6 +739,21 @@ class ModelMixerScript(scripts.Script):
                 compact_mode = True if compact_mode is None else compact_mode
             else:
                 compact_mode = False
+
+        # get overall selected blocks
+        if compact_mode:
+            selected_blocks = []
+            mm_selected_all = [False] * 26
+            for j in range(len(mm_models)):
+                for k in range(26):
+                    mm_selected_all[k] = mm_selected_all[k] or mm_selected[j][k]
+            all_blocks = _all_blocks()
+            for k in range(26):
+                if mm_selected_all[k]:
+                    selected_blocks.append(all_blocks[k])
+        else:
+            # no compact mode, get all blocks
+            selected_blocks = _all_blocks()
 
         print("compact_mode = ", compact_mode)
         # prepare theta_0 from model_a
@@ -782,10 +803,9 @@ class ModelMixerScript(scripts.Script):
         # setup selected keys
         theta_0 = {}
         keys = []
-        selected_blocks = []
         keyremains = []
         if compact_mode:
-            keys, selected_blocks = _get_selected(mm_weights[0], models['model_a'])
+            keys = _get_selected_keys(selected_blocks, models['model_a'])
 
             # get keylist of all selected blocks
             for k in models['model_a'].keys():
@@ -801,7 +821,6 @@ class ModelMixerScript(scripts.Script):
         else:
             # get all keys()
             keys = list(models['model_a'].keys())
-            selected_blocks = _all_blocks()
             theta_0 = models['model_a'].copy()
 
         # save some dicts
@@ -819,6 +838,7 @@ class ModelMixerScript(scripts.Script):
             "blocks": print_blocks(selected_blocks),
             "mbw": compact_mode,
             "weights_alpha": mm_weights,
+            "weights_alpha_orig": mm_weights_orig,
             "alpha": mm_alpha,
             "model_a": model_a,
             "mode": mm_modes,
@@ -877,7 +897,7 @@ class ModelMixerScript(scripts.Script):
                 print(f"mode = {modes[n]}, alpha = {alpha}")
             else:
                 alphas.append(mm_weights[n])
-                print(f"mode = {modes[n]}, mbw mode, alpha = {alphas}")
+                print(f"mode = {modes[n]}, mbw mode, alpha = {mm_weights[n]}")
 
             # main routine
             for key in (tqdm(keys, desc=f"Stage #{n+1-weight_start}/{stages}")):
