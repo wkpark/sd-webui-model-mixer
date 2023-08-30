@@ -296,11 +296,11 @@ class ModelMixerScript(scripts.Script):
                 enabled = gr.Checkbox(label="Enable Model Mixer", value=False, visible=True)
 
             with gr.Row():
-                model_a = gr.Dropdown(sd_models.checkpoint_tiles(), value=shared.sd_model.sd_checkpoint_info.title, elem_id="model_converter_model_name", label="Model A", interactive=True)
+                model_a = gr.Dropdown(sd_models.checkpoint_tiles(), value=shared.sd_model.sd_checkpoint_info.title, elem_id="model_mixer_model_a", label="Model A", interactive=True)
                 create_refresh_button(model_a, sd_models.list_models,lambda: {"choices": sd_models.checkpoint_tiles(), "value": get_valid_checkpoint_title()},"refresh_checkpoint_Z")
 
-                base_model = gr.Dropdown(sd_models.checkpoint_tiles(), elem_id="model_converter_model_name", label="Base Model used for Add-Difference mode", interactive=True)
-                create_refresh_button(base_model, sd_models.list_models,lambda: {"choices": sd_models.checkpoint_tiles()},"refresh_checkpoint_Z")
+                base_model = gr.Dropdown(["None"]+sd_models.checkpoint_tiles(), elem_id="model_mixer_model_base", value="None", label="Base Model used for Add-Difference mode", interactive=True)
+                create_refresh_button(base_model, sd_models.list_models,lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()},"refresh_checkpoint_Z")
             with gr.Row():
                 enable_sync = gr.Checkbox(label="Sync with Default SD checkpoint", value=False, visible=True)
 
@@ -310,14 +310,15 @@ class ModelMixerScript(scripts.Script):
                 for n in range(num_models):
                     name_a = chr(66+n-1) if n == 0 else f"merge_{n}"
                     name = chr(66+n)
+                    lowername = chr(98+n)
                     merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha"}
                     default_merge_info = merge_method_info[n]["Sum"]
                     with gr.Tab(f"Merge Model {name}"):
                         with gr.Row():
                             mm_use[n] = gr.Checkbox(label=f"Model {name}", value=default_use[n], visible=True)
                         with gr.Row():
-                            mm_models[n] = gr.Dropdown(sd_models.checkpoint_tiles(), elem_id="model_converter_model_name", label=f"Merge {name}", show_label=False, interactive=True)
-                            create_refresh_button(mm_models[n], sd_models.list_models, lambda: {"choices": sd_models.checkpoint_tiles()}, "refresh_checkpoint_Z")
+                            mm_models[n] = gr.Dropdown(["None"]+sd_models.checkpoint_tiles(), value="None", elem_id=f"model_mixer_model_{lowername}", label=f"Merge {name}", show_label=False, interactive=True)
+                            create_refresh_button(mm_models[n], sd_models.list_models, lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()}, "refresh_checkpoint_Z")
 
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
@@ -411,12 +412,12 @@ class ModelMixerScript(scripts.Script):
                 with gr.Row():
                     with gr.Column(min_width = 50):
                         with gr.Row():
-                            custom_name = gr.Textbox(label="Custom Name (Optional)", elem_id="model_converter_custom_name")
+                            custom_name = gr.Textbox(label="Custom Name (Optional)", elem_id="model_mixer_custom_name")
 
                     with gr.Column():
                         with gr.Row():
-                            bake_in_vae = gr.Dropdown(choices=["None"] + list(sd_vae.vae_dict), value="None", label="Bake in VAE", elem_id="modelmerger_bake_in_vae")
-                            create_refresh_button(bake_in_vae, sd_vae.refresh_vae_list, lambda: {"choices": ["None"] + list(sd_vae.vae_dict)}, "modelmerger_refresh_bake_in_vae")
+                            bake_in_vae = gr.Dropdown(choices=["None"] + list(sd_vae.vae_dict), value="None", label="Bake in VAE", elem_id="model_mixer_bake_in_vae")
+                            create_refresh_button(bake_in_vae, sd_vae.refresh_vae_list, lambda: {"choices": ["None"] + list(sd_vae.vae_dict)}, "model_mixer_refresh_bake_in_vae")
                 with gr.Row():
                     save_current = gr.Button("Save current model")
 
