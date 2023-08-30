@@ -274,6 +274,7 @@ class ModelMixerScript(scripts.Script):
         mm_modes = [None]*num_models
         mm_alpha = [None]*num_models
         mm_usembws = [None]*num_models
+        mm_usembws_simple = [None]*num_models
         mm_weights = [None]*num_models
 
         mm_setalpha = [None]*num_models
@@ -282,6 +283,9 @@ class ModelMixerScript(scripts.Script):
 
         model_options = [None]*num_models
         default_use = [False]*num_models
+        mbw_advanced = [None]*num_models
+        mbw_simple = [None]*num_models
+        mbw_use_advanced = [None]*num_models
 
         default_use[0] = True
 
@@ -307,7 +311,7 @@ class ModelMixerScript(scripts.Script):
                     name_a = chr(66+n-1) if n == 0 else f"merge_{n}"
                     name = chr(66+n)
                     merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha"}
-                    default_merge_info = merge_method_info[n]["Sum"] if n == 0 else ""
+                    default_merge_info = merge_method_info[n]["Sum"]
                     with gr.Tab(f"Merge Model {name}"):
                         with gr.Row():
                             mm_use[n] = gr.Checkbox(label=f"Model {name}", value=default_use[n], visible=True)
@@ -321,8 +325,14 @@ class ModelMixerScript(scripts.Script):
                             with gr.Row():
                                 mm_alpha[n] = gr.Slider(label=f"Multiplier for Model {name}", minimum=-1.0, maximum=2, step=0.001, value=0.5)
                             with gr.Row():
-                                mm_usembws[n] = gr.Dropdown(["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:], value=[], multiselect=True, label="Merge Block Weights", show_label=False, info="or use Merge Block Weights for selected blocks")
-                                #mm_usembws[n] = gr.CheckboxGroup(["BASE","INP*","MID","OUT*"], value=[], label="Merge Block Weights", show_label=False, info="or select merge block weights")
+                                with gr.Column(scale=3):
+                                    with gr.Group(Visible=True) as mbw_advanced[n]:
+                                        mm_usembws[n] = gr.Dropdown(["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:], value=[], multiselect=True, label="Merge Block Weights", show_label=False, info="or use Merge Block Weights for selected blocks")
+                                    with gr.Group(visible=False) as mbw_simple[n]:
+                                        mm_usembws_simple[n] = gr.CheckboxGroup(["BASE","INP*","MID","OUT*"], value=[], label="Merge Block Weights", show_label=False, info="or use Merge Block Weights for selected blocks")
+                                with gr.Column(scale=1):
+                                    with gr.Row():
+                                        mbw_use_advanced[n] = gr.Checkbox(label="Use advanced MBW mode", value=True, visible=True)
                             with gr.Row():
                                 mm_explain[n] = gr.HTML("")
                             with gr.Row():
@@ -662,9 +672,10 @@ class ModelMixerScript(scripts.Script):
             mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n]], outputs=members)
             mm_usembws[n].change(fn=lambda mbws: gr_enable(len(mbws) == 0), inputs=[mm_usembws[n]], outputs=[mm_alpha[n]], show_progress=False)
             mm_models[n].change(fn=lambda modelname: gr_show(modelname != ""), inputs=[mm_models[n]], outputs=[model_options[n]])
-            mm_modes[n].change(fn=(lambda nd: lambda mode: gr.update(info=merge_method_info[nd][mode]))(n), inputs=[mm_modes[n]], outputs=[mm_modes[n]])
+            mm_modes[n].change(fn=(lambda nd: lambda mode: gr.update(info=merge_method_info[nd][mode]))(n), inputs=[mm_modes[n]], outputs=[mm_modes[n]], show_progress=False)
+            mbw_use_advanced[n].change(fn=lambda mode: [gr.update(visible=True), gr.update(visible=False)] if mode==True else [gr.update(visible=False),gr.update(visible=True)], inputs=[mbw_use_advanced[n]], outputs=[mbw_advanced[n], mbw_simple[n]])
 
-        return [enabled, model_a, base_model, mm_max_models, *mm_use, *mm_models, *mm_modes, *mm_alpha, *mm_usembws, *mm_weights]
+        return [enabled, model_a, base_model, mm_max_models, *mm_use, *mm_models, *mm_modes, *mm_alpha, *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights]
 
     def before_process(self, p, enabled, model_a, base_model, mm_max_models, *args_):
         if not enabled:
@@ -676,6 +687,7 @@ class ModelMixerScript(scripts.Script):
         mm_models = []
         mm_modes = []
         mm_alpha = []
+        mbw_use_advanced = []
         mm_usembws = []
         mm_weights = []
 
@@ -696,8 +708,13 @@ class ModelMixerScript(scripts.Script):
                 mode = args_[num_models*2+j]
                 alpha = args_[num_models*3+j]
                 if type(alpha) == str: alpha = float(alpha)
-                usembws = args_[num_models*4+j]
-                weights = args_[num_models*5+j]
+                mbw_use_advanced = args_[num_models*4+j]
+                usembws = args_[num_models*5+j]
+                usembws_simple = args_[num_models*6+j]
+                weights = args_[num_models*7+j]
+
+                if not mbw_use_advanced:
+                    usembws = usembws_simple
 
                 # ignore some cases
                 if alpha == 0.0 and len(usembws) == 0:
