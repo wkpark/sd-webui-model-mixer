@@ -785,8 +785,7 @@ class ModelMixerScript(scripts.Script):
         # make a hash to cache results
         sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_models, mm_modes, mm_alpha, mm_usembws, mm_weights]).encode("utf-8")).hexdigest()
         print("config hash = ", sha256)
-        current = shared.opts.data.get("sd_webui_model_mixer_model", None)
-        if current is not None and "hash" in current and current["hash"] == sha256:
+        if shared.sd_model.sd_checkpoint_info is not None and shared.sd_model.sd_checkpoint_info.sha256 == sha256:
             # already mixed
             print(f"  - use current mixed model {sha256}")
             return
@@ -1063,6 +1062,9 @@ class ModelMixerScript(scripts.Script):
             # load mixed model info
             model = shared.opts.data.get("sd_webui_model_mixer_model", None)
             if model is None: return
+            sha256 = model["hash"]
+            if shared.sd_model.sd_checkpoint_info is not None and shared.sd_model.sd_checkpoint_info.sha256 != sha256:
+                return
 
             modelinfos = model["models"]
             modelhashes = model["hashes"]
