@@ -653,7 +653,25 @@ class ModelMixerScript(scripts.Script):
             script_callbacks.on_after_component(on_after_components)
 
         members = [base,in00,in01,in02,in03,in04,in05,in06,in07,in08,in09,in10,in11,mi00,ou00,ou01,ou02,ou03,ou04,ou05,ou06,ou07,ou08,ou09,ou10,ou11]
-        self.infotext_fields = ()
+
+        self.infotext_fields = (
+            (model_a, "ModelMixer model a"),
+            (base_model, "ModelMixer base model"),
+            (mm_max_models, "ModelMixer max models")
+        )
+
+        for n in range(num_models):
+            name = f"{chr(98+n)}"
+            self.infotext_fields += (
+                (mm_use[n], f"ModelMixer use model {name}"),
+                (mm_models[n], f"ModelMixer model {name}"),
+                (mm_modes[n], f"ModelMixer merge mode {name}"),
+                (mm_alpha[n], f"ModelMixer alpha {name}"),
+                (mbw_use_advanced[n], f"ModelMixer mbw mode {name}"),
+                (mm_usembws[n], f"ModelMixer mbw {name}"),
+                (mm_usembws_simple[n], f"ModelMixer simple mbw {name}"),
+                (mm_weights[n], f"ModelMixer mbw weights {name}"),
+            )
 
         # load settings
         print("checkpoint title = ", shared.sd_model.sd_checkpoint_info.title)
@@ -676,6 +694,35 @@ class ModelMixerScript(scripts.Script):
             mbw_use_advanced[n].change(fn=lambda mode: [gr.update(visible=True), gr.update(visible=False)] if mode==True else [gr.update(visible=False),gr.update(visible=True)], inputs=[mbw_use_advanced[n]], outputs=[mbw_advanced[n], mbw_simple[n]])
 
         return [enabled, model_a, base_model, mm_max_models, *mm_use, *mm_models, *mm_modes, *mm_alpha, *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights]
+
+    def modelmixer_extra_params(self, model_a, base_model, mm_max_models, *args_):
+        num_models = int(mm_max_models)
+        params = {
+            "ModelMixer model a": model_a,
+            "ModelMixer max models": mm_max_models,
+        }
+        if len(base_model) > 0:
+            params.update({"ModelMixer base model": base_model})
+
+        for j in range(num_models):
+            name = f"{chr(98+j)}"
+            params.update({f"ModelMixer use model {name}": args_[j]})
+
+            if len(args_[num_models+j]) > 0:
+                params.update({
+                    f"ModelMixer model {name}": args_[num_models+j],
+                    f"ModelMixer merge mode {name}": args_[num_models*2+j],
+                    f"ModelMixer alpha {name}": args_[num_models*3+j],
+                    f"ModelMixer mbw mode {name}": args_[num_models*4+j]
+                })
+                if len(args_[num_models*5+j]) > 0:
+                    params.update({f"ModelMixer mbw {name}": ",".join(args_[num_models*5+j])})
+                if len(args_[num_models*6+j]) > 0:
+                    params.update({f"ModelMixer simple mbw {name}": ",".join(args_[num_models*6+j])})
+                if len(args_[num_models*7+j]) > 0:
+                    params.update({f"ModelMixer mbw weights {name}": args_[num_models*7+j]})
+
+        return params
 
     def before_process(self, p, enabled, model_a, base_model, mm_max_models, *args_):
         if not enabled:
@@ -725,6 +772,10 @@ class ModelMixerScript(scripts.Script):
                 mm_alpha.append(alpha)
                 mm_usembws.append(usembws)
                 mm_weights.append(weights)
+
+        # extra_params
+        extra_params = self.modelmixer_extra_params(model_a, base_model, mm_max_models, *args_)
+        p.extra_generation_params.update(extra_params)
 
         # make a hash to cache results
         sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_models, mm_modes, mm_alpha, mm_usembws, mm_weights]).encode("utf-8")).hexdigest()
@@ -1045,4 +1096,24 @@ def on_ui_settings():
         ),
     )
 
+def on_infotext_pasted(infotext, results):
+    updates = {}
+    for k, v in results.items():
+        if not k.startswith("ModelMixer"):
+            continue
+
+        if k.find(" mbw ") > 0:
+            if v in [ "True", "False"]:
+                continue
+            elif k.find(" weights ") > 0:
+                continue
+
+            if v[0] == '"' and v[-1] == '"':
+                v = v[1:-1]
+            arr = v.split(",")
+            updates[k] = arr
+
+    results.update(updates)
+
 script_callbacks.on_ui_settings(on_ui_settings)
+script_callbacks.on_infotext_pasted(on_infotext_pasted)
