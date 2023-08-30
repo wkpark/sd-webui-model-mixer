@@ -295,9 +295,13 @@ class ModelMixerScript(scripts.Script):
                 enable_sync = gr.Checkbox(label="Sync with Default SD checkpoint", value=False, visible=True)
 
             mm_max_models = gr.Number(value=num_models, precision=0, visible=False)
+            merge_method_info = [{}] * num_models
             with gr.Group(), gr.Tabs():
                 for n in range(num_models):
+                    name_a = chr(66+n-1) if n == 0 else f"merge_{n}"
                     name = chr(66+n)
+                    merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha"}
+                    default_merge_info = merge_method_info[n]["Sum"] if n == 0 else ""
                     with gr.Tab(f"Merge Model {name}"):
                         with gr.Row():
                             mm_use[n] = gr.Checkbox(label=f"Model {name}", value=default_use[n], visible=True)
@@ -307,7 +311,7 @@ class ModelMixerScript(scripts.Script):
 
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
-                                mm_modes[n] = gr.Radio(label=f"Merge Method for Model {name}", choices=["Sum", "Add"], value=default_mode[n])
+                                mm_modes[n] = gr.Radio(label=f"Merge Method for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value=default_mode[n])
                             with gr.Row():
                                 mm_alpha[n] = gr.Slider(label=f"Multiplier for Model {name}", minimum=-1.0, maximum=2, step=0.001, value=0.5)
                             with gr.Row():
@@ -652,6 +656,7 @@ class ModelMixerScript(scripts.Script):
             mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n]], outputs=members)
             mm_usembws[n].change(fn=lambda mbws: gr_enable(len(mbws) == 0), inputs=[mm_usembws[n]], outputs=[mm_alpha[n]], show_progress=False)
             mm_models[n].change(fn=lambda modelname: gr_show(modelname != ""), inputs=[mm_models[n]], outputs=[model_options[n]])
+            mm_modes[n].change(fn=(lambda nd: lambda mode: gr.update(info=merge_method_info[nd][mode]))(n), inputs=[mm_modes[n]], outputs=[mm_modes[n]])
 
         return [enabled, model_a, base_model, mm_max_models, *mm_use, *mm_models, *mm_modes, *mm_alpha, *mm_usembws, *mm_weights]
 
@@ -761,7 +766,7 @@ class ModelMixerScript(scripts.Script):
 
         # check base_model
         model_base = {}
-        if "Add" in mm_modes:
+        if "Add-Diff" in mm_modes:
             if base_model == "":
                 # check SD version
                 w = models['model_a']["model.diffusion_model.input_blocks.1.1.proj_in.weight"]
@@ -897,7 +902,7 @@ class ModelMixerScript(scripts.Script):
                     recipe_all = f"{model_a} * (1 - alpha_{n}) + {model_name} * alpha_{n}"
                 else:
                     recipe_all = f"({recipe_all}) * (1 - alpha_{n}) + {model_name} * alpha_{n}"
-            elif modes[n] in [ "Add" ]:
+            elif modes[n] in [ "Add-Diff" ]:
                 if recipe_all is None:
                     recipe_all = f"{model_a} + ({model_name} - {base_model}) * alpha_{n}"
                 else:
