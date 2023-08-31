@@ -1065,40 +1065,38 @@ class ModelMixerScript(scripts.Script):
             "recipe": recipe_all + alphastr,
             "metadata": metadata,
         }
-
-        def on_image_save(params):
-            if 'parameters' not in params.pnginfo: return
-
-            # load mixed model info
-            model = shared.opts.data.get("sd_webui_model_mixer_model", None)
-            if model is None: return
-            sha256 = model["hash"]
-            if shared.sd_model.sd_checkpoint_info is not None and shared.sd_model.sd_checkpoint_info.sha256 != sha256:
-                return
-
-            modelinfos = model["models"]
-            modelhashes = model["hashes"]
-            recipe = model.get("recipe", None)
-
-            lines = params.pnginfo['parameters'].split('\n')
-            generation_params = lines.pop()
-            prompt_parts = '\n'.join(lines).split('Negative prompt:')
-            prompt, negative_prompt = [s.strip() for s in prompt_parts[:2] + ['']*(2-len(prompt_parts))]
-
-            lines = generation_params.split(",")
-            for i,x in enumerate(lines):
-                if "Model:" in x:
-                    lines[i] = " Model: " + " + ".join(modelinfos).replace(","," ")
-                elif "Model hash:" in x:
-                    lines[i] = " Model hash: " + ", Model hash: ".join(modelhashes)
-            generation_params = ",".join(lines)
-            if recipe is not None:
-                generation_params += ", Model recipe: " + recipe.replace(","," ")
-
-            params.pnginfo['parameters'] = prompt + "\nNegative prompt:" + negative_prompt + "\n" + generation_params
-
-        script_callbacks.on_before_image_saved(on_image_save)
         return
+
+def on_image_save(params):
+    if 'parameters' not in params.pnginfo: return
+
+    # load mixed model info
+    model = shared.opts.data.get("sd_webui_model_mixer_model", None)
+    if model is None: return
+    sha256 = model["hash"]
+    if shared.sd_model.sd_checkpoint_info is not None and shared.sd_model.sd_checkpoint_info.sha256 != sha256:
+        return
+
+    modelinfos = model["models"]
+    modelhashes = model["hashes"]
+    recipe = model.get("recipe", None)
+
+    lines = params.pnginfo['parameters'].split('\n')
+    generation_params = lines.pop()
+    prompt_parts = '\n'.join(lines).split('Negative prompt:')
+    prompt, negative_prompt = [s.strip() for s in prompt_parts[:2] + ['']*(2-len(prompt_parts))]
+
+    lines = generation_params.split(",")
+    for i,x in enumerate(lines):
+        if "Model:" in x:
+            lines[i] = " Model: " + " + ".join(modelinfos).replace(","," ")
+        elif "Model hash:" in x:
+            lines[i] = " Model hash: " + ", Model hash: ".join(modelhashes)
+    generation_params = ",".join(lines)
+    if recipe is not None:
+        generation_params += ", Model recipe: " + recipe.replace(","," ")
+
+    params.pnginfo['parameters'] = prompt + "\nNegative prompt:" + negative_prompt + "\n" + generation_params
 
 def on_ui_settings():
     section = ("Model Mixer", "Model Mixer")
@@ -1133,4 +1131,5 @@ def on_infotext_pasted(infotext, results):
     results.update(updates)
 
 script_callbacks.on_ui_settings(on_ui_settings)
+script_callbacks.on_before_image_saved(on_image_save)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
