@@ -599,9 +599,19 @@ class ModelMixerScript(scripts.Script):
                 pre = ""
             ext = ".safetensors" if "safetensors" in save_settings else ".ckpt"
 
+            sha256 = current["hash"]
+            if shared.sd_model.sd_checkpoint_info is None:
+                err_msg = "No checkpoint file loaded."
+                print(err_msg)
+                return gr.update(value=err_msg)
+
+            if shared.sd_model.sd_checkpoint_info.sha256 != sha256:
+                err_msg = "Current checkpoint is not a merged one."
+                print(err_msg)
+                return gr.update(value=err_msg)
+
             if not custom_name or custom_name == "":
-                checkpoint_info = select_checkpoint()
-                fname = checkpoint_info.model_name.replace(" ","").replace(",","_").replace("(","_").replace(")","_") + pre + ext
+                fname = shared.sd_model.sd_checkpoint_info.model_name.replace(" ","").replace(",","_").replace("(","_").replace(")","_") + pre + ext
                 if fname[0] == "_":
                     fname = fname[1:]
             else:
@@ -615,7 +625,7 @@ class ModelMixerScript(scripts.Script):
 
             # check if output file already exists
             if os.path.isfile(fname) and not "overwrite" in save_settings:
-                err_msg = f"Output file ({fname}) exists. not saved.]"
+                err_msg = f"Output file ({fname}) exists. not saved."
                 print(err_msg)
                 return gr.update(value=err_msg)
 
