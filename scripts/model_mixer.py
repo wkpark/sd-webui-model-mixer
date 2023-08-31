@@ -1086,13 +1086,22 @@ def on_image_save(params):
     prompt_parts = '\n'.join(lines).split('Negative prompt:')
     prompt, negative_prompt = [s.strip() for s in prompt_parts[:2] + ['']*(2-len(prompt_parts))]
 
+    # add multiple "Model hash:" entries and change "Model:" name
     lines = generation_params.split(",")
     for i,x in enumerate(lines):
-        if "Model:" in x:
-            lines[i] = " Model: " + " + ".join(modelinfos).replace(","," ")
-        elif "Model hash:" in x:
+        if "Model hash:" in x:
             lines[i] = " Model hash: " + ", Model hash: ".join(modelhashes)
+        elif "Model:" in x:
+            lines[i] = " Model: " + " + ".join(modelinfos).replace(","," ")
     generation_params = ",".join(lines)
+
+    # add Model hash a: xxx, Model a: yyy, Model hash b: zzz, Model b: uuu...
+    for j,v in enumerate(modelhashes):
+        n = chr(97+j)
+        model = modelinfos[j].replace(",", " ")
+        generation_params += f", Model hash {n}: {v}, Model {n}: {model}"
+
+    # add recipe
     if recipe is not None:
         generation_params += ", Model recipe: " + recipe.replace(","," ")
 
