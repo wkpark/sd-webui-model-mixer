@@ -1074,7 +1074,7 @@ def on_image_save(params):
     model = shared.opts.data.get("sd_webui_model_mixer_model", None)
     if model is None: return
     sha256 = model["hash"]
-    if shared.sd_model.sd_checkpoint_info is not None and shared.sd_model.sd_checkpoint_info.sha256 != sha256:
+    if shared.sd_model is None or shared.sd_model.sd_checkpoint_info is None or shared.sd_model.sd_checkpoint_info.sha256 != sha256:
         return
 
     modelinfos = model["models"]
