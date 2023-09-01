@@ -222,6 +222,28 @@ def to_half(tensor, enable):
 
     return tensor
 
+def read_metadata_from_safetensors(filename):
+    """read metadata from safetensor - from sd-webui modules/sd_models.py"""
+    with open(filename, mode="rb") as file:
+        metadata_len = file.read(8)
+        metadata_len = int.from_bytes(metadata_len, "little")
+        json_start = file.read(2)
+
+        assert metadata_len > 2 and json_start in (b'{"', b"{'"), f"{filename} is not a safetensors file"
+        json_data = json_start + file.read(metadata_len-2)
+        json_obj = json.loads(json_data)
+
+        res = {}
+        for k, v in json_obj.get("__metadata__", {}).items():
+            res[k] = v
+            if isinstance(v, str) and v[0:1] == '{':
+                try:
+                    res[k] = json.loads(v)
+                except Exception:
+                    pass
+
+        return res
+
 def get_valid_checkpoint_title():
     checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
     # check validity of current checkpoint_info
@@ -405,10 +427,13 @@ class ModelMixerScript(scripts.Script):
                     save_current = gr.Button("Save current model")
 
                 with gr.Row():
-                    metadata_settings = gr.CheckboxGroup(["merge recipe","Copy metadata from merged models"], value=["merge recipe"], label="Metadata settings")
+                    metadata_settings = gr.CheckboxGroup(["merge recipe"], value=["merge recipe"], label="Metadata settings")
 
                 metadata_json = gr.TextArea('{}', label="Metadata in JSON format")
-                read_metadata = gr.Button("Read current metadata")
+                with gr.Row():
+                    read_metadata = gr.Button("Read current metadata")
+                    read_model_a_metadata = gr.Button("model A metadata")
+                    read_model_b_metadata = gr.Button("model B metadata")
 
         def addblockweights(val, blockopt, *blocks):
             if val == "none":
@@ -556,6 +581,15 @@ class ModelMixerScript(scripts.Script):
 
             return gr.update(value=data)
 
+        def model_metadata(model):
+            """read metadata"""
+            checkpoint = sd_models.get_closet_checkpoint_match(model)
+            if checkpoint is not None:
+                metadata = read_metadata_from_safetensors(checkpoint.filename)
+                data = json.dumps(metadata, indent=4, ensure_ascii=False)
+
+                return gr.update(value=data)
+
         def save_current_model(custom_name, bake_in_vae, save_settings, metadata_settings):
             current = shared.opts.data.get("sd_webui_model_mixer_model", None)
             if current is None:
@@ -671,6 +705,8 @@ class ModelMixerScript(scripts.Script):
         print("checkpoint title = ", shared.sd_model.sd_checkpoint_info.title)
 
         read_metadata.click(fn=current_metadata, inputs=[], outputs=[metadata_json])
+        read_model_a_metadata.click(fn=model_metadata, inputs=[model_a], outputs=[metadata_json])
+        read_model_b_metadata.click(fn=model_metadata, inputs=[mm_models[0]], outputs=[metadata_json])
         save_current.click(fn=save_current_model, inputs=[custom_name, bake_in_vae, save_settings, metadata_settings], outputs=[logging])
 
         resetopt.change(fn=resetvalopt, inputs=[resetopt], outputs=[resetval])
