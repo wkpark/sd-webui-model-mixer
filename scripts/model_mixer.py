@@ -318,7 +318,8 @@ class ModelMixerScript(scripts.Script):
                     lowername = chr(98+n)
                     merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha"}
                     default_merge_info = merge_method_info[n]["Sum"]
-                    with gr.Tab(f"Merge Model {name}"):
+                    tabname = f"Merge Model {name}" if n == 0 else f"Model {name}"
+                    with gr.Tab(tabname):
                         with gr.Row():
                             mm_use[n] = gr.Checkbox(label=f"Model {name}", value=default_use[n], visible=True)
                         with gr.Row():
