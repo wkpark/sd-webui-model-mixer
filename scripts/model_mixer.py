@@ -192,23 +192,6 @@ def _selected_blocks_and_weights(mbw):
             sel_mbws.append(v)
     return sel_blocks, sel_mbws
 
-def _get_selected(mbw, model):
-    sel_blocks, sel_mbws = _selected_blocks_and_weights(mbw)
-    sel_keys = []
-    for i, k in enumerate(sel_blocks):
-        if k in model:
-            sel_keys.append(k)
-
-    return sel_keys, sel_blocks
-
-def _get_selected_keys(sel_blocks, model):
-    sel_keys = []
-    for i, k in enumerate(sel_blocks):
-        if k in model:
-            sel_keys.append(k)
-
-    return sel_keys
-
 def _weight_index(key):
     num = -1
     offset = [ 0, 1, 13, 14 ]
@@ -887,13 +870,14 @@ class ModelMixerScript(scripts.Script):
         keys = []
         keyremains = []
         if compact_mode:
-            keys = _get_selected_keys(selected_blocks, models['model_a'])
-
             # get keylist of all selected blocks
             for k in models['model_a'].keys():
                 keyadded = False
                 for s in selected_blocks:
                     if s in k:
+                        # ignore all non block releated keys
+                        if "diffusion_model." not in k and "cond_stage_model." not in k:
+                            continue
                         keys.append(k)
                         theta_0[k] = models['model_a'][k]
                         keyadded = True
@@ -988,7 +972,7 @@ class ModelMixerScript(scripts.Script):
                     continue
                 if key in checkpoint_dict_skip_on_merge:
                     continue
-                if "model" in key and key in theta_0:
+                if "model" in key and key in theta_1:
                     if usembw:
                         i = _weight_index(key)
                         if i == -1: continue # not found
