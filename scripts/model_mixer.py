@@ -573,13 +573,11 @@ class ModelMixerScript(scripts.Script):
                     )
 
         def current_metadata():
-            current = shared.opts.data.get("sd_webui_model_mixer_model", None)
-            if current is None:
-                return gr.update()
+            if shared.sd_model and shared.sd_model.sd_checkpoint_info:
+                metadata = shared.sd_model.sd_checkpoint_info.metadata
+                data = json.dumps(metadata, indent=4, ensure_ascii=False)
 
-            data = json.dumps(current["metadata"], indent=4, ensure_ascii=False)
-
-            return gr.update(value=data)
+                return gr.update(value=data)
 
         def model_metadata(model):
             """read metadata"""
@@ -595,7 +593,11 @@ class ModelMixerScript(scripts.Script):
             if current is None:
                 return gr.update(value="No merged model found")
 
-            metadata = current["metadata"].copy()
+            if shared.sd_model and shared.sd_model.sd_checkpoint_info:
+                metadata = shared.sd_model.sd_checkpoint_info.metadata.copy()
+            else:
+                return gr.update(value="Not a valid merged model")
+
             if  "merge recipe" in metadata_settings:
                 metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"])
             else:
@@ -617,11 +619,6 @@ class ModelMixerScript(scripts.Script):
             ext = ".safetensors" if "safetensors" in save_settings else ".ckpt"
 
             sha256 = current["hash"]
-            if shared.sd_model.sd_checkpoint_info is None:
-                err_msg = "No checkpoint file loaded."
-                print(err_msg)
-                return gr.update(value=err_msg)
-
             if shared.sd_model.sd_checkpoint_info.sha256 != sha256:
                 err_msg = "Current checkpoint is not a merged one."
                 print(err_msg)
@@ -946,7 +943,6 @@ class ModelMixerScript(scripts.Script):
             "mode": mm_modes,
             "calcmode": "normal",
         }
-        metadata["sd_merge_recipe"] = merge_recipe
         metadata["sd_merge_models"] = {}
 
         # full recipe
@@ -1047,6 +1043,11 @@ class ModelMixerScript(scripts.Script):
         for key in (tqdm(keyremains, desc=f"Save unchanged weights #{stages}/{stages}")):
             theta_0[key] = models['model_a'][key]
 
+        # save recipe
+        alphastr = ','.join(['(' + ','.join(map(lambda x: str(int(x)) if x == 0.0 else str(x), sub)) + ')' for sub in alphas])
+        merge_recipe["recipe"] = recipe_all + alphastr
+        metadata["sd_merge_recipe"] = merge_recipe
+
         # load theta_0, checkpoint_info was used for model_a
         # XXX make a FAKE checkpoint_info
         # change model name (name_for_extra field used webui internally)
@@ -1056,6 +1057,8 @@ class ModelMixerScript(scripts.Script):
         checkpoint_info.name = checkpoint_info.name_for_extra + ".safetensors"
         checkpoint_info.model_name = checkpoint_info.name_for_extra.replace("/", "_").replace("\\", "_")
         checkpoint_info.title = f"{checkpoint_info.name} [{sha256[0:10]}]"
+        # use new metadata
+        checkpoint_info.metadata = metadata
 
         # XXX add a fake checkpoint_info
         # force to set with a new sha256 hash
@@ -1077,13 +1080,11 @@ class ModelMixerScript(scripts.Script):
         del theta_0
 
         # update merged model info.
-        alphastr = ','.join(['(' + ','.join(map(lambda x: str(int(x)) if x == 0.0 else str(x), sub)) + ')' for sub in alphas])
         shared.opts.data["sd_webui_model_mixer_model"] = {
             "hash": sha256,
             "models" : modelinfos,
             "hashes" : modelhashes,
             "recipe": recipe_all + alphastr,
-            "metadata": metadata,
         }
         return
 
