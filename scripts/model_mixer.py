@@ -953,7 +953,8 @@ class ModelMixerScript(scripts.Script):
             checkpointinfo.calculate_shorthash()
             metadata["sd_merge_models"][checkpointinfo.sha256] = {
                 "name": checkpoint_name,
-                "legacy_hash": checkpointinfo.hash
+                "legacy_hash": checkpointinfo.hash,
+                "sd_merge_recipe": checkpointinfo.metadata.get("sd_merge_recipe", None)
             }
 
         if model_a:
