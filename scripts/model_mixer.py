@@ -228,10 +228,11 @@ def _weight_index(key, isxl=False):
             num = int(key[i+len(s):j]) + offset[k]
     return num
 
-def prune_model(model):
+def prune_model(model, isxl=False):
     keys = list(model.keys())
+    base_prefix = "conditioner." if isxl else "cond_stage_model."
     for k in keys:
-        if "diffusion_model." not in k and "first_stage_model." not in k and "cond_stage_model." not in k:
+        if "diffusion_model." not in k and "first_stage_model." not in k and base_prefix not in k:
             model.pop(k, None)
     return model
 
@@ -705,11 +706,17 @@ class ModelMixerScript(scripts.Script):
                 del vae_dict
 
             print("Saving...")
+            isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in state_dict
+            if isxl:
+                # prune share memory tensors, "cond_stage_model." prefixed base tensors are share memory with "conditioner." prefixed tensors
+                for i, key in enumerage(state_dict.keys()):
+                    if "cond_stage_model." in key:
+                        del state_dict[key]
 
             if "fp16" in save_settings:
                 state_dict = to_half(state_dict, True)
             if "prune" in save_settings:
-                state_dict = prune_model(state_dict)
+                state_dict = prune_model(state_dict, isxl)
 
             try:
                 if ext == ".safetensors":
