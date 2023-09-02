@@ -1158,7 +1158,9 @@ class ModelMixerScript(scripts.Script):
         # XXX hack. set ids for a fake checkpoint info
         checkpoint_info.ids = [checkpoint_info.model_name, checkpoint_info.name, checkpoint_info.name_for_extra]
 
-        sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=theta_0)
+        #sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
+        # XXX call load_model_weights() to work with --medvram-sdxl option
+        sd_models.load_model_weights(shared.sd_model, checkpoint_info, theta_0, timer)
         if shared.opts.sd_checkpoint_cache > 0:
             # unload cached merged model
             checkpoints_loaded.popitem()
