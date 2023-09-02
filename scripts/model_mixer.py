@@ -26,7 +26,9 @@ from modules.ui import create_refresh_button
 dump_cache = cache.dump_cache
 cache = cache.cache
 
-BLOCKID=["BASE","IN00","IN01","IN02","IN03","IN04","IN05","IN06","IN07","IN08","IN09","IN10","IN11","M00","OUT00","OUT01","OUT02","OUT03","OUT04","OUT05","OUT06","OUT07","OUT08","OUT09","OUT10","OUT11"]
+BLOCKID  =["BASE","IN00","IN01","IN02","IN03","IN04","IN05","IN06","IN07","IN08","IN09","IN10","IN11","M00","OUT00","OUT01","OUT02","OUT03","OUT04","OUT05","OUT06","OUT07","OUT08","OUT09","OUT10","OUT11"]
+BLOCKIDXL=["BASE","IN00","IN01","IN02","IN03","IN04","IN05","IN06","IN07","IN08",                     "M00","OUT00","OUT01","OUT02","OUT03","OUT04","OUT05","OUT06","OUT07","OUT08",                       ]
+ISXLBLOCK=[  True,  True,  True,  True,  True,  True,  True,  True,  True,  True, False, False, False, True,   True,   True,   True,   True,   True,   True,   True,   True,   True,  False,  False,  False]
 
 def gr_show(visible=True):
     return {"visible": visible, "__type__": "update"}
@@ -37,13 +39,22 @@ def gr_enable(interactive=True):
 def gr_open(open=True):
     return {"open": open, "__type__": "update"}
 
-def slider2text(*slider):
-    return gr.update(value = ",".join([str(x) for x in slider]))
+def slider2text(isxl, *slider):
+    if isxl:
+        selected = []
+        for i,v in enumerate(slider):
+            if ISXLBLOCK[i]:
+                selected.append(slider[i])
+    else:
+        selected = slider
+    return gr.update(value = ",".join([str(x) for x in selected]))
 
-def calc_mbws(mbw, mbw_blocks):
+def calc_mbws(mbw, mbw_blocks, isxl=False):
     weights = [t.strip() for t in mbw.split(",")]
     expect = 0
-    MAXLEN = 26
+    MAXLEN = 26 - (0 if not isxl else 6)
+    BLOCKLEN = 12 - (0 if not isxl else 3)
+    BLOCKOFFSET = 13 if not isxl else 10
     selected = [False]*MAXLEN
     compact_blocks = []
 
@@ -59,12 +70,12 @@ def calc_mbws(mbw, mbw_blocks):
 
     # expand some aliases
     if 'INP*' in mbw_blocks:
-        for i in range(0, 12):
+        for i in range(0, BLOCKLEN):
             name = f"IN{i:02d}"
             if name not in mbw_blocks:
                 mbw_blocks.append(name)
     if 'OUT*' in mbw_blocks:
-        for i in range(0, 12):
+        for i in range(0, BLOCKLEN):
             name = f"OUT{i:02d}"
             if name not in mbw_blocks:
                 mbw_blocks.append(name)
@@ -79,11 +90,11 @@ def calc_mbws(mbw, mbw_blocks):
             elif name[0:3] == 'OUT':
                 expect += 1
                 num = int(name[3:])
-                selected[num + 14] = True
+                selected[num + BLOCKOFFSET + 1] = True
                 compact_blocks.append(f'out.{num}.')
             elif name == 'M00':
                 expect += 1
-                selected[13] = True
+                selected[BLOCKOFFSET] = True
                 compact_blocks.append('mid.1.')
             elif name == 'BASE':
                 expect +=1
@@ -133,26 +144,38 @@ def calc_mbws(mbw, mbw_blocks):
                 if 'inp' == block:
                     off = 1
                 elif 'mid' == block:
-                    off = 13
+                    off = BLOCKOFFSET
                     num = 0
                 elif 'out' == block:
-                    off = 14
+                    off = BLOCKOFFSET + 1
 
             mbws[off + num] = compact_mbws[i]
 
     return mbws, compact_mbws, selected
 
-def get_mbws(mbw, mbw_blocks):
-    mbws, compact_mbws, selected = calc_mbws(mbw, mbw_blocks)
+def get_mbws(mbw, mbw_blocks, isxl=False):
+    mbws, compact_mbws, selected = calc_mbws(mbw, mbw_blocks, isxl=isxl)
+    if isxl:
+        j = 0
+        ret = []
+        for i, v in enumerate(ISXLBLOCK):
+            if v:
+                ret.append(gr.update(value = mbws[j]))
+                j += 1
+            else:
+                ret.append(gr.update())
+        return ret
+
     return [gr.update(value = v) for v in mbws]
 
-def _all_blocks():
+def _all_blocks(isxl=False):
+    BLOCKLEN = 12 - (0 if not isxl else 3)
     # return all blocks
     blocks = [ "cond_stage_model." ]
-    for i in range(0,12):
+    for i in range(0, BLOCKLEN):
         blocks.append(f"input_blocks.{i}.")
     blocks.append("middle_block.1.")
-    for i in range(0,12):
+    for i in range(0, BLOCKLEN):
         blocks.append(f"output_blocks.{i}.")
     return blocks
 
@@ -175,13 +198,13 @@ def print_blocks(blocks):
             str.append(block)
     return ','.join(str)
 
-def _selected_blocks_and_weights(mbw):
+def _selected_blocks_and_weights(mbw, isxl=False):
     if type(mbw) is str:
         weights = [t.strip() for t in mbw.split(",")]
     else:
         weights = mbw
     # get all blocks
-    all_blocks = _all_blocks()
+    all_blocks = _all_blocks(isxl)
 
     sel_blocks = []
     sel_mbws = []
@@ -192,13 +215,13 @@ def _selected_blocks_and_weights(mbw):
             sel_mbws.append(v)
     return sel_blocks, sel_mbws
 
-def _weight_index(key):
+def _weight_index(key, isxl=False):
     num = -1
-    offset = [ 0, 1, 13, 14 ]
+    offset = [ 0, 1, 13, 14 ] if not isxl else [ 0, 1, 10, 11 ]
     for k, s in enumerate([ "cond_stage_model.", "input_blocks.", "middle_block.", "output_blocks." ]):
         if s in key:
             if k == 0: return 0 # base
-            if k == 2: return 13 # middle_block
+            if k == 2: return offset[2] # middle_block
 
             i = key.find(s)
             j = key.find(".", i+len(s))
@@ -243,6 +266,31 @@ def read_metadata_from_safetensors(filename):
                     pass
 
         return res
+
+def get_safetensors_header(filename):
+    with open(filename, mode="rb") as file:
+        metadata_len = file.read(8)
+        metadata_len = int.from_bytes(metadata_len, "little")
+        json_start = file.read(2)
+
+        if metadata_len > 2 and json_start in (b'{"', b"{'"):
+            json_data = json_start + file.read(metadata_len-2)
+            return json.loads(json_data)
+
+        # invalid safetensors
+        return None
+
+def is_xl(modelname):
+    checkpointinfo = sd_models.get_closet_checkpoint_match(modelname)
+    if checkpointinfo is None:
+        return None
+
+    header = get_safetensors_header(checkpointinfo.filename)
+    if header is not None:
+        if "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in header:
+            return True
+        return False
+    return None
 
 def get_valid_checkpoint_title():
     checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
@@ -308,6 +356,7 @@ class ModelMixerScript(scripts.Script):
                 create_refresh_button(base_model, sd_models.list_models,lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()},"refresh_checkpoint_Z")
             with gr.Row():
                 enable_sync = gr.Checkbox(label="Sync with Default SD checkpoint", value=False, visible=True)
+                is_sdxl = gr.Checkbox(label="is SDXL", value=False, visible=True)
 
             mm_max_models = gr.Number(value=num_models, precision=0, visible=False)
             merge_method_info = [{}] * num_models
@@ -539,7 +588,8 @@ class ModelMixerScript(scripts.Script):
             return gr.update(value = value)
 
         def sync_main_checkpoint(enable_sync, model):
-            ret = [gr.update(value=model)]
+            ret = [gr.update(value=True if is_xl(model) else False, visible=True if is_xl(model) is None else False)]
+            ret.append(gr.update(value=model))
             # load checkpoint
             if enable_sync:
                 shared.opts.data['sd_model_checkpoint'] = model
@@ -564,13 +614,13 @@ class ModelMixerScript(scripts.Script):
                 if checkpoint is not None:
                     model_a.change(fn=sync_main_checkpoint,
                         inputs=[enable_sync, model_a],
-                        outputs=[model_a, checkpoint]
+                        outputs=[is_sdxl, model_a, checkpoint]
                     )
                     self.init_model_a_change = True
 
                     enable_sync.change(fn=sync_main_checkpoint,
                         inputs=[enable_sync, model_a],
-                        outputs=[model_a, checkpoint]
+                        outputs=[is_sdxl, model_a, checkpoint]
                     )
 
         def current_metadata():
@@ -707,15 +757,26 @@ class ModelMixerScript(scripts.Script):
         read_model_b_metadata.click(fn=model_metadata, inputs=[mm_models[0]], outputs=[metadata_json])
         save_current.click(fn=save_current_model, inputs=[custom_name, bake_in_vae, save_settings, metadata_settings], outputs=[logging])
 
+        def config_sdxl(isxl, num_models):
+            ret = [gr.update(visible=True) for _ in range(26)] if not isxl else [gr.update(visible=ISXLBLOCK[i]) for i in range(26)]
+            choices = ["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:] if not isxl else ["ALL","BASE","INP*","MID","OUT*"]+BLOCKIDXL[1:]
+            ret += [gr.update(choices=choices) for _ in range(num_models)]
+            last = 11 if not isxl else 8
+            info = f"Block Level Weights: BASE,IN00,IN02,...IN{last:02d},M00,OUT00,...,OUT{last:02d}"
+            ret += [gr.update(label=info) for _ in range(num_models)]
+            return ret
+
+        is_sdxl.change(fn=config_sdxl, inputs=[is_sdxl, mm_max_models], outputs=[*members, *mm_usembws, *mm_weights])
+
         resetopt.change(fn=resetvalopt, inputs=[resetopt], outputs=[resetval])
         resetweight.click(fn=resetblockweights, inputs=[resetval,resetblockopt], outputs=members)
         addweight.click(fn=addblockweights, inputs=[resetval, resetblockopt, *members], outputs=members)
         mulweight.click(fn=mulblockweights, inputs=[resetval, resetblockopt, *members], outputs=members)
 
         for n in range(num_models):
-            mm_setalpha[n].click(fn=slider2text,inputs=[*members],outputs=[mm_weights[n]])
+            mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
 
-            mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n]], outputs=members)
+            mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=members)
             mm_usembws[n].change(fn=lambda mbws: gr_enable(len(mbws) == 0), inputs=[mm_usembws[n]], outputs=[mm_alpha[n]], show_progress=False)
             mm_models[n].change(fn=lambda modelname: gr_show(modelname != "None"), inputs=[mm_models[n]], outputs=[model_options[n]])
             mm_modes[n].change(fn=(lambda nd: lambda mode: gr.update(info=merge_method_info[nd][mode]))(n), inputs=[mm_modes[n]], outputs=[mm_modes[n]], show_progress=False)
@@ -828,34 +889,8 @@ class ModelMixerScript(scripts.Script):
         print("  - alpha", mm_alpha)
 
         mm_weights_orig = mm_weights
-        # prepare for merges
-        compact_mode = None
-        mm_selected = [[]] * num_models
-        for j, model in enumerate(mm_models):
-            if len(mm_usembws[j]) > 0:
-                # normalize Merge block weights
-                mm_weights[j], compact_mbws, mm_selected[j] = calc_mbws(mm_weights[j], mm_usembws[j])
-                compact_mode = True if compact_mode is None else compact_mode
-            else:
-                compact_mode = False
 
-        # get overall selected blocks
-        if compact_mode:
-            selected_blocks = []
-            mm_selected_all = [False] * 26
-            for j in range(len(mm_models)):
-                for k in range(26):
-                    mm_selected_all[k] = mm_selected_all[k] or mm_selected[j][k]
-            all_blocks = _all_blocks()
-            for k in range(26):
-                if mm_selected_all[k]:
-                    selected_blocks.append(all_blocks[k])
-        else:
-            # no compact mode, get all blocks
-            selected_blocks = _all_blocks()
-
-        print("compact_mode = ", compact_mode)
-        # prepare theta_0 from model_a
+        # load model_a
         # check model_a
         checkpoint_info = sd_models.get_closet_checkpoint_match(model_a)
         if checkpoint_info is None:
@@ -884,17 +919,59 @@ class ModelMixerScript(scripts.Script):
             print(f"Loading {checkpoint_info.filename}...")
             models['model_a'] = sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu")
 
+        # check SDXL
+        isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in models['model_a']
+
+        # prepare for merges
+        compact_mode = None
+        mm_selected = [[]] * num_models
+        for j, model in enumerate(mm_models):
+            if len(mm_usembws[j]) > 0:
+                # normalize Merge block weights
+                mm_weights[j], compact_mbws, mm_selected[j] = calc_mbws(mm_weights[j], mm_usembws[j], isxl=isxl)
+                compact_mode = True if compact_mode is None else compact_mode
+            else:
+                compact_mode = False
+
+        # get overall selected blocks
+        if compact_mode:
+            max_blocks = 26 - (0 if not isxl else 6)
+            selected_blocks = []
+            mm_selected_all = [False] * max_blocks
+            for j in range(len(mm_models)):
+                for k in range(max_blocks):
+                    mm_selected_all[k] = mm_selected_all[k] or mm_selected[j][k]
+            all_blocks = _all_blocks(isxl)
+            for k in range(max_blocks):
+                if mm_selected_all[k]:
+                    selected_blocks.append(all_blocks[k])
+        else:
+            # no compact mode, get all blocks
+            selected_blocks = _all_blocks(isxl)
+
+        print("compact_mode = ", compact_mode)
+
         # check base_model
         model_base = {}
         if "Add-Diff" in mm_modes:
             if base_model is None:
                 # check SD version
-                w = models['model_a']["model.diffusion_model.input_blocks.1.1.proj_in.weight"]
-                if len(w.shape) == 4:
-                    base_model = "v1-5-pruned-emaonly"
+                if not isxl:
+                    w = models['model_a']["model.diffusion_model.input_blocks.1.1.proj_in.weight"]
+                    if len(w.shape) == 4:
+                        base_model = "v1-5-pruned-emaonly"
+                    else:
+                        base_model = "v2-1_768-nonema-pruned"
+                    print(f"base_model automatically detected as {base_model}")
                 else:
-                    base_model = "v2-1_768-nonema-pruned"
-                print(f"base_model automatically detected as {base_model}")
+                    candidates = [ "sd_xl_base_1.0.safetensors [31e35c80fc4]", "sd_xl_base_1.0_0.9vae.safetensors [e6bb9ea85b]", "sdXL_v10VAEFix.safetensors [e6bb9ea85b]" ]
+                    for a in candidates:
+                        check = sd_models.get_closet_checkpoint_match(a)
+                        if check is not None:
+                            base_model = a
+                            break
+            if base_model is None:
+                raise Exception('No base model selected and automatic detection failed')
 
             checkpointinfo = sd_models.get_closet_checkpoint_match(base_model)
             model_base = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu")
@@ -1008,7 +1085,7 @@ class ModelMixerScript(scripts.Script):
                     continue
                 if "model" in key and key in theta_1:
                     if usembw:
-                        i = _weight_index(key)
+                        i = _weight_index(key, isxl=isxl)
                         if i == -1: continue # not found
                         alpha = mm_weights[n][i]
 
