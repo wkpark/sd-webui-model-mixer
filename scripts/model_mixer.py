@@ -608,25 +608,22 @@ class ModelMixerScript(scripts.Script):
         def on_after_components(component, **kwargs):
             if self.init_model_a_change is True:
                 return
+            elem_id = getattr(component, "elem_id", None)
+            if elem_id is None:
+                return
 
-            # shared.settings_components not initialized yet.
-            # set onchange after_components
-            if shared.settings_components is not None:
-                if shared.settings_components is not None:
-                    checkpoint = shared.settings_components.get('sd_model_checkpoint', None)
-                else:
-                    checkpoint = None
-                if checkpoint is not None:
-                    model_a.change(fn=sync_main_checkpoint,
-                        inputs=[enable_sync, model_a],
-                        outputs=[is_sdxl, model_a, checkpoint]
-                    )
-                    self.init_model_a_change = True
+            if elem_id == "setting_sd_model_checkpoint":
+                # component is the setting_sd_model_checkpoint
+                model_a.change(fn=sync_main_checkpoint,
+                    inputs=[enable_sync, model_a],
+                    outputs=[is_sdxl, model_a, component]
+                )
+                self.init_model_a_change = True
 
-                    enable_sync.change(fn=sync_main_checkpoint,
-                        inputs=[enable_sync, model_a],
-                        outputs=[is_sdxl, model_a, checkpoint]
-                    )
+                enable_sync.change(fn=sync_main_checkpoint,
+                    inputs=[enable_sync, model_a],
+                    outputs=[is_sdxl, model_a, component]
+                )
 
         def current_metadata():
             if shared.sd_model and shared.sd_model.sd_checkpoint_info:
