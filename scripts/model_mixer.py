@@ -171,7 +171,8 @@ def get_mbws(mbw, mbw_blocks, isxl=False):
 def _all_blocks(isxl=False):
     BLOCKLEN = 12 - (0 if not isxl else 3)
     # return all blocks
-    blocks = [ "cond_stage_model." ]
+    base_prefix = "cond_stage_model." if not isxl else "conditioner."
+    blocks = [ base_prefix ]
     for i in range(0, BLOCKLEN):
         blocks.append(f"input_blocks.{i}.")
     blocks.append("middle_block.1.")
@@ -193,7 +194,7 @@ def print_blocks(blocks):
             n = int(x[14:len(x)-1])
             block = f"OUT{n:02d}"
             str.append(block)
-        elif "cond_stage_model" in x:
+        elif "cond_stage_model" in x or "conditioner." in x:
             block = f"BASE"
             str.append(block)
     return ','.join(str)
@@ -218,7 +219,8 @@ def _selected_blocks_and_weights(mbw, isxl=False):
 def _weight_index(key, isxl=False):
     num = -1
     offset = [ 0, 1, 13, 14 ] if not isxl else [ 0, 1, 10, 11 ]
-    for k, s in enumerate([ "cond_stage_model.", "input_blocks.", "middle_block.", "output_blocks." ]):
+    base_prefix = "cond_stage_model." if not isxl else "conditioner."
+    for k, s in enumerate([ base_prefix, "input_blocks.", "middle_block.", "output_blocks." ]):
         if s in key:
             if k == 0: return 0 # base
             if k == 2: return offset[2] # middle_block
@@ -928,6 +930,7 @@ class ModelMixerScript(scripts.Script):
 
         # check SDXL
         isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in models['model_a']
+        print("isxl =", isxl)
 
         # prepare for merges
         compact_mode = None
@@ -989,12 +992,13 @@ class ModelMixerScript(scripts.Script):
         keyremains = []
         if compact_mode:
             # get keylist of all selected blocks
+            base_prefix = "cond_stage_model." if not isxl else "conditioner."
             for k in models['model_a'].keys():
                 keyadded = False
                 for s in selected_blocks:
                     if s in k:
                         # ignore all non block releated keys
-                        if "diffusion_model." not in k and "cond_stage_model." not in k:
+                        if "diffusion_model." not in k and base_prefix not in k:
                             continue
                         keys.append(k)
                         theta_0[k] = models['model_a'][k]
@@ -1008,7 +1012,7 @@ class ModelMixerScript(scripts.Script):
             theta_0 = models['model_a'].copy()
 
         # save some dicts
-        checkpoint_dict_skip_on_merge = ["cond_stage_model.transformer.text_model.embeddings.position_ids"]
+        checkpoint_dict_skip_on_merge = ["cond_stage_model.transformer.text_model.embeddings.position_ids", "conditioner.embedders.1.model.transformer.text_model.embeddings.position_ids" ]
         for k in checkpoint_dict_skip_on_merge:
             if k in keys:
                 keys.remove(k)
