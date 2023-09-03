@@ -593,7 +593,7 @@ class ModelMixerScript(scripts.Script):
             return gr.update(value = value)
 
         def sync_main_checkpoint(enable_sync, model):
-            ret = [gr.update(value=True if is_xl(model) else False, visible=True if is_xl(model) is None else False)]
+            ret = [gr.update(value=True if is_xl(model) else False, interactive=True if is_xl(model) is None else False)]
             ret.append(gr.update(value=model))
             # load checkpoint
             if enable_sync:
