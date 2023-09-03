@@ -360,6 +360,8 @@ class ModelMixerScript(scripts.Script):
             with gr.Row():
                 enable_sync = gr.Checkbox(label="Sync with Default SD checkpoint", value=False, visible=True)
                 is_sdxl = gr.Checkbox(label="is SDXL", value=False, visible=True)
+            with gr.Row():
+                recipe_all = gr.HTML("<h3></h3>")
 
             mm_max_models = gr.Number(value=num_models, precision=0, visible=False)
             merge_method_info = [{}] * num_models
@@ -766,6 +768,33 @@ class ModelMixerScript(scripts.Script):
         read_model_b_metadata.click(fn=model_metadata, inputs=[mm_models[0]], outputs=[metadata_json])
         save_current.click(fn=save_current_model, inputs=[custom_name, bake_in_vae, save_settings, metadata_settings], outputs=[logging])
 
+        def recipe_update(num_models, *_args):
+            uses = [False]*num_models
+            modes = [None]*num_models
+            models = [None]*num_models
+            j = 0
+            recipe = "A"
+            for n in range(num_models):
+                uses[n] = _args[n]
+                modes[n] = _args[num_models + n]
+                models[n] = None if _args[num_models*2 + n] == "None" else _args[num_models*2 + n]
+                modelname = chr(66+n)
+                if uses[n] and models[n] is not None:
+                    if "Sum" in modes[n]:
+                        recipe = f"({recipe})" if recipe.find(" ") != -1 else recipe
+                        recipe = f"{recipe} × (1 - α<sub>{n}</sub>) + {modelname} × α<sub>{n}</sub>"
+                    elif "Add-Diff" in modes[n]:
+                        recipe = f"{recipe} + ({modelname} - base) × α<sub>{n}</sub>"
+
+            if recipe == "A":
+                recipe = "<h3></h3>"
+            else:
+                recipe = f"<h3>Recipe: {recipe}</h3>"
+            return gr.update(value=recipe)
+
+        # recipe all
+        recipe_all.change(fn=recipe_update, inputs=[mm_max_models, *mm_use, *mm_modes, *mm_models], outputs=recipe_all, show_progress=False)
+
         def config_sdxl(isxl, num_models):
             ret = [gr.update(visible=True) for _ in range(26)] if not isxl else [gr.update(visible=ISXLBLOCK[i]) for i in range(26)]
             choices = ["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:] if not isxl else ["ALL","BASE","INP*","MID","OUT*"]+BLOCKIDXL[1:]
@@ -787,8 +816,9 @@ class ModelMixerScript(scripts.Script):
 
             mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=members)
             mm_usembws[n].change(fn=lambda mbws: gr_enable(len(mbws) == 0), inputs=[mm_usembws[n]], outputs=[mm_alpha[n]], show_progress=False)
-            mm_models[n].change(fn=lambda modelname: gr_show(modelname != "None"), inputs=[mm_models[n]], outputs=[model_options[n]])
-            mm_modes[n].change(fn=(lambda nd: lambda mode: gr.update(info=merge_method_info[nd][mode]))(n), inputs=[mm_modes[n]], outputs=[mm_modes[n]], show_progress=False)
+            mm_models[n].change(fn=lambda modelname: [gr_show(modelname != "None"), gr.update(value="<h3>...</h3>")], inputs=[mm_models[n]], outputs=[model_options[n], recipe_all], show_progress=False)
+            mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
+            mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
             mbw_use_advanced[n].change(fn=lambda mode: [gr.update(visible=True), gr.update(visible=False)] if mode==True else [gr.update(visible=False),gr.update(visible=True)], inputs=[mbw_use_advanced[n]], outputs=[mbw_advanced[n], mbw_simple[n]])
 
         return [enabled, model_a, base_model, mm_max_models, *mm_use, *mm_models, *mm_modes, *mm_alpha, *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights]
