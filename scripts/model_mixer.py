@@ -345,6 +345,11 @@ class ModelMixerScript(scripts.Script):
 
         default_use[0] = True
 
+        def initial_checkpoint():
+            if shared.sd_model is not None and shared.sd_model.sd_checkpoint_info is not None:
+                return shared.sd_model.sd_checkpoint_info.title
+            return sd_models.checkpoint_tiles()[0]
+
         with gr.Accordion("Checkpoint Model Mixer", open=False):
             with gr.Row():
                 mm_information = gr.HTML("Merge multiple models and load it for image generation.")
@@ -352,7 +357,7 @@ class ModelMixerScript(scripts.Script):
                 enabled = gr.Checkbox(label="Enable Model Mixer", value=False, visible=True)
 
             with gr.Row():
-                model_a = gr.Dropdown(sd_models.checkpoint_tiles(), value=shared.sd_model.sd_checkpoint_info.title, elem_id="model_mixer_model_a", label="Model A", interactive=True)
+                model_a = gr.Dropdown(sd_models.checkpoint_tiles(), value=initial_checkpoint, elem_id="model_mixer_model_a", label="Model A", interactive=True)
                 create_refresh_button(model_a, sd_models.list_models,lambda: {"choices": sd_models.checkpoint_tiles(), "value": get_valid_checkpoint_title()},"refresh_checkpoint_Z")
 
                 base_model = gr.Dropdown(["None"]+sd_models.checkpoint_tiles(), elem_id="model_mixer_model_base", value="None", label="Base Model used for Add-Difference mode", interactive=True)
