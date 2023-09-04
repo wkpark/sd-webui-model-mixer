@@ -470,6 +470,29 @@ class ModelMixerScript(scripts.Script):
                     dtrue =  gr.Checkbox(value = True, visible = False)
                     dfalse =  gr.Checkbox(value = False, visible = False)
 
+            with gr.Accordion("Adjust settings", open=False):
+                with gr.Row():
+                    mm_finetune = gr.Textbox(label="Adjust settings", show_label=False, info="IN,OUT,OUT2,Contrast,COL1,COL2,COL3", visible=True, value="0,0,0,0,0,0,0", lines=1)
+                    finetune_write = gr.Button(value="↑", elem_classes=["tool"])
+                    finetune_read = gr.Button(value="↓", elem_classes=["tool"])
+                    finetune_reset = gr.Button(value="\U0001f5d1\ufe0f", elem_classes=["tool"])
+                with gr.Row():
+                    with gr.Column(scale=1, min_width=100):
+                        detail1 = gr.Slider(label="IN", minimum=-6, maximum=6, step=0.01, value=0, info="Detail/Noise")
+                    with gr.Column(scale=1, min_width=100):
+                        detail2 = gr.Slider(label="OUT", minimum=-6, maximum=6, step=0.01, value=0, info="Detail/Noise")
+                    with gr.Column(scale=1, min_width=100):
+                        detail3 = gr.Slider(label="OUT2", minimum=-6, maximum=6, step=0.01, value=0, info="Detail/Noise")
+                with gr.Row():
+                    with gr.Column(scale=1, min_width=100):
+                        contrast = gr.Slider(label="Contrast", minimum=-10, maximum=10, step=0.01, value=0, info="Contrast/Detail")
+                    with gr.Column(scale=1, min_width=100):
+                        col1 = gr.Slider(label="Color1", minimum=-10, maximum=10, step=0.01, value=0, info="Color Tone 1")
+                    with gr.Column(scale=1, min_width=100):
+                        col2 = gr.Slider(label="Color2", minimum=-10, maximum=10, step=0.01, value=0, info="Color Tone 2")
+                    with gr.Column(scale=1, min_width=100):
+                        col3 = gr.Slider(label="Color3", minimum=-10, maximum=10, step=0.01, value=0, info="Color Tone 3")
+
             with gr.Accordion("Save the current merged model", open=False):
                 with gr.Row():
                     logging = gr.Textbox(label="Message", lines=1, value="", show_label=False, info="log message")
@@ -798,6 +821,37 @@ class ModelMixerScript(scripts.Script):
         # recipe all
         recipe_all.change(fn=recipe_update, inputs=[mm_max_models, *mm_use, *mm_modes, *mm_models], outputs=recipe_all, show_progress=False)
 
+        def finetune_update(finetune, detail1, detail2, detail3,contrast, col1, col2, col3):
+            arr = [detail1, detail2, detail3, contrast, col1, col2, col3]
+            tmp = ",".join(map(lambda x: str(int(x)) if x == 0.0 else str(x), arr))
+            if finetune != tmp:
+                return gr.update(value=tmp)
+            return gr.update()
+
+        def finetune_reader(finetune):
+            tmp = [t.strip() for t in finetune.split(",")]
+            ret = [gr.update()]*7
+            for i, f in enumerate(tmp[0:7]):
+                try:
+                    f = float(f)
+                    ret[i] = gr.update(value=f)
+                except:
+                    pass
+            return ret
+
+        # update finetune
+        finetunes = [detail1, detail2, detail3, contrast, col1, col2, col3]
+        finetune_reset.click(fn=lambda: [gr.update(value="0,0,0,0,0,0,0")]+[gr.update(value=0.0)]*7, inputs=[], outputs=[mm_finetune, *finetunes])
+        finetune_read.click(fn=finetune_reader, inputs=[mm_finetune], outputs=[*finetunes])
+        finetune_write.click(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=[mm_finetune])
+        detail1.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
+        detail2.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
+        detail3.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
+        contrast.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
+        col1.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
+        col2.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
+        col3.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
+
         def config_sdxl(isxl, num_models):
             ret = [gr.update(visible=True) for _ in range(26)] if not isxl else [gr.update(visible=ISXLBLOCK[i]) for i in range(26)]
             choices = ["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:] if not isxl else ["ALL","BASE","INP*","MID","OUT*"]+BLOCKIDXL[1:]
@@ -824,7 +878,7 @@ class ModelMixerScript(scripts.Script):
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
             mbw_use_advanced[n].change(fn=lambda mode: [gr.update(visible=True), gr.update(visible=False)] if mode==True else [gr.update(visible=False),gr.update(visible=True)], inputs=[mbw_use_advanced[n]], outputs=[mbw_advanced[n], mbw_simple[n]])
 
-        return [enabled, model_a, base_model, mm_max_models, *mm_use, *mm_models, *mm_modes, *mm_alpha, *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights]
+        return [enabled, model_a, base_model, mm_max_models, mm_finetune, *mm_use, *mm_models, *mm_modes, *mm_alpha, *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights]
 
     def modelmixer_extra_params(self, model_a, base_model, mm_max_models, *args_):
         num_models = int(mm_max_models)
@@ -855,7 +909,7 @@ class ModelMixerScript(scripts.Script):
 
         return params
 
-    def before_process(self, p, enabled, model_a, base_model, mm_max_models, *args_):
+    def before_process(self, p, enabled, model_a, base_model, mm_max_models, mm_finetune, *args_):
         if not enabled:
             return
 
@@ -929,6 +983,7 @@ class ModelMixerScript(scripts.Script):
         print("  - usembws", mm_usembws)
         print("  - weights", mm_weights)
         print("  - alpha", mm_alpha)
+        print("  - finetune", mm_finetune)
 
         mm_weights_orig = mm_weights
 
@@ -1167,6 +1222,53 @@ class ModelMixerScript(scripts.Script):
         # store unmodified remains
         for key in (tqdm(keyremains, desc=f"Save unchanged weights #{stages}/{stages}")):
             theta_0[key] = models['model_a'][key]
+
+        # fine tune (from supermerger)
+        tunekeys = [
+            "model.diffusion_model.input_blocks.0.0.weight",
+            "model.diffusion_model.input_blocks.0.0.bias",
+
+            "model.diffusion_model.out.0.weight",
+            "model.diffusion_model.out.0.bias",
+
+            "model.diffusion_model.out.2.weight",
+            "model.diffusion_model.out.2.bias",
+        ]
+
+        # parse finetune: IN,OUT1,OUT2,CONTRAST,COL1,COL2,COL3
+        def fineman(fine):
+            if fine.find(",") != -1:
+                tmp = [t.strip() for t in fine.split(",")]
+                fines = [0.0]*7
+                for i,f in enumerate(tmp):
+                    try:
+                        f = float(f)
+                        fines[i] = f
+                    except Exception:
+                        pass
+
+                fine = [
+                    1 - fines[0] * 0.01,
+                    1 + fines[0] * 0.02,
+                    1 - fines[1] * 0.01,
+                    1 + fines[1] * 0.02,
+                    1 - fines[2] * 0.01,
+                    [f * 0.02 for f in fines[3:7]]
+                ]
+                return fine
+            return None
+
+        # apply finetune
+        mm_finetune = mm_finetune.strip()
+        if mm_finetune != "":
+            fines = fineman(mm_finetune)
+            if fines is not None:
+                print(f"Apply fine tune {fines}")
+                for i, key in enumerate(tunekeys):
+                    if i == 5:
+                        theta_0[key] = theta_0[key] + torch.tensor(fines[5])
+                    elif fines[i] != 1.0:
+                        theta_0[key] = theta_0[key] * fines[i]
 
         # save recipe
         alphastr = ','.join(['(' + ','.join(map(lambda x: str(int(x)) if x == 0.0 else str(x), sub)) + ')' for sub in alphas])
