@@ -770,7 +770,8 @@ class ModelMixerScript(scripts.Script):
         self.infotext_fields = (
             (model_a, "ModelMixer model a"),
             (base_model, "ModelMixer base model"),
-            (mm_max_models, "ModelMixer max models")
+            (mm_max_models, "ModelMixer max models"),
+            (mm_finetune, "ModelMixer adjust"),
         )
 
         for n in range(num_models):
@@ -880,11 +881,12 @@ class ModelMixerScript(scripts.Script):
 
         return [enabled, model_a, base_model, mm_max_models, mm_finetune, *mm_use, *mm_models, *mm_modes, *mm_alpha, *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights]
 
-    def modelmixer_extra_params(self, model_a, base_model, mm_max_models, *args_):
+    def modelmixer_extra_params(self, model_a, base_model, mm_max_models, mm_finetune, *args_):
         num_models = int(mm_max_models)
         params = {
             "ModelMixer model a": model_a,
             "ModelMixer max models": mm_max_models,
+            "ModelMixer adjust": mm_finetune,
         }
         if base_model is not None and len(base_model) > 0:
             params.update({"ModelMixer base model": base_model})
@@ -963,11 +965,11 @@ class ModelMixerScript(scripts.Script):
                 mm_weights.append(weights)
 
         # extra_params
-        extra_params = self.modelmixer_extra_params(model_a, base_model, mm_max_models, *args_)
+        extra_params = self.modelmixer_extra_params(model_a, base_model, mm_max_models, mm_finetune, *args_)
         p.extra_generation_params.update(extra_params)
 
         # make a hash to cache results
-        sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_models, mm_modes, mm_alpha, mm_usembws, mm_weights]).encode("utf-8")).hexdigest()
+        sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_models, mm_modes, mm_alpha, mm_usembws, mm_weights]).encode("utf-8")).hexdigest()
         print("config hash = ", sha256)
         if shared.sd_model.sd_checkpoint_info is not None and shared.sd_model.sd_checkpoint_info.sha256 == sha256:
             # already mixed
@@ -983,7 +985,7 @@ class ModelMixerScript(scripts.Script):
         print("  - usembws", mm_usembws)
         print("  - weights", mm_weights)
         print("  - alpha", mm_alpha)
-        print("  - finetune", mm_finetune)
+        print("  - adjust", mm_finetune)
 
         mm_weights_orig = mm_weights
 
