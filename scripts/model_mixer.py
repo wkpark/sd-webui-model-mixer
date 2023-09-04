@@ -1134,9 +1134,11 @@ class ModelMixerScript(scripts.Script):
                         alpha = mm_weights[n][i]
 
                     if modes[n] == "Sum":
-                        theta_0[key] = (1 - alpha) * (theta_0[key]) + alpha * theta_1[key]
+                        if alpha != 0.0:
+                            theta_0[key] = (1 - alpha) * (theta_0[key]) + alpha * theta_1[key]
                     else:
-                        theta_0[key] = theta_0[key] + (theta_1[key] - model_base[key]) * alpha
+                        if alpha != 0.0:
+                            theta_0[key] = theta_0[key] + (theta_1[key] - model_base[key]) * alpha
 
             # recipe string
             if modes[n] == "Sum":
