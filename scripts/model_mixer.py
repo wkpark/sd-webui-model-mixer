@@ -57,6 +57,7 @@ def calc_mbws(mbw, mbw_blocks, isxl=False):
     BLOCKOFFSET = 13 if not isxl else 10
     selected = [False]*MAXLEN
     compact_blocks = []
+    BLOCKIDS = BLOCKID if not isxl else BLOCKIDXL
 
     # no mbws blocks selected or have 'ALL' alias
     if len(mbw_blocks) == 0 or 'ALL' in mbw_blocks:
@@ -80,7 +81,7 @@ def calc_mbws(mbw, mbw_blocks, isxl=False):
             if name not in mbw_blocks:
                 mbw_blocks.append(name)
 
-    for i, name in enumerate(BLOCKID):
+    for i, name in enumerate(BLOCKIDS):
         if name in mbw_blocks:
             if name[0:2] == 'IN':
                 expect += 1
