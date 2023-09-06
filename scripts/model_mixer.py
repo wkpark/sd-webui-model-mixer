@@ -886,8 +886,10 @@ class ModelMixerScript(scripts.Script):
         params = {
             "ModelMixer model a": model_a,
             "ModelMixer max models": mm_max_models,
-            "ModelMixer adjust": mm_finetune,
         }
+
+        if mm_finetune != "":
+            params.update({"ModelMixer adjust": mm_finetune})
         if base_model is not None and len(base_model) > 0:
             params.update({"ModelMixer base model": base_model})
 
@@ -1262,7 +1264,7 @@ class ModelMixerScript(scripts.Script):
 
         # apply finetune
         mm_finetune = mm_finetune.strip()
-        if mm_finetune != "":
+        if mm_finetune.rstrip(",0") != "":
             fines = fineman(mm_finetune)
             if fines is not None:
                 print(f"Apply fine tune {fines}")
