@@ -107,6 +107,10 @@ def _mbwpresets(raw=None):
                 presets[k] = w
             elif len(w) == 25: # weights without BASE element
                 presets[k] = [0.0] + w
+            elif len(w) == 20: # SDXL weights
+                presets[f"{k}.XL"] = w
+            elif len(w) == 19: # SDXL weights without BASE element
+                presets[f"{k}.XL"] = [0.0] + w
 
     return presets
 
@@ -974,7 +978,18 @@ class ModelMixerScript(scripts.Script):
         def on_change_preset_weight(preset):
             weights = find_preset_by_name(preset)
             if weights is not None:
-                return [gr.update(value = float(w)) for w in weights]
+                if len(weights) == 26:
+                    return [gr.update(value = float(w)) for w in weights]
+                elif len(weights) == 20:
+                    j = 0
+                    ret = []
+                    for i, v in enumerate(ISXLBLOCK):
+                        if v:
+                            ret.append(gr.update(value = float(weights[j])))
+                            j += 1
+                        else:
+                            ret.append(gr.update())
+                    return ret
 
         def save_preset_weight(preset, weight, overwrite=False):
             # check already have
@@ -986,7 +1001,7 @@ class ModelMixerScript(scripts.Script):
             if os.path.isfile(filepath):
                 # prepare weight
                 arr = [f.strip() for f in weight.split(",")]
-                if len(arr) != 26:
+                if len(arr) != 26 and len(arr) != 20:
                     raise gr.Error("Invalid weight")
                 for i, a in enumerate(arr):
                     try:
@@ -996,8 +1011,12 @@ class ModelMixerScript(scripts.Script):
                         arr[i] = 0.0
                         pass
 
+                if preset.find(".XL") > 0:
+                    # get the original preset name "foobar.XL" -> "foobar"
+                    preset = preset[0:-3]
                 newpreset = preset + "\t" + ",".join(map(lambda x: str(int(x)) if x == int(x) else str(x), arr))
                 if w is not None:
+                    replaced = False
                     # replace preset entry
                     with open(filepath, "r+") as f:
                         raw = f.read()
@@ -1005,13 +1024,15 @@ class ModelMixerScript(scripts.Script):
                         lines = raw.splitlines()
                         for i, l in enumerate(lines[1:], start=1):
                             if ":" in l:
-                                k, _ = l.split(":", 1)
+                                k, ws = l.split(":", 1)
                             elif "\t" in l:
-                                k, _ = l.split("\t", 1)
+                                k, ws = l.split("\t", 1)
                             elif "," in l:
-                                k, _ = l.split(",", 1)
-                            if k.strip() == preset:
+                                k, ws = l.split(",", 1)
+                            ws = ws.split(",")
+                            if k.strip() == preset and len(ws) == len(w):
                                 lines[i] = newpreset
+                                replaced = True
                                 break
 
                         f.seek(0)
@@ -1019,6 +1040,8 @@ class ModelMixerScript(scripts.Script):
                         f.write(raw)
                         f.truncate()
 
+                    if not replaced:
+                        raise gr.Error("Fail to save. Preset not found or mismatched")
                 else:
                     # append preset entry
                     try:
@@ -1028,11 +1051,13 @@ class ModelMixerScript(scripts.Script):
                         print(e)
                         pass
 
+            gr.Info(f"Successfully save preset {preset}")
+
             # update dropdown
             updated = list(mbwpresets(True).keys())
             return gr.update(choices=updated)
 
-        def delete_preset_weight(preset, confirm=True):
+        def delete_preset_weight(preset, weight, confirm=True):
             w = find_preset_by_name(preset)
             if w is None:
                 raise gr.Error("Preset not exists")
@@ -1040,7 +1065,10 @@ class ModelMixerScript(scripts.Script):
                 raise gr.Error("Please confirm before delete entry")
 
             filepath = os.path.join(scriptdir, "data", "mbwpresets.tsv")
+            deleted = False
             if os.path.isfile(filepath):
+                if preset.find(".XL") > 0: # to original name "foobar.XL" -> "foobar"
+                    preset = preset[0:-3]
                 # search preset entry
                 with open(filepath, "r+") as f:
                     raw = f.read()
@@ -1049,13 +1077,16 @@ class ModelMixerScript(scripts.Script):
                     newlines = [lines[0]]
                     for l in lines[1:]:
                         if ":" in l:
-                            k, _ = l.split(":", 1)
+                            k, ws = l.split(":", 1)
                         elif "\t" in l:
-                            k, _ = l.split("\t", 1)
+                            k, ws = l.split("\t", 1)
                         elif "," in l:
-                            k, _ = l.split(",", 1)
-                        if k.strip() == preset:
+                            k, ws = l.split(",", 1)
+                        ws = ws.split(",")
+                        # check weight length
+                        if k.strip() == preset and len(ws) == len(w):
                             # remove.
+                            deleted = True
                             continue
                         if len(l) > 0:
                             newlines.append(l)
@@ -1064,6 +1095,11 @@ class ModelMixerScript(scripts.Script):
                     f.seek(0)
                     f.write(raw)
                     f.truncate()
+
+            if not deleted:
+                raise gr.Error("Fail to delete. Preset not found or mismatched.")
+
+            gr.Info(f"Successfully deleted preset {preset}")
 
             # update dropdown
             updated = list(mbwpresets(True).keys())
@@ -1087,7 +1123,7 @@ class ModelMixerScript(scripts.Script):
         preset_edit_select.change(fn=select_preset, inputs=[preset_edit_select, preset_edit_weight], outputs=preset_edit_weight, show_progress=False)
         preset_edit_read.click(fn=select_preset, inputs=[preset_edit_select], outputs=preset_edit_weight, show_progress=False)
         preset_edit_save.click(fn=save_preset_weight, inputs=[preset_edit_select, preset_edit_weight, preset_edit_overwrite], outputs=[preset_edit_select])
-        preset_edit_delete.click(fn=delete_preset_weight, inputs=[preset_edit_select], outputs=[preset_edit_select])
+        preset_edit_delete.click(fn=delete_preset_weight, inputs=[preset_edit_select, preset_edit_weight], outputs=[preset_edit_select])
 
         for n in range(num_models):
             mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
