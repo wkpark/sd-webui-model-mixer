@@ -10,6 +10,7 @@ import gradio as gr
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import time
 import tqdm
 from tqdm import tqdm
@@ -17,14 +18,21 @@ import torch
 from safetensors.torch import save_file
 
 from copy import copy, deepcopy
-from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings
+from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings, ui_common
 from modules import scripts, cache
 from modules.sd_models import model_hash, model_path, checkpoints_loaded
+from modules.scripts import basedir
 from modules.timer import Timer
 from modules.ui import create_refresh_button
 
 dump_cache = cache.dump_cache
 cache = cache.cache
+
+scriptdir = basedir()
+
+save_symbol = "\U0001f4be"  # 💾
+delete_symbol = "\U0001f5d1\ufe0f"  # 🗑️
+refresh_symbol = "\U0001f504"  # 🔄
 
 BLOCKID  =["BASE","IN00","IN01","IN02","IN03","IN04","IN05","IN06","IN07","IN08","IN09","IN10","IN11","M00","OUT00","OUT01","OUT02","OUT03","OUT04","OUT05","OUT06","OUT07","OUT08","OUT09","OUT10","OUT11"]
 BLOCKIDXL=["BASE","IN00","IN01","IN02","IN03","IN04","IN05","IN06","IN07","IN08",                     "M00","OUT00","OUT01","OUT02","OUT03","OUT04","OUT05","OUT06","OUT07","OUT08",                       ]
@@ -48,6 +56,75 @@ def slider2text(isxl, *slider):
     else:
         selected = slider
     return gr.update(value = ",".join([str(x) for x in selected]))
+
+parsed_mbwpresets = {}
+def _load_mbwpresets():
+    raw = None
+    userfilepath = os.path.join(scriptdir, "data","mbwpresets.tsv")
+    if os.path.isfile(userfilepath):
+        try:
+            with open(userfilepath) as f:
+                raw = f.read()
+                filepath = userfilepath
+        except OSError as e:
+            print(e)
+            pass
+    else:
+        if not os.path.exists(os.path.join(scriptdir, "data")):
+            os.makedirs(os.path.join(scriptdir, "data"))
+
+        filepath = os.path.join(scriptdir, "scripts", "mbwpresets.tsv.in")
+        try:
+            with open(filepath) as f:
+                raw = f.read()
+                shutil.copyfile(filepath, userfilepath)
+        except OSError as e:
+            print(e)
+            pass
+
+    return raw
+
+def _mbwpresets(raw=None):
+    if raw is None:
+        raw = _load_mbwpresets()
+        if raw is None:
+            return {}
+
+    lines = raw.splitlines()
+    presets = {}
+    for l in lines[1:]:
+        w = None
+        if ":" in l:
+            k, w = l.split(":", 1)
+        elif "\t" in l:
+            k, w = l.split("\t", 1)
+        elif "," in l:
+            k, w = l.split(",", 1)
+        if w is not None:
+            k = k.strip()
+            w = [w for w in w.split(",")]
+            if len(w) == 26:
+                presets[k] = w
+            elif len(w) == 25: # weights without BASE element
+                presets[k] = [0.0] + w
+
+    return presets
+
+def mbwpresets(reload=False):
+    global parsed_mbwpresets
+    if reload or len(parsed_mbwpresets) == 0:
+        parsed_mbwpresets = _mbwpresets()
+
+    return parsed_mbwpresets
+
+def find_preset_by_name(preset, presets=None, reload=False):
+    if presets is None:
+        presets = mbwpresets(reload=reload)
+
+    if preset in presets:
+        return presets[preset]
+
+    return None
 
 def calc_mbws(mbw, mbw_blocks, isxl=False):
     weights = [t.strip() for t in mbw.split(",")]
@@ -410,6 +487,30 @@ class ModelMixerScript(scripts.Script):
                                 mm_readalpha[n] = gr.Button(elem_id="copytogen", value="↓ read alpha")
 
             with gr.Accordion("Block Level Weights", open=False):
+
+                with gr.Row():
+                    with gr.Column():
+                        with gr.Row():
+                            preset_weight = gr.Dropdown(label="Load preset", choices=mbwpresets().keys(), interactive=True, elem_id="model_mixer_presets")
+                            create_refresh_button(preset_weight, lambda: None, lambda: {"choices": list(mbwpresets(True).keys())}, "mm_refresh_presets")
+                            preset_save = gr.Button(value=save_symbol, elem_classes=["tool"])
+
+                    with gr.Box(elem_id=f"mm_preset_edit_dialog", elem_classes="popup-dialog") as preset_edit_dialog:
+                        with gr.Row():
+                            preset_edit_select = gr.Dropdown(label="Presets", elem_id="mm_preset_edit_edit_select", choices=mbwpresets().keys(), interactive=True, value=[], allow_custom_value=True, info="Preset editing allow you to add custom weight presets.")
+                            create_refresh_button(preset_edit_select, lambda:  None , lambda: {"choices": list(mbwpresets(True).keys())}, "mm_refresh_presets")
+                            preset_edit_read = gr.Button(value="↓", elem_classes=["tool"])
+                        with gr.Row():
+                            preset_edit_weight = gr.Textbox(label="Weights", show_label=True, elem_id=f"mm_preset_edit", lines=1)
+
+                        with gr.Row():
+                            preset_edit_overwrite = gr.Checkbox(label="Overwrite", value=False, interactive=True, visible=False) # XXX checkbox is not working with dialog
+                            preset_edit_save = gr.Button('Save', variant='primary', elem_id=f'mm_preset_edit_save')
+                            preset_edit_delete = gr.Button('Delete', variant='primary', elem_id=f'mm_preset_edit_delete')
+                            preset_edit_close = gr.Button('Close', variant='secondary', elem_id=f'mm_preset_edit_close')
+
+                    ui_common.setup_dialog(button_show=preset_save, dialog=preset_edit_dialog, button_close=preset_edit_close)
+                    # preset_save.click() will be redefined later
 
                 with gr.Row():
                     with gr.Column(scale=1, min_width=100):
@@ -868,6 +969,125 @@ class ModelMixerScript(scripts.Script):
         resetweight.click(fn=resetblockweights, inputs=[resetval,resetblockopt], outputs=members)
         addweight.click(fn=addblockweights, inputs=[resetval, resetblockopt, *members], outputs=members)
         mulweight.click(fn=mulblockweights, inputs=[resetval, resetblockopt, *members], outputs=members)
+
+        # for weight presets
+        def on_change_preset_weight(preset):
+            weights = find_preset_by_name(preset)
+            if weights is not None:
+                return [gr.update(value = float(w)) for w in weights]
+
+        def save_preset_weight(preset, weight, overwrite=False):
+            # check already have
+            w = find_preset_by_name(preset)
+            if w is not None and not overwrite:
+                raise gr.Error("Preset exists. Please enable overwrite or rename it before save a new preset")
+
+            filepath = os.path.join(scriptdir, "data", "mbwpresets.tsv")
+            if os.path.isfile(filepath):
+                # prepare weight
+                arr = [f.strip() for f in weight.split(",")]
+                if len(arr) != 26:
+                    raise gr.Error("Invalid weight")
+                for i, a in enumerate(arr):
+                    try:
+                        a = float(a)
+                        arr[i] = a
+                    except:
+                        arr[i] = 0.0
+                        pass
+
+                newpreset = preset + "\t" + ",".join(map(lambda x: str(int(x)) if x == int(x) else str(x), arr))
+                if w is not None:
+                    # replace preset entry
+                    with open(filepath, "r+") as f:
+                        raw = f.read()
+
+                        lines = raw.splitlines()
+                        for i, l in enumerate(lines[1:], start=1):
+                            if ":" in l:
+                                k, _ = l.split(":", 1)
+                            elif "\t" in l:
+                                k, _ = l.split("\t", 1)
+                            elif "," in l:
+                                k, _ = l.split(",", 1)
+                            if k.strip() == preset:
+                                lines[i] = newpreset
+                                break
+
+                        f.seek(0)
+                        raw = "\n".join(lines) + "\n"
+                        f.write(raw)
+                        f.truncate()
+
+                else:
+                    # append preset entry
+                    try:
+                        with open(filepath, "a") as f:
+                            f.write(newpreset + "\n")
+                    except OSError as e:
+                        print(e)
+                        pass
+
+            # update dropdown
+            updated = list(mbwpresets(True).keys())
+            return gr.update(choices=updated)
+
+        def delete_preset_weight(preset, confirm=True):
+            w = find_preset_by_name(preset)
+            if w is None:
+                raise gr.Error("Preset not exists")
+            if not confirm:
+                raise gr.Error("Please confirm before delete entry")
+
+            filepath = os.path.join(scriptdir, "data", "mbwpresets.tsv")
+            if os.path.isfile(filepath):
+                # search preset entry
+                with open(filepath, "r+") as f:
+                    raw = f.read()
+
+                    lines = raw.splitlines()
+                    newlines = [lines[0]]
+                    for l in lines[1:]:
+                        if ":" in l:
+                            k, _ = l.split(":", 1)
+                        elif "\t" in l:
+                            k, _ = l.split("\t", 1)
+                        elif "," in l:
+                            k, _ = l.split(",", 1)
+                        if k.strip() == preset:
+                            # remove.
+                            continue
+                        if len(l) > 0:
+                            newlines.append(l)
+
+                    raw = "\n".join(newlines) + "\n"
+                    f.seek(0)
+                    f.write(raw)
+                    f.truncate()
+
+            # update dropdown
+            updated = list(mbwpresets(True).keys())
+            return gr.update(choices=updated)
+
+        def select_preset(name, weight=""):
+            weights = find_preset_by_name(name)
+            if weights is not None and weight == "":
+                return gr.update(value=",".join(weights))
+
+            return gr.update()
+
+        preset_weight.change(fn=on_change_preset_weight, inputs=[preset_weight], outputs=members)
+        preset_save.click(
+            fn=lambda isxl, *mem: [slider2text(isxl, *mem), gr.update(visible=True)],
+            inputs=[is_sdxl, *members],
+            outputs=[preset_edit_weight, preset_edit_dialog],
+            show_progress=False,
+        ).then(fn=None, _js="function(){ popupId('" + preset_edit_dialog.elem_id + "'); }")
+
+        preset_edit_select.change(fn=select_preset, inputs=[preset_edit_select, preset_edit_weight], outputs=preset_edit_weight, show_progress=False)
+        preset_edit_read.click(fn=select_preset, inputs=[preset_edit_select], outputs=preset_edit_weight, show_progress=False)
+        preset_edit_save.click(fn=save_preset_weight, inputs=[preset_edit_select, preset_edit_weight, preset_edit_overwrite], outputs=[preset_edit_select])
+        preset_edit_delete.click(fn=delete_preset_weight, inputs=[preset_edit_select], outputs=[preset_edit_select])
 
         for n in range(num_models):
             mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
