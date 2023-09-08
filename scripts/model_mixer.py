@@ -812,7 +812,7 @@ class ModelMixerScript(scripts.Script):
                 return gr.update(value=err_msg)
 
             if not custom_name or custom_name == "":
-                fname = shared.sd_model.sd_checkpoint_info.model_name.replace(" ","").replace(",","_").replace("(","_").replace(")","_") + pre + ext
+                fname = shared.sd_model.sd_checkpoint_info.name_for_extra.replace(" ","").replace(",","_").replace("(","_").replace(")","_") + pre + ext
                 if fname[0] == "_":
                     fname = fname[1:]
             else:
@@ -1540,7 +1540,7 @@ class ModelMixerScript(scripts.Script):
         # load theta_0, checkpoint_info was used for model_a
         # XXX make a FAKE checkpoint_info
         # change model name (name_for_extra field used webui internally)
-        checkpoint_info.name_for_extra = " + ".join(modelinfos)
+        checkpoint_info.name_for_extra = recipe_all + alphastr
 
         checkpoint_info.sha256 = sha256
         checkpoint_info.name = checkpoint_info.name_for_extra + ".safetensors"
@@ -1564,6 +1564,11 @@ class ModelMixerScript(scripts.Script):
         #sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
         # XXX call load_model_weights() to work with --medvram-sdxl option
         sd_models.load_model_weights(shared.sd_model, checkpoint_info, theta_0, timer)
+
+        # XXX fix checkpoint_info.filename
+        filename = os.path.join(model_path, recipe_all + alphastr)
+        shared.sd_model.sd_model_checkpoint = checkpoint_info.filename = filename
+
         if shared.opts.sd_checkpoint_cache > 0:
             # unload cached merged model
             checkpoints_loaded.popitem()
