@@ -1264,7 +1264,7 @@ class ModelMixerScript(scripts.Script):
         models['model_a'] = None
         # get cached state_dict
         if shared.opts.sd_checkpoint_cache > 0:
-            models['model_a'] = sd_models.get_checkpoint_state_dict(checkpoint_info, timer)
+            models['model_a'] = sd_models.get_checkpoint_state_dict(checkpoint_info, timer).copy()
             # check validity of cached state_dict
             keylen = len(models['model_a'].keys())
             if keylen < 686: # for SD-v1, SD-v2
@@ -1274,7 +1274,7 @@ class ModelMixerScript(scripts.Script):
         if models['model_a'] is None:
             # read state_dict from file
             print(f"Loading {checkpoint_info.filename}...")
-            models['model_a'] = sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu")
+            models['model_a'] = sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
 
         # check SDXL
         isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in models['model_a']
@@ -1417,7 +1417,7 @@ class ModelMixerScript(scripts.Script):
             checkpointinfo = sd_models.get_closet_checkpoint_match(file)
             model_name = checkpointinfo.model_name
             print(f"Loading model {model_name}...")
-            theta_1 = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu")
+            theta_1 = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu").copy()
 
             model_b = f"model_{chr(97+n+1-weight_start)}"
             merge_recipe[model_b] = model_name
