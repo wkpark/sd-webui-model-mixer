@@ -1584,6 +1584,14 @@ class ModelMixerScript(scripts.Script):
             # use new metadata
             checkpoint_info.metadata = metadata
 
+            # XXX HACK use any valid filename to trick checkpoint_info.calculate_shorthash()
+            if not os.path.exists(checkpoint_info.filename):
+                for title in sd_models.checkpoint_tiles():
+                    info = sd_models.get_closet_checkpoint_match(title)
+                    if info is not None and os.path.exists(info.filename):
+                        checkpoint_info.filename = info.filename
+                        break
+
             # XXX add a fake checkpoint_info
             # force to set with a new sha256 hash
             hashes = cache("hashes")
