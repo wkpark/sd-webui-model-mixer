@@ -1533,7 +1533,7 @@ class ModelMixerScript(scripts.Script):
                         theta_0[key] = theta_0[key] * fines[i]
 
         # save recipe
-        alphastr = ','.join(['(' + ','.join(map(lambda x: str(int(x)) if x == 0.0 else str(x), sub)) + ')' for sub in alphas])
+        alphastr = ','.join(['(' + ','.join(map(lambda x: str(int(x)) if x == int(x) else str(x), sub)) + ')' for sub in alphas])
         merge_recipe["recipe"] = recipe_all + alphastr
         metadata["sd_merge_recipe"] = merge_recipe
 
