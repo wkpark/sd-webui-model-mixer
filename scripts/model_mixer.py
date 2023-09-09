@@ -1273,7 +1273,7 @@ class ModelMixerScript(scripts.Script):
         # load models
         models = {}
 
-        def load_state_dict(checkpoint_info, force=False):
+        def load_state_dict(checkpoint_info):
             # is it already loaded model?
             already_loaded = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
             if already_loaded is not None and already_loaded.title == checkpoint_info.title:
@@ -1281,25 +1281,29 @@ class ModelMixerScript(scripts.Script):
                 print(f"Loading {checkpoint_info.title} from loaded model...")
                 return {k: v.cpu() for k, v in shared.sd_model.state_dict().items()}
 
-            if force:
-                sd_models.load_model(checkpoint_info)
-
             # get cached state_dict
             if shared.opts.sd_checkpoint_cache > 0:
-                timer = Timer()
-                model = sd_models.get_checkpoint_state_dict(checkpoint_info, timer)
-                # check validity of cached state_dict
-                keylen = len(model.keys())
-                if keylen < 686: # for SD-v1, SD-v2
-                    print(f"Invalid cached state_dict...")
-                else:
-                    return model
+                # call sd_models.get_checkpoint_state_dict() without calculate_shorthash() for fake checkpoint_info
+                if checkpoint_info in checkpoints_loaded:
+                    # use checkpoint cache
+                    print(f"Loading weights {checkpoint_info.title} from cache")
+                    model = checkpoints_loaded[checkpoint_info]
+                    # check validity of cached state_dict
+                    keylen = len(model.keys())
+                    if keylen < 686: # for SD-v1, SD-v2
+                        print(f"Invalid cached state_dict...")
+                    else:
+                        return model
+
+            if not os.path.exists(checkpoint_info.filename):
+                # this is a fake checkpoint_info
+                raise RuntimeError(f"No cached checkpoint found for {checkpoint_info.title}")
 
             # read state_dict from file
             print(f"Loading from file {checkpoint_info.filename}...")
             return sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
 
-        models['model_a'] = load_state_dict(checkpoint_info, force=True)
+        models['model_a'] = load_state_dict(checkpoint_info)
 
         # check SDXL
         isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in models['model_a']
@@ -1618,9 +1622,9 @@ class ModelMixerScript(scripts.Script):
         filename = os.path.join(model_path, f"{model_name}.safetensors")
         shared.sd_model.sd_model_checkpoint = checkpoint_info.filename = filename
 
-        if shared.opts.sd_checkpoint_cache > 0:
-            # unload cached merged model
-            checkpoints_loaded.popitem()
+        #if shared.opts.sd_checkpoint_cache > 0:
+        #    # unload cached merged model
+        #    checkpoints_loaded.popitem()
 
         del theta_0
 
