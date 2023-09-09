@@ -1287,13 +1287,13 @@ class ModelMixerScript(scripts.Script):
                 if checkpoint_info in checkpoints_loaded:
                     # use checkpoint cache
                     print(f"Loading weights {checkpoint_info.title} from cache")
-                    model = checkpoints_loaded[checkpoint_info]
+                    state_dict = checkpoints_loaded[checkpoint_info]
                     # check validity of cached state_dict
-                    keylen = len(model.keys())
+                    keylen = len(state_dict.keys())
                     if keylen < 686: # for SD-v1, SD-v2
                         print(f"Invalid cached state_dict...")
                     else:
-                        return model
+                        return {k: v.cpu() for k, v in state_dict.items()}
 
             if not os.path.exists(checkpoint_info.filename):
                 # this is a fake checkpoint_info
