@@ -1496,9 +1496,11 @@ class ModelMixerScript(scripts.Script):
 
         def make_recipe(recipe_all, modes, model_a, models):
             weight_start = 0
+            if model_a.find(" ") > -1: model_a = f"({model_a})"
             for n, file in enumerate(models, start=weight_start):
                 checkpointinfo = sd_models.get_closet_checkpoint_match(file)
                 model_name = checkpointinfo.model_name
+                if model_name.find(" ") > -1: model_name = f"({model_name})"
 
                 # recipe string
                 if modes[n] == "Sum":
