@@ -1272,31 +1272,34 @@ class ModelMixerScript(scripts.Script):
 
         # load models
         models = {}
-        timer = Timer()
 
-        # is it already loaded model?
-        already_loaded = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
-        if already_loaded is not None and already_loaded.title == checkpoint_info.title:
-            # model_a is already loaded
-            print(f"Loading {model_a} from loaded model...")
-            models['model_a'] = {k: v.cpu() for k, v in shared.sd_model.state_dict().items()}
-        else:
-            sd_models.load_model(checkpoint_info)
-            models['model_a'] = None
+        def load_state_dict(checkpoint_info, force=False):
+            # is it already loaded model?
+            already_loaded = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
+            if already_loaded is not None and already_loaded.title == checkpoint_info.title:
+                # model is already loaded
+                print(f"Loading {checkpoint_info.title} from loaded model...")
+                return {k: v.cpu() for k, v in shared.sd_model.state_dict().items()}
 
-        # get cached state_dict
-        if shared.opts.sd_checkpoint_cache > 0:
-            models['model_a'] = sd_models.get_checkpoint_state_dict(checkpoint_info, timer).copy()
-            # check validity of cached state_dict
-            keylen = len(models['model_a'].keys())
-            if keylen < 686: # for SD-v1, SD-v2
-                models['model_a'] = None
-                print(f"Invalid cached state_dict...")
+            if force:
+                sd_models.load_model(checkpoint_info)
 
-        if models['model_a'] is None:
+            # get cached state_dict
+            if shared.opts.sd_checkpoint_cache > 0:
+                timer = Timer()
+                model = sd_models.get_checkpoint_state_dict(checkpoint_info, timer)
+                # check validity of cached state_dict
+                keylen = len(model.keys())
+                if keylen < 686: # for SD-v1, SD-v2
+                    print(f"Invalid cached state_dict...")
+                else:
+                    return model
+
             # read state_dict from file
-            print(f"Loading {checkpoint_info.filename}...")
-            models['model_a'] = sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
+            print(f"Loading from file {checkpoint_info.filename}...")
+            return sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
+
+        models['model_a'] = load_state_dict(checkpoint_info, force=True)
 
         # check SDXL
         isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in models['model_a']
@@ -1435,7 +1438,7 @@ class ModelMixerScript(scripts.Script):
             checkpointinfo = sd_models.get_closet_checkpoint_match(file)
             model_name = checkpointinfo.model_name
             print(f"Loading model {model_name}...")
-            theta_1 = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu").copy()
+            theta_1 = load_state_dict(checkpointinfo)
 
             model_b = f"model_{chr(97+n+1-weight_start)}"
             merge_recipe[model_b] = model_name
@@ -1608,6 +1611,7 @@ class ModelMixerScript(scripts.Script):
         checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256)
         #sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
         # XXX call load_model_weights() to work with --medvram-sdxl option
+        timer = Timer()
         sd_models.load_model_weights(shared.sd_model, checkpoint_info, theta_0, timer)
 
         # XXX fix checkpoint_info.filename
