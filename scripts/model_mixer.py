@@ -353,6 +353,9 @@ def read_metadata_from_safetensors(filename):
         return res
 
 def get_safetensors_header(filename):
+    if not os.path.exists(filename):
+        return None
+
     with open(filename, mode="rb") as file:
         metadata_len = file.read(8)
         metadata_len = int.from_bytes(metadata_len, "little")
@@ -384,6 +387,9 @@ def get_valid_checkpoint_title():
         filename = checkpoint_info.filename
         name = os.path.basename(filename)
         info = sd_models.get_closet_checkpoint_match(name)
+        if info is None:
+            # no matched found.
+            return sd_models.checkpoint_tiles()[0]
         if info != checkpoint_info:
             # this is a fake checkpoint_info
             # return original title
