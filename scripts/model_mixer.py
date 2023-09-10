@@ -507,11 +507,23 @@ class ModelMixerScript(scripts.Script):
             with gr.Accordion("Block Level Weights", open=False):
 
                 with gr.Row():
-                    with gr.Column():
-                        with gr.Row():
-                            preset_weight = gr.Dropdown(label="Load preset", choices=mbwpresets().keys(), interactive=True, elem_id="model_mixer_presets")
-                            create_refresh_button(preset_weight, lambda: None, lambda: {"choices": list(mbwpresets(True).keys())}, "mm_refresh_presets")
-                            preset_save = gr.Button(value=save_symbol, elem_classes=["tool"])
+                    with gr.Group(), gr.Tabs():
+                        with gr.Tab("Presets"):
+                            with gr.Row():
+                                preset_weight = gr.Dropdown(label="Load preset", choices=mbwpresets().keys(), interactive=True, elem_id="model_mixer_presets")
+                                create_refresh_button(preset_weight, lambda: None, lambda: {"choices": list(mbwpresets(True).keys())}, "mm_refresh_presets")
+                                preset_save = gr.Button(value=save_symbol, elem_classes=["tool"])
+                        with gr.Tab("Helper"):
+                            with gr.Column():
+                                resetval = gr.Slider(label="Value", show_label=False, info="Value to set/add/mul", minimum=0, maximum=2, step=0.001, value=0)
+                                resetopt = gr.Radio(label="Pre defined", show_label=False, choices = ["0", "0.25", "0.5", "0.75", "1"], value = "0", type="value")
+                            with gr.Column():
+                                resetblockopt = gr.CheckboxGroup(["BASE","INP*","MID","OUT*"], value=["INP*","OUT*"], label="Blocks", show_label=False, info="Select blocks to change")
+                            with gr.Column():
+                                with gr.Row():
+                                    resetweight = gr.Button(elem_classes=["reset"], value="Set")
+                                    addweight = gr.Button(elem_classes=["reset"], value="Add")
+                                    mulweight = gr.Button(elem_classes=["reset"], value="Mul")
 
                     with gr.Box(elem_id=f"mm_preset_edit_dialog", elem_classes="popup-dialog") as preset_edit_dialog:
                         with gr.Row():
@@ -573,18 +585,6 @@ class ModelMixerScript(scripts.Script):
                         mi00 = gr.Slider(label="M00", minimum=-1.0, maximum=2, step=0.001, value=0.5)
                     with gr.Column(scale=1, min_width=100):
                         gr.Slider(visible=False)
-
-                with gr.Row():
-                    with gr.Column():
-                        resetval = gr.Slider(label="Value", show_label=False, info="Value to set/add/mul", minimum=0, maximum=2, step=0.001, value=0)
-                        resetopt = gr.Radio(label="Pre defined", show_label=False, choices = ["0", "0.25", "0.5", "0.75", "1"], value = "0", type="value")
-                    with gr.Column():
-                        resetblockopt = gr.CheckboxGroup(["BASE","INP*","MID","OUT*"], value=["INP*","OUT*"], label="Blocks", show_label=False, info="Select blocks to change")
-                    with gr.Column():
-                        with gr.Row():
-                            resetweight = gr.Button(elem_classes=["reset"], value="Set")
-                            addweight = gr.Button(elem_classes=["reset"], value="Add")
-                            mulweight = gr.Button(elem_classes=["reset"], value="Mul")
 
                     dtrue =  gr.Checkbox(value = True, visible = False)
                     dfalse =  gr.Checkbox(value = False, visible = False)
