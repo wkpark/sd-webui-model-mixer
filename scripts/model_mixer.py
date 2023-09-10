@@ -398,6 +398,14 @@ def get_valid_checkpoint_title():
         return checkpoint_info.title
     return ""
 
+def mm_list_models():
+    # save current checkpoint_info and call register() again to restore
+    checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
+    sd_models.list_models()
+    if checkpoint_info is not None:
+        # register again
+        checkpoint_info.register()
+
 class ModelMixerScript(scripts.Script):
     init_model_a_change = False
 
@@ -446,10 +454,10 @@ class ModelMixerScript(scripts.Script):
 
             with gr.Row():
                 model_a = gr.Dropdown(sd_models.checkpoint_tiles(), value=initial_checkpoint, elem_id="model_mixer_model_a", label="Model A", interactive=True)
-                create_refresh_button(model_a, sd_models.list_models,lambda: {"choices": sd_models.checkpoint_tiles(), "value": get_valid_checkpoint_title()},"refresh_checkpoint_Z")
+                create_refresh_button(model_a, mm_list_models,lambda: {"choices": sd_models.checkpoint_tiles(), "value": get_valid_checkpoint_title()},"refresh_checkpoint_Z")
 
                 base_model = gr.Dropdown(["None"]+sd_models.checkpoint_tiles(), elem_id="model_mixer_model_base", value="None", label="Base Model used for Add-Difference mode", interactive=True)
-                create_refresh_button(base_model, sd_models.list_models,lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()},"refresh_checkpoint_Z")
+                create_refresh_button(base_model, mm_list_models,lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()},"refresh_checkpoint_Z")
             with gr.Row():
                 enable_sync = gr.Checkbox(label="Sync with Default SD checkpoint", value=False, visible=True)
                 is_sdxl = gr.Checkbox(label="is SDXL", value=False, visible=True)
@@ -471,7 +479,7 @@ class ModelMixerScript(scripts.Script):
                             mm_use[n] = gr.Checkbox(label=f"Model {name}", value=default_use[n], visible=True)
                         with gr.Row():
                             mm_models[n] = gr.Dropdown(["None"]+sd_models.checkpoint_tiles(), value="None", elem_id=f"model_mixer_model_{lowername}", label=f"Merge {name}", show_label=False, interactive=True)
-                            create_refresh_button(mm_models[n], sd_models.list_models, lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()}, "refresh_checkpoint_Z")
+                            create_refresh_button(mm_models[n], mm_list_models, lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()}, "refresh_checkpoint_Z")
 
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
@@ -1264,23 +1272,38 @@ class ModelMixerScript(scripts.Script):
 
         # load models
         models = {}
-        timer = Timer()
 
-        sd_models.load_model(checkpoint_info)
-        models['model_a'] = None
-        # get cached state_dict
-        if shared.opts.sd_checkpoint_cache > 0:
-            models['model_a'] = sd_models.get_checkpoint_state_dict(checkpoint_info, timer).copy()
-            # check validity of cached state_dict
-            keylen = len(models['model_a'].keys())
-            if keylen < 686: # for SD-v1, SD-v2
-                models['model_a'] = None
-                print(f"Invalid cached state_dict...")
+        def load_state_dict(checkpoint_info):
+            # is it already loaded model?
+            already_loaded = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
+            if already_loaded is not None and already_loaded.title == checkpoint_info.title:
+                # model is already loaded
+                print(f"Loading {checkpoint_info.title} from loaded model...")
+                return {k: v.cpu() for k, v in shared.sd_model.state_dict().items()}
 
-        if models['model_a'] is None:
+            # get cached state_dict
+            if shared.opts.sd_checkpoint_cache > 0:
+                # call sd_models.get_checkpoint_state_dict() without calculate_shorthash() for fake checkpoint_info
+                if checkpoint_info in checkpoints_loaded:
+                    # use checkpoint cache
+                    print(f"Loading weights {checkpoint_info.title} from cache")
+                    model = checkpoints_loaded[checkpoint_info]
+                    # check validity of cached state_dict
+                    keylen = len(model.keys())
+                    if keylen < 686: # for SD-v1, SD-v2
+                        print(f"Invalid cached state_dict...")
+                    else:
+                        return model
+
+            if not os.path.exists(checkpoint_info.filename):
+                # this is a fake checkpoint_info
+                raise RuntimeError(f"No cached checkpoint found for {checkpoint_info.title}")
+
             # read state_dict from file
-            print(f"Loading {checkpoint_info.filename}...")
-            models['model_a'] = sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
+            print(f"Loading from file {checkpoint_info.filename}...")
+            return sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
+
+        models['model_a'] = load_state_dict(checkpoint_info)
 
         # check SDXL
         isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in models['model_a']
@@ -1388,12 +1411,10 @@ class ModelMixerScript(scripts.Script):
         }
         metadata["sd_merge_models"] = {}
 
-        # full recipe
-        recipe_all = None
-
         def add_model_metadata(checkpoint_name):
             checkpointinfo = sd_models.get_closet_checkpoint_match(checkpoint_name)
-            checkpointinfo.calculate_shorthash()
+            if checkpointinfo is None:
+                return
             metadata["sd_merge_models"][checkpointinfo.sha256] = {
                 "name": checkpoint_name,
                 "legacy_hash": checkpointinfo.hash,
@@ -1413,22 +1434,20 @@ class ModelMixerScript(scripts.Script):
 
         # model info
         modelinfos = [ model_a ]
-        modelhashes = [ checkpoint_info.calculate_shorthash() ]
+        modelhashes = [ checkpoint_info.shorthash ]
         alphas = []
-        # XXX HACK
-        checkpoint_info = deepcopy(checkpoint_info)
 
         stage = 1
         for n, file in enumerate(mm_models,start=weight_start):
             checkpointinfo = sd_models.get_closet_checkpoint_match(file)
             model_name = checkpointinfo.model_name
             print(f"Loading model {model_name}...")
-            theta_1 = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu").copy()
+            theta_1 = load_state_dict(checkpointinfo)
 
             model_b = f"model_{chr(97+n+1-weight_start)}"
             merge_recipe[model_b] = model_name
             modelinfos.append(model_name)
-            modelhashes.append(checkpointinfo.calculate_shorthash())
+            modelhashes.append(checkpointinfo.shorthash)
 
             # add metadata
             add_model_metadata(model_name)
@@ -1463,18 +1482,6 @@ class ModelMixerScript(scripts.Script):
                         if alpha != 0.0:
                             theta_0[key] = theta_0[key] + (theta_1[key] - model_base[key]) * alpha
 
-            # recipe string
-            if modes[n] == "Sum":
-                if recipe_all is None:
-                    recipe_all = f"{model_a} * (1 - alpha_{n}) + {model_name} * alpha_{n}"
-                else:
-                    recipe_all = f"({recipe_all}) * (1 - alpha_{n}) + {model_name} * alpha_{n}"
-            elif modes[n] in [ "Add-Diff" ]:
-                if recipe_all is None:
-                    recipe_all = f"{model_a} + ({model_name} - {base_model}) * alpha_{n}"
-                else:
-                    recipe_all = f"{recipe_all} + ({model_name} - {base_model}) * alpha_{n}"
-
             if n == weight_start:
                 stage += 1
                 for key in (tqdm(keys, desc=f"Check uninitialized #{n+2-weight_start}/{stages}")):
@@ -1486,6 +1493,31 @@ class ModelMixerScript(scripts.Script):
 
             stage += 1
             del theta_1
+
+        def make_recipe(recipe_all, modes, model_a, models):
+            weight_start = 0
+            if model_a.find(" ") > -1: model_a = f"({model_a})"
+            for n, file in enumerate(models, start=weight_start):
+                checkpointinfo = sd_models.get_closet_checkpoint_match(file)
+                model_name = checkpointinfo.model_name
+                if model_name.find(" ") > -1: model_name = f"({model_name})"
+
+                # recipe string
+                if modes[n] == "Sum":
+                    if recipe_all is None:
+                        recipe_all = f"{model_a} * (1 - alpha_{n}) + {model_name} * alpha_{n}"
+                    else:
+                        recipe_all = f"({recipe_all}) * (1 - alpha_{n}) + {model_name} * alpha_{n}"
+                elif modes[n] in [ "Add-Diff" ]:
+                    if recipe_all is None:
+                        recipe_all = f"{model_a} + ({model_name} - {base_model}) * alpha_{n}"
+                    else:
+                        recipe_all = f"{recipe_all} + ({model_name} - {base_model}) * alpha_{n}"
+
+            return recipe_all
+
+        # full recipe
+        recipe_all = make_recipe(None, modes, model_a, mm_models)
 
         # store unmodified remains
         for key in (tqdm(keyremains, desc=f"Save unchanged weights #{stages}/{stages}")):
@@ -1542,43 +1574,59 @@ class ModelMixerScript(scripts.Script):
         alphastr = ','.join(['(' + ','.join(map(lambda x: str(int(x)) if x == int(x) else str(x), sub)) + ')' for sub in alphas])
         merge_recipe["recipe"] = recipe_all + alphastr
         metadata["sd_merge_recipe"] = merge_recipe
+        model_name = f"{recipe_all}{alphastr}".replace("*", "x")
 
         # load theta_0, checkpoint_info was used for model_a
-        # XXX make a FAKE checkpoint_info
-        # change model name (name_for_extra field used webui internally)
-        model_name = f"{recipe_all}{alphastr}".replace("*", "x")
-        checkpoint_info.name_for_extra = model_name
+        # XXX HACK make a FAKE checkpoint_info
+        def fake_checkpoint(checkpoint_info, metadata, model_name, sha256):
+            # XXX HACK
+            # change model name (name_for_extra field used webui internally)
+            checkpoint_info = deepcopy(checkpoint_info)
+            checkpoint_info.name_for_extra = model_name
 
-        checkpoint_info.sha256 = sha256
-        checkpoint_info.name = checkpoint_info.name_for_extra + ".safetensors"
-        checkpoint_info.model_name = checkpoint_info.name_for_extra.replace("/", "_").replace("\\", "_")
-        checkpoint_info.title = f"{checkpoint_info.name} [{sha256[0:10]}]"
-        # use new metadata
-        checkpoint_info.metadata = metadata
+            checkpoint_info.sha256 = sha256
+            checkpoint_info.name = f"{model_name}.safetensors"
+            checkpoint_info.model_name = checkpoint_info.name_for_extra.replace("/", "_").replace("\\", "_")
+            checkpoint_info.title = f"{checkpoint_info.name} [{sha256[0:10]}]"
+            # simply ignore legacy hash
+            checkpoint_info.hash = None
+            # use new metadata
+            checkpoint_info.metadata = metadata
 
-        # XXX add a fake checkpoint_info
-        # force to set with a new sha256 hash
-        hashes = cache("hashes")
-        hashes[f"checkpoint/{checkpoint_info.name}"] = {
-            "mtime": os.path.getmtime(checkpoint_info.filename),
-            "sha256": sha256,
-        }
-        dump_cache()
+            # XXX HACK use any valid filename to trick checkpoint_info.calculate_shorthash()
+            if not os.path.exists(checkpoint_info.filename):
+                for title in sd_models.checkpoint_tiles():
+                    info = sd_models.get_closet_checkpoint_match(title)
+                    if info is not None and os.path.exists(info.filename):
+                        checkpoint_info.filename = info.filename
+                        break
 
-        # XXX hack. set ids for a fake checkpoint info
-        checkpoint_info.ids = [checkpoint_info.model_name, checkpoint_info.name, checkpoint_info.name_for_extra]
+            # XXX add a fake checkpoint_info
+            # force to set with a new sha256 hash
+            hashes = cache("hashes")
+            hashes[f"checkpoint/{checkpoint_info.name}"] = {
+                "mtime": os.path.getmtime(checkpoint_info.filename),
+                "sha256": sha256,
+            }
+            dump_cache()
 
+            # XXX hack. set ids for a fake checkpoint info
+            checkpoint_info.ids = [checkpoint_info.model_name, checkpoint_info.name, checkpoint_info.name_for_extra]
+            return checkpoint_info
+
+        checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256)
         #sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
         # XXX call load_model_weights() to work with --medvram-sdxl option
+        timer = Timer()
         sd_models.load_model_weights(shared.sd_model, checkpoint_info, theta_0, timer)
 
         # XXX fix checkpoint_info.filename
-        filename = os.path.join(model_path, model_name)
+        filename = os.path.join(model_path, f"{model_name}.safetensors")
         shared.sd_model.sd_model_checkpoint = checkpoint_info.filename = filename
 
-        if shared.opts.sd_checkpoint_cache > 0:
-            # unload cached merged model
-            checkpoints_loaded.popitem()
+        #if shared.opts.sd_checkpoint_cache > 0:
+        #    # unload cached merged model
+        #    checkpoints_loaded.popitem()
 
         del theta_0
 
