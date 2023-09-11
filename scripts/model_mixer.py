@@ -1622,10 +1622,15 @@ class ModelMixerScript(scripts.Script):
             return checkpoint_info
 
         checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256)
-        #sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
-        # XXX call load_model_weights() to work with --medvram-sdxl option
-        timer = Timer()
-        sd_models.load_model_weights(shared.sd_model, checkpoint_info, theta_0, timer)
+        was_sdxl = hasattr(shared.sd_model, 'conditioner') if shared.sd_model is not None else None
+        if was_sdxl == isxl:
+            # XXX call load_model_weights() to work with --medvram-sdxl option
+            timer = Timer()
+            sd_models.load_model_weights(shared.sd_model, checkpoint_info, theta_0, timer)
+        else:
+            state_dict = theta_0.copy()
+            sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
+            del state_dict
 
         # XXX fix checkpoint_info.filename
         filename = os.path.join(model_path, f"{model_name}.safetensors")
