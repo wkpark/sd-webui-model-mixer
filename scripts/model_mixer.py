@@ -10,6 +10,7 @@ import gradio as gr
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import time
 import tqdm
@@ -1660,6 +1661,45 @@ class ModelMixerScript(scripts.Script):
         }
         return
 
+# from modules/generation_parameters_copypaste.py
+re_param_code = r'\s*([\w ]+):\s*("(?:\\"[^,]|\\"|\\|[^\"])+"|[^,]*)(?:,|$)'
+re_param = re.compile(re_param_code)
+re_imagesize = re.compile(r"^(\d+)x(\d+)$")
+
+def quote(text):
+    if ',' not in str(text) and '\n' not in str(text) and ':' not in str(text):
+        return text
+
+    return json.dumps(text, ensure_ascii=False)
+
+def unquote(text):
+    if len(text) == 0 or text[0] != '"' or text[-1] != '"':
+        return text
+
+    try:
+        return json.loads(text)
+    except Exception:
+        return text
+
+def parse(lastline):
+    """from parse_generation_parameters(x: str)"""
+    res = {}
+    for k, v in re_param.findall(lastline):
+        try:
+            if v[0] == '"' and v[-1] == '"':
+                v = unquote(v)
+
+            m = re_imagesize.match(v)
+            if m is not None:
+                res[f"{k}-1"] = m.group(1)
+                res[f"{k}-2"] = m.group(2)
+            else:
+                res[k] = v
+        except Exception:
+            print(f"Error parsing \"{k}: {v}\"")
+
+    return res
+
 def on_image_save(params):
     if 'parameters' not in params.pnginfo: return
 
@@ -1682,13 +1722,10 @@ def on_image_save(params):
     prompt, negative_prompt = [s.strip() for s in prompt_parts[:2] + ['']*(2-len(prompt_parts))]
 
     # add multiple "Model hash:" entries and change "Model:" name
-    lines = generation_params.split(",")
-    for i,x in enumerate(lines):
-        if "Model hash:" in x:
-            lines[i] = " Model hash: " + ", Model hash: ".join(modelhashes)
-        elif "Model:" in x:
-            lines[i] = " Model: " + " + ".join(modelinfos).replace(","," ")
-    generation_params = ",".join(lines)
+    res = parse(generation_params)
+    res["Model hash"] = modelhashes[0]
+    res["Model"] = " + ".join(modelinfos)
+    generation_params = ", ".join([k if k == v else f'{k}: {quote(v)}' for k, v in res.items() if v is not None])
 
     # add Model hash a: xxx, Model a: yyy, Model hash b: zzz, Model b: uuu...
     for j,v in enumerate(modelhashes):
