@@ -1457,6 +1457,9 @@ class ModelMixerScript(scripts.Script):
         stage = 1
         for n, file in enumerate(mm_models,start=weight_start):
             checkpointinfo = sd_models.get_closet_checkpoint_match(file)
+            if checkpointinfo is None:
+                raise RuntimeError(f"No checkpoint found for {file}")
+
             model_name = checkpointinfo.model_name
             print(f"Loading model {model_name}...")
             theta_1 = load_state_dict(checkpointinfo)
@@ -1674,6 +1677,8 @@ def on_image_save(params):
     modelinfos = model["models"]
     modelhashes = model["hashes"]
     recipe = model.get("recipe", None)
+    # filterout empty shorthash
+    modelhashes = list(filter(None, modelhashes))
 
     lines = params.pnginfo['parameters'].split('\n')
     generation_params = lines.pop()
