@@ -435,7 +435,7 @@ class ModelMixerScript(scripts.Script):
         with gr.Row():
             mm_explain = gr.HTML("")
         with gr.Row():
-            mm_weights = gr.Textbox(label="Block Level Weights: BASE,IN00,IN02,...IN11,M00,OUT00,...,OUT11", show_copy_button=True,
+            mm_weights = gr.Textbox(label="Merge Block Weights: BASE,IN00,IN02,...IN11,M00,OUT00,...,OUT11", show_copy_button=True,
                 value="0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5")
         with gr.Row():
             mm_setalpha = gr.Button(elem_id="copytogen", value="↑ set alpha")
@@ -511,13 +511,13 @@ class ModelMixerScript(scripts.Script):
                                 mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value="Sum")
                             mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_setalpha[n], mm_readalpha[n] = self._model_option_ui(n)
 
-            with gr.Accordion("Block Level Weights", open=False):
+            with gr.Accordion("Merge Block Weights", open=False):
 
                 with gr.Row():
                     with gr.Group(), gr.Tabs():
                         with gr.Tab("Presets"):
                             with gr.Row():
-                                preset_weight = gr.Dropdown(label="Load preset", choices=mbwpresets().keys(), interactive=True, elem_id="model_mixer_presets")
+                                preset_weight = gr.Dropdown(label="Select preset", choices=mbwpresets().keys(), interactive=True, elem_id="model_mixer_presets")
                                 create_refresh_button(preset_weight, lambda: None, lambda: {"choices": list(mbwpresets(True).keys())}, "mm_refresh_presets")
                                 preset_save = gr.Button(value=save_symbol, elem_classes=["tool"])
                         with gr.Tab("Helper"):
@@ -984,7 +984,7 @@ class ModelMixerScript(scripts.Script):
             choices = ["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:] if not isxl else ["ALL","BASE","INP*","MID","OUT*"]+BLOCKIDXL[1:]
             ret += [gr.update(choices=choices) for _ in range(num_models)]
             last = 11 if not isxl else 8
-            info = f"Block Level Weights: BASE,IN00,IN02,...IN{last:02d},M00,OUT00,...,OUT{last:02d}"
+            info = f"Merge Block Weights: BASE,IN00,IN02,...IN{last:02d},M00,OUT00,...,OUT{last:02d}"
             ret += [gr.update(label=info) for _ in range(num_models)]
             return ret
 
