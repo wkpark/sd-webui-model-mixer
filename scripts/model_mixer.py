@@ -1454,6 +1454,9 @@ class ModelMixerScript(scripts.Script):
 
         # model info
         modelinfos = [ model_a ]
+        if checkpoint_info.shorthash is None:
+            # this is a newly added checkpoint file.
+            checkpoint_info.calculate_shorthash()
         modelhashes = [ checkpoint_info.shorthash ]
         alphas = []
 
@@ -1470,6 +1473,8 @@ class ModelMixerScript(scripts.Script):
             model_b = f"model_{chr(97+n+1-weight_start)}"
             merge_recipe[model_b] = model_name
             modelinfos.append(model_name)
+            if checkpointinfo.shorthash is None:
+                checkpointinfo.calculate_shorthash()
             modelhashes.append(checkpointinfo.shorthash)
 
             # add metadata
@@ -1589,9 +1594,12 @@ class ModelMixerScript(scripts.Script):
 
         # save recipe
         alphastr = ','.join(['(' + ','.join(map(lambda x: str(int(x)) if x == int(x) else str(x), sub)) + ')' for sub in alphas])
-        merge_recipe["recipe"] = recipe_all + alphastr
+        full_recipe_str = f"{recipe_all}{alphastr}"
+        if mm_finetune != "":
+            full_recipe_str += '@' + mm_finetune
+        merge_recipe["recipe"] = full_recipe_str
         metadata["sd_merge_recipe"] = merge_recipe
-        model_name = f"{recipe_all}{alphastr}".replace("*", "x")
+        model_name = full_recipe_str.replace("*", "x")
 
         # load theta_0, checkpoint_info was used for model_a
         # XXX HACK make a FAKE checkpoint_info
