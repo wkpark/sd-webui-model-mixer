@@ -598,7 +598,7 @@ class ModelMixerScript(scripts.Script):
 
             with gr.Accordion("Adjust settings", open=False):
                 with gr.Row():
-                    mm_finetune = gr.Textbox(label="Adjust settings", show_label=False, info="IN,OUT,OUT2,Contrast,COL1,COL2,COL3", visible=True, value="", lines=1)
+                    mm_finetune = gr.Textbox(label="IN,OUT,OUT2,Contrast,COL1,COL2,COL3", visible=True, value="", lines=1, show_copy_button=True)
                     finetune_write = gr.Button(value="↑", elem_classes=["tool"])
                     finetune_read = gr.Button(value="↓", elem_classes=["tool"])
                     finetune_reset = gr.Button(value="\U0001f5d1\ufe0f", elem_classes=["tool"])
@@ -611,7 +611,7 @@ class ModelMixerScript(scripts.Script):
                         detail3 = gr.Slider(label="OUT2", minimum=-6, maximum=6, step=0.01, value=0, info="Detail/Noise")
                 with gr.Row():
                     with gr.Column(scale=1, min_width=100):
-                        contrast = gr.Slider(label="Contrast", minimum=-10, maximum=10, step=0.01, value=0, info="Contrast/Detail")
+                        contrast = gr.Slider(label="Contrast", minimum=-10, maximum=10, step=0.01, value=0, info="Contrast/\U0000200BDetail")
                     with gr.Column(scale=1, min_width=100):
                         col1 = gr.Slider(label="Color1", minimum=-10, maximum=10, step=0.01, value=0, info="Color Tone 1")
                     with gr.Column(scale=1, min_width=100):
