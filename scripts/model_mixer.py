@@ -1353,17 +1353,27 @@ class ModelMixerScript(scripts.Script):
                 if not isxl:
                     w = models['model_a']["model.diffusion_model.input_blocks.1.1.proj_in.weight"]
                     if len(w.shape) == 4:
-                        base_model = "v1-5-pruned-emaonly"
+                        candidates = [ "v1-5-pruned-emaonly", "v1-5-pruned-emaonly.safetensors [6ce0161689]", "v1-5-pruned-emaonly.ckpt [cc6cb27103]",
+                                    "v1-5-pruned.safetensors [1a189f0be6]", "v1-5-pruned.ckpt [e1441589a6]" ]
                     else:
-                        base_model = "v2-1_768-nonema-pruned"
-                    print(f"base_model automatically detected as {base_model}")
-                else:
-                    candidates = [ "sd_xl_base_1.0.safetensors [31e35c80fc4]", "sd_xl_base_1.0_0.9vae.safetensors [e6bb9ea85b]", "sdXL_v10VAEFix.safetensors [e6bb9ea85b]" ]
+                        candidates = [ "v2-1_768-nonema-pruned", "v2-1_768-nonema-pruned.safetensors [ff144a4984]", "v2-1_768-nonema-pruned.ckpt [4711ff4dd2]",
+                                    "v2-1_768-ema-pruned.safetensors [dcd690123c]", "v2-1_768-ema-pruned.ckpt [ad2a33c361]"]
+
                     for a in candidates:
                         check = sd_models.get_closet_checkpoint_match(a)
                         if check is not None:
                             base_model = a
                             break
+                else:
+                    candidates = [ "sd_xl_base_1.0", "sd_xl_base_1.0_0.9vae",
+                        "sd_xl_base_1.0.safetensors [31e35c80fc4]", "sd_xl_base_1.0_0.9vae.safetensors [e6bb9ea85b]", "sdXL_v10VAEFix.safetensors [e6bb9ea85b]" ]
+                    for a in candidates:
+                        check = sd_models.get_closet_checkpoint_match(a)
+                        if check is not None:
+                            base_model = a
+                            break
+                if base_model is not None:
+                    print(f"base_model automatically detected as {base_model}")
             if base_model is None:
                 raise Exception('No base model selected and automatic detection failed')
 
