@@ -418,6 +418,31 @@ class ModelMixerScript(scripts.Script):
     def show(self, is_img2img):
         return scripts.AlwaysVisible
 
+    def _model_option_ui(self, n):
+        name = chr(66+n)
+
+        with gr.Row():
+            mm_alpha = gr.Slider(label=f"Multiplier for Model {name}", minimum=-1.0, maximum=2, step=0.001, value=0.5)
+        with gr.Row():
+            with gr.Column(scale=3):
+                with gr.Group(Visible=True) as mbw_advanced:
+                    mm_usembws = gr.Dropdown(["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:], value=[], multiselect=True, label="Merge Block Weights", show_label=False, info="or use Merge Block Weights for selected blocks")
+                with gr.Group(visible=False) as mbw_simple:
+                    mm_usembws_simple = gr.CheckboxGroup(["BASE","INP*","MID","OUT*"], value=[], label="Merge Block Weights", show_label=False, info="or use Merge Block Weights for selected blocks")
+            with gr.Column(scale=1):
+                with gr.Row():
+                    mbw_use_advanced = gr.Checkbox(label="Use advanced MBW mode", value=True, visible=True)
+        with gr.Row():
+            mm_explain = gr.HTML("")
+        with gr.Row():
+            mm_weights = gr.Textbox(label="Block Level Weights: BASE,IN00,IN02,...IN11,M00,OUT00,...,OUT11", show_copy_button=True,
+                value="0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5")
+        with gr.Row():
+            mm_setalpha = gr.Button(elem_id="copytogen", value="↑ set alpha")
+            mm_readalpha = gr.Button(elem_id="copytogen", value="↓ read alpha")
+
+        return mm_alpha, mm_usembws, mm_usembws_simple, mbw_use_advanced, mbw_advanced, mbw_simple, mm_explain, mm_weights, mm_setalpha, mm_readalpha
+
     def ui(self, is_img2img):
         import modules.ui
         num_models = shared.opts.data.get("mm_max_models", 2)
@@ -451,6 +476,8 @@ class ModelMixerScript(scripts.Script):
                 mm_information = gr.HTML("Merge multiple models and load it for image generation.")
             with gr.Row():
                 enabled = gr.Checkbox(label="Enable Model Mixer", value=False, visible=True)
+            with gr.Row():
+                recipe_all = gr.HTML("<h3></h3>")
 
             with gr.Row():
                 model_a = gr.Dropdown(sd_models.checkpoint_tiles(), value=initial_checkpoint, elem_id="model_mixer_model_a", label="Model A", interactive=True)
@@ -461,8 +488,6 @@ class ModelMixerScript(scripts.Script):
             with gr.Row():
                 enable_sync = gr.Checkbox(label="Sync with Default SD checkpoint", value=False, visible=True)
                 is_sdxl = gr.Checkbox(label="is SDXL", value=False, visible=True)
-            with gr.Row():
-                recipe_all = gr.HTML("<h3></h3>")
 
             mm_max_models = gr.Number(value=num_models, precision=0, visible=False)
             merge_method_info = [{}] * num_models
@@ -483,26 +508,8 @@ class ModelMixerScript(scripts.Script):
 
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
-                                mm_modes[n] = gr.Radio(label=f"Merge Method for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value="Sum")
-                            with gr.Row():
-                                mm_alpha[n] = gr.Slider(label=f"Multiplier for Model {name}", minimum=-1.0, maximum=2, step=0.001, value=0.5)
-                            with gr.Row():
-                                with gr.Column(scale=3):
-                                    with gr.Group(Visible=True) as mbw_advanced[n]:
-                                        mm_usembws[n] = gr.Dropdown(["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:], value=[], multiselect=True, label="Merge Block Weights", show_label=False, info="or use Merge Block Weights for selected blocks")
-                                    with gr.Group(visible=False) as mbw_simple[n]:
-                                        mm_usembws_simple[n] = gr.CheckboxGroup(["BASE","INP*","MID","OUT*"], value=[], label="Merge Block Weights", show_label=False, info="or use Merge Block Weights for selected blocks")
-                                with gr.Column(scale=1):
-                                    with gr.Row():
-                                        mbw_use_advanced[n] = gr.Checkbox(label="Use advanced MBW mode", value=True, visible=True)
-                            with gr.Row():
-                                mm_explain[n] = gr.HTML("")
-                            with gr.Row():
-                                mm_weights[n] = gr.Textbox(label="Block Level Weights: BASE,IN00,IN02,...IN11,M00,OUT00,...,OUT11", show_copy_button=True,
-                                    value="0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5")
-                            with gr.Row():
-                                mm_setalpha[n] = gr.Button(elem_id="copytogen", value="↑ set alpha")
-                                mm_readalpha[n] = gr.Button(elem_id="copytogen", value="↓ read alpha")
+                                mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value="Sum")
+                            mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_setalpha[n], mm_readalpha[n] = self._model_option_ui(n)
 
             with gr.Accordion("Block Level Weights", open=False):
 
