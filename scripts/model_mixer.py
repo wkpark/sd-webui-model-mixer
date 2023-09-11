@@ -1211,7 +1211,9 @@ class ModelMixerScript(scripts.Script):
                 use = True if use == "True" else False
             mm_use[n] = use
 
-        if True not in mm_use:
+        mm_finetune = mm_finetune.strip()
+        mm_finetune = "" if mm_finetune.rstrip(",0") == "" else mm_finetune
+        if True not in mm_use and mm_finetune == "":
             # no selected merge models
             print("No selected models found")
             return
@@ -1347,7 +1349,7 @@ class ModelMixerScript(scripts.Script):
 
         # check base_model
         model_base = {}
-        if "Add-Diff" in mm_modes:
+        if True in mm_use and "Add-Diff" in mm_modes:
             if base_model is None:
                 # check SD version
                 if not isxl:
@@ -1514,9 +1516,9 @@ class ModelMixerScript(scripts.Script):
             stage += 1
             del theta_1
 
-        def make_recipe(recipe_all, modes, model_a, models):
+        def make_recipe(modes, model_a, models):
             weight_start = 0
-            if model_a.find(" ") > -1: model_a = f"({model_a})"
+            recipe_all = model_a
             for n, file in enumerate(models, start=weight_start):
                 checkpointinfo = sd_models.get_closet_checkpoint_match(file)
                 model_name = checkpointinfo.model_name
@@ -1524,20 +1526,15 @@ class ModelMixerScript(scripts.Script):
 
                 # recipe string
                 if modes[n] == "Sum":
-                    if recipe_all is None:
-                        recipe_all = f"{model_a} * (1 - alpha_{n}) + {model_name} * alpha_{n}"
-                    else:
-                        recipe_all = f"({recipe_all}) * (1 - alpha_{n}) + {model_name} * alpha_{n}"
+                    if recipe_all.find(" ") > -1: recipe_all = f"({recipe_all})"
+                    recipe_all = f"({recipe_all}) * (1 - alpha_{n}) + {model_name} * alpha_{n}"
                 elif modes[n] in [ "Add-Diff" ]:
-                    if recipe_all is None:
-                        recipe_all = f"{model_a} + ({model_name} - {base_model}) * alpha_{n}"
-                    else:
-                        recipe_all = f"{recipe_all} + ({model_name} - {base_model}) * alpha_{n}"
+                    recipe_all = f"{recipe_all} + ({model_name} - {base_model}) * alpha_{n}"
 
             return recipe_all
 
         # full recipe
-        recipe_all = make_recipe(None, modes, model_a, mm_models)
+        recipe_all = make_recipe(modes, model_a, mm_models)
 
         # store unmodified remains
         for key in (tqdm(keyremains, desc=f"Save unchanged weights #{stages}/{stages}")):
@@ -1579,7 +1576,6 @@ class ModelMixerScript(scripts.Script):
             return None
 
         # apply finetune
-        mm_finetune = mm_finetune.strip()
         if mm_finetune.rstrip(",0") != "":
             fines = fineman(mm_finetune)
             if fines is not None:
