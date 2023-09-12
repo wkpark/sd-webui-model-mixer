@@ -39,6 +39,8 @@ BLOCKID  =["BASE","IN00","IN01","IN02","IN03","IN04","IN05","IN06","IN07","IN08"
 BLOCKIDXL=["BASE","IN00","IN01","IN02","IN03","IN04","IN05","IN06","IN07","IN08",                     "M00","OUT00","OUT01","OUT02","OUT03","OUT04","OUT05","OUT06","OUT07","OUT08",                       ]
 ISXLBLOCK=[  True,  True,  True,  True,  True,  True,  True,  True,  True,  True, False, False, False, True,   True,   True,   True,   True,   True,   True,   True,   True,   True,  False,  False,  False]
 
+elemental_blocks = None
+
 def gr_show(visible=True):
     return {"visible": visible, "__type__": "update"}
 
@@ -408,6 +410,9 @@ def mm_list_models():
         checkpoint_info.register()
 
 class ModelMixerScript(scripts.Script):
+    global elemental_blocks
+    elemental_blocks = None
+
     init_model_a_change = False
 
     def __init__(self):
@@ -441,8 +446,18 @@ class ModelMixerScript(scripts.Script):
         with gr.Row():
             mm_setalpha = gr.Button(elem_id="copytogen", value="↑ set alpha")
             mm_readalpha = gr.Button(elem_id="copytogen", value="↓ read alpha")
+        with gr.Column():
+            with gr.Row():
+                mm_use_elemental = gr.Checkbox(label="Use Elemental merge", value=False, visible=True)
+        with gr.Group(visible=False) as elemental_ui:
+            with gr.Row():
+                mm_elemental = gr.Textbox(label="Blocks:Elements:Ratio,Blocks:Elements:Ratio,...", lines=1, max_lines=4, value="", show_copy_button=True)
+            with gr.Row():
+                mm_set_elem = gr.Button(value="↑ Set elemental merge weights")
 
-        return mm_alpha, mm_usembws, mm_usembws_simple, mbw_use_advanced, mbw_advanced, mbw_simple, mm_explain, mm_weights, mm_setalpha, mm_readalpha
+        mm_use_elemental.change(fn=lambda u: gr.update(visible=u), inputs=[mm_use_elemental], outputs=[elemental_ui])
+
+        return mm_alpha, mm_usembws, mm_usembws_simple, mbw_use_advanced, mbw_advanced, mbw_simple, mm_explain, mm_weights, mm_use_elemental, mm_elemental, mm_setalpha, mm_readalpha, mm_set_elem
 
     def ui(self, is_img2img):
         import modules.ui
@@ -454,6 +469,7 @@ class ModelMixerScript(scripts.Script):
         mm_usembws = [None]*num_models
         mm_usembws_simple = [None]*num_models
         mm_weights = [None]*num_models
+        mm_elementals = [None]*num_models
 
         mm_setalpha = [None]*num_models
         mm_readalpha = [None]*num_models
@@ -464,6 +480,8 @@ class ModelMixerScript(scripts.Script):
         mbw_advanced = [None]*num_models
         mbw_simple = [None]*num_models
         mbw_use_advanced = [None]*num_models
+        mm_use_elemental = [None]*num_models
+        mm_set_elem = [None]*num_models
 
         default_use[0] = True
 
@@ -510,7 +528,7 @@ class ModelMixerScript(scripts.Script):
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
                                 mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value="Sum")
-                            mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_setalpha[n], mm_readalpha[n] = self._model_option_ui(n)
+                            mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n)
 
             with gr.Accordion("Merge Block Weights", open=False):
 
@@ -619,6 +637,24 @@ class ModelMixerScript(scripts.Script):
                         col2 = gr.Slider(label="Color2", minimum=-10, maximum=10, step=0.01, value=0, info="Color Tone 2")
                     with gr.Column(scale=1, min_width=100):
                         col3 = gr.Slider(label="Color3", minimum=-10, maximum=10, step=0.01, value=0, info="Color Tone 3")
+
+            with gr.Accordion("Elemental Merge",open = False):
+                with gr.Row():
+                    mm_elemental_main = gr.Textbox(label="Elemental Blocks", show_label=False, info="Blocks:Elements:Ratio,Blocks:Elements:Ratio,...",lines=2,value="")
+                with gr.Row():
+                    with gr.Column(variant="compact"):
+                        with gr.Row():
+                            not_elemblks = gr.Checkbox(value=False, label="NOT", info="\u2003", scale=1, min_width=30)
+                            elemblks = gr.Dropdown(BLOCKID, value=[], label="Blocks", show_label=False, multiselect=True, info="Select Blocks", scale=7)
+                    with gr.Column(variant="compact"):
+                        with gr.Row():
+                            not_elements = gr.Checkbox(value=False, label="NOT", info="\u2003", scale=1, min_width=30)
+                            elements = gr.Dropdown([], values=[], label="Elements", show_label=False, multiselect=True, info="Select Elements", elem_id="mm_elemental_elements", scale=7)
+                with gr.Row():
+                    elemental_ratio = gr.Slider(minimum=0, maximum=2, value=0.5, step=0.01, label="Ratio")
+                    elemental_write = gr.Button(value="↑", elem_classes=["tool"])
+                    elemental_read = gr.Button(value="↓", elem_classes=["tool"])
+                    elemental_reset = gr.Button(value="\U0001f5d1\ufe0f", elem_classes=["tool"])
 
             with gr.Accordion("Save the current merged model", open=False):
                 with gr.Row():
@@ -759,6 +795,8 @@ class ModelMixerScript(scripts.Script):
             else:
                 ret.append(gr.update())
 
+            prepare_model(model)
+
             return ret
 
         def on_after_components(component, **kwargs):
@@ -766,6 +804,11 @@ class ModelMixerScript(scripts.Script):
                 return
             elem_id = getattr(component, "elem_id", None)
             if elem_id is None:
+                return
+
+            if elem_id == "mm_elemental_elements":
+                # one time initializer
+                prepare_model(get_valid_checkpoint_title())
                 return
 
             if elem_id == "setting_sd_model_checkpoint":
@@ -924,6 +967,8 @@ class ModelMixerScript(scripts.Script):
                 (mm_usembws[n], f"ModelMixer mbw {name}"),
                 (mm_usembws_simple[n], f"ModelMixer simple mbw {name}"),
                 (mm_weights[n], f"ModelMixer mbw weights {name}"),
+                (mm_use_elemental[n], f"ModelMixer use elemental {name}"),
+                (mm_elementals[n], f"ModelMixer elemental {name}"),
             )
 
         # load settings
@@ -993,7 +1038,12 @@ class ModelMixerScript(scripts.Script):
         col3.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
 
         def config_sdxl(isxl, num_models):
-            ret = [gr.update(visible=True) for _ in range(26)] if not isxl else [gr.update(visible=ISXLBLOCK[i]) for i in range(26)]
+            if isxl:
+                BLOCKS = BLOCKID
+            else:
+                BLOCKS = BLOCKIDXLL[:-1]
+            ret = [gr.update(choices=BLOCKS)]
+            ret += [gr.update(visible=True) for _ in range(26)] if not isxl else [gr.update(visible=ISXLBLOCK[i]) for i in range(26)]
             choices = ["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:] if not isxl else ["ALL","BASE","INP*","MID","OUT*"]+BLOCKIDXL[1:]
             ret += [gr.update(choices=choices) for _ in range(num_models)]
             last = 11 if not isxl else 8
@@ -1001,7 +1051,62 @@ class ModelMixerScript(scripts.Script):
             ret += [gr.update(label=info) for _ in range(num_models)]
             return ret
 
-        is_sdxl.change(fn=config_sdxl, inputs=[is_sdxl, mm_max_models], outputs=[*members, *mm_usembws, *mm_weights])
+        def select_block_elements(blocks):
+            # change choices for selected blocks
+            elements = []
+            if elemental_blocks is None or len(elemental_blocks) == 0:
+                return gr.update()
+
+            for b in blocks:
+                elements += elemental_blocks.get(b, [])
+
+            elements = list(set(elements))
+            elements = sorted(elements)
+            return gr.update(choices=elements)
+
+        def write_elemental(not_blocks, not_elements, blocks, elements, ratio, elemental):
+            # update elemental information
+
+            info = ("NOT " if not_blocks else "") + " ".join(blocks)
+            info += ":" + ("NOT " if not_elements else "") + " ".join(elements) + ":" + str(ratio) + "\n"
+            if len(elemental) > 0 and elemental[-1] != "\n":
+                elemental += "\n"
+            info = elemental + info
+            return gr.update(value=info)
+
+        def read_elemental(elemental):
+            tmp = elemental.strip()
+            if len(tmp) == 0:
+                return
+            lines = tmp.splitlines()
+            sel = lines[len(lines) - 1]
+            tmp = sel.split(":")
+            if len(tmp) != 3:
+                return
+            ratio = float(tmp[2])
+
+            blks = tmp[0].strip().split(" ")
+            blks = list(filter(None, blks))
+            not_blks = False
+            if blks[0].upper() == "NOT":
+                not_blks = True
+                blks = blks[1:]
+
+            elem = tmp[1].strip().split(" ")
+            elem = list(filter(None, elem))
+            not_elem = False
+            if elem[0].upper() == "NOT":
+                not_elem = True
+                elem = elem[1:]
+
+            return [gr.update(value=not_blks), gr.update(value=not_elem), gr.update(value=blks), gr.update(value=elem), gr.update(value=ratio)]
+
+        elemblks.change(fn=select_block_elements, inputs=[elemblks], outputs=[elements])
+        elemental_reset.click(fn=lambda: [gr.update(value=False)]*2 + [gr.update(value=[])]*2+[gr.update(value=0.5)], inputs=[], outputs=[not_elemblks, not_elements, elemblks, elements, elemental_ratio])
+        elemental_write.click(fn=write_elemental, inputs=[not_elemblks, not_elements, elemblks, elements, elemental_ratio, mm_elemental_main], outputs=mm_elemental_main)
+        elemental_read.click(fn=read_elemental, inputs=mm_elemental_main, outputs=[not_elemblks, not_elements, elemblks, elements, elemental_ratio])
+
+        is_sdxl.change(fn=config_sdxl, inputs=[is_sdxl, mm_max_models], outputs=[elemblks, *members, *mm_usembws, *mm_weights])
 
         resetopt.change(fn=resetvalopt, inputs=[resetopt], outputs=[resetval])
         resetweight.click(fn=resetblockweights, inputs=[resetval,resetblockopt], outputs=members)
@@ -1146,6 +1251,17 @@ class ModelMixerScript(scripts.Script):
 
             return gr.update()
 
+        def set_elemental(elemental, elemental_edit):
+            tmp = elemental.strip().replace(",", "\n").strip().split("\n")
+            tmp = [f.strip() for f in tmp]
+            edit = elemental_edit.strip().replace(",", "\n").strip().split("\n")
+            edit = [f.strip() for f in edit]
+
+            # add newly added entries only
+            newtmp = tmp + [l for l in edit if l not in tmp]
+
+            return gr.update(value="\n".join(newtmp))
+
         preset_weight.change(fn=on_change_preset_weight, inputs=[preset_weight], outputs=members)
         preset_save.click(
             fn=lambda isxl, *mem: [slider2text(isxl, *mem), gr.update(visible=True)],
@@ -1161,6 +1277,7 @@ class ModelMixerScript(scripts.Script):
 
         for n in range(num_models):
             mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
+            mm_set_elem[n].click(fn=set_elemental, inputs=[mm_elementals[n], mm_elemental_main], outputs=[mm_elementals[n]])
 
             mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=members)
             mm_usembws[n].change(fn=lambda mbws: gr_enable(len(mbws) == 0), inputs=[mm_usembws[n]], outputs=[mm_alpha[n]], show_progress=False)
@@ -1169,7 +1286,8 @@ class ModelMixerScript(scripts.Script):
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
             mbw_use_advanced[n].change(fn=lambda mode: [gr.update(visible=True), gr.update(visible=False)] if mode==True else [gr.update(visible=False),gr.update(visible=True)], inputs=[mbw_use_advanced[n]], outputs=[mbw_advanced[n], mbw_simple[n]])
 
-        return [enabled, model_a, base_model, mm_max_models, mm_finetune, *mm_use, *mm_models, *mm_modes, *mm_alpha, *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights]
+        return [enabled, model_a, base_model, mm_max_models, mm_finetune, *mm_use, *mm_models, *mm_modes, *mm_alpha,
+            *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights, *mm_use_elemental, *mm_elementals]
 
     def modelmixer_extra_params(self, model_a, base_model, mm_max_models, mm_finetune, *args_):
         num_models = int(mm_max_models)
@@ -1188,11 +1306,15 @@ class ModelMixerScript(scripts.Script):
             params.update({f"ModelMixer use model {name}": args_[j]})
 
             if args_[num_models+j] != "None" and len(args_[num_models+j]) > 0:
+                use_elemental = args_[num_models*8+j]
+                if type(use_elemental) == str:
+                    use_elemental = True if use_elemental == "True" else False
                 params.update({
                     f"ModelMixer model {name}": args_[num_models+j],
                     f"ModelMixer merge mode {name}": args_[num_models*2+j],
                     f"ModelMixer alpha {name}": args_[num_models*3+j],
-                    f"ModelMixer mbw mode {name}": args_[num_models*4+j]
+                    f"ModelMixer mbw mode {name}": args_[num_models*4+j],
+                    f"ModelMixer use elemental {name}": use_elemental,
                 })
                 if len(args_[num_models*5+j]) > 0:
                     params.update({f"ModelMixer mbw {name}": ",".join(args_[num_models*5+j])})
@@ -1201,11 +1323,22 @@ class ModelMixerScript(scripts.Script):
                 if len(args_[num_models*7+j]) > 0:
                     params.update({f"ModelMixer mbw weights {name}": args_[num_models*7+j]})
 
+                if use_elemental:
+                    elemental = args_[num_models*9+j]
+                    elemental = elemental.strip()
+                    if elemental != "":
+                        elemental = elemental.replace(",", "\n").strip().split("\n")
+                        elemental = [f.strip() for f in elemental]
+                        elemental = ",".join(elemental)
+                        params.update({f"ModelMixer elemental {name}": elemental})
+
         return params
 
     def before_process(self, p, enabled, model_a, base_model, mm_max_models, mm_finetune, *args_):
         if not enabled:
             return
+        debugs = shared.opts.data.get("mm_debugs", ["elemental merge"])
+        print("debugs = ", debugs)
 
         base_model = None if base_model == "None" else base_model
         # extract model infos
@@ -1217,6 +1350,8 @@ class ModelMixerScript(scripts.Script):
         mbw_use_advanced = []
         mm_usembws = []
         mm_weights = []
+        mm_use_elemental = []
+        mm_elementals = []
 
         for n in range(num_models):
             use = args_[n]
@@ -1241,6 +1376,15 @@ class ModelMixerScript(scripts.Script):
                 usembws = args_[num_models*5+j]
                 usembws_simple = args_[num_models*6+j]
                 weights = args_[num_models*7+j]
+                use_elemental = args_[num_models*8+j]
+                if type(use_elemental) == str:
+                    use_elemental = True if use_elemental == "True" else False
+                elemental = args_[num_models*9+j]
+                elemental = elemental.strip()
+                if elemental != "":
+                    elemental = elemental.replace(",", "\n").strip().split("\n")
+                    elemental = [f.strip() for f in elemental]
+                    elemental = ",".join(elemental)
 
                 if not mbw_use_advanced:
                     usembws = usembws_simple
@@ -1257,13 +1401,15 @@ class ModelMixerScript(scripts.Script):
                 mm_alpha.append(alpha)
                 mm_usembws.append(usembws)
                 mm_weights.append(weights)
+                mm_use_elemental.append(use_elemental)
+                mm_elementals.append(elemental)
 
         # extra_params
         extra_params = self.modelmixer_extra_params(model_a, base_model, mm_max_models, mm_finetune, *args_)
         p.extra_generation_params.update(extra_params)
 
         # make a hash to cache results
-        sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_models, mm_modes, mm_alpha, mm_usembws, mm_weights]).encode("utf-8")).hexdigest()
+        sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_alpha, mm_usembws, mm_weights]).encode("utf-8")).hexdigest()
         print("config hash = ", sha256)
         if shared.sd_model.sd_checkpoint_info is not None and shared.sd_model.sd_checkpoint_info.sha256 == sha256:
             # already mixed
@@ -1280,6 +1426,18 @@ class ModelMixerScript(scripts.Script):
         print("  - weights", mm_weights)
         print("  - alpha", mm_alpha)
         print("  - adjust", mm_finetune)
+        print("  - use elemental", mm_use_elemental)
+        print("  - elementals", mm_elementals)
+
+        # parse elemental weights
+        for j in range(len(mm_models)):
+            elemental_ws = None
+            if use_elemental:
+                elemental_ws = parse_elemental(mm_elementals[j])
+                if elemental_ws is not None:
+                    mm_elementals[j] = elemental_ws
+            if elemental_ws is None:
+                mm_elementals[j] = None
 
         mm_weights_orig = mm_weights
 
@@ -1530,6 +1688,26 @@ class ModelMixerScript(scripts.Script):
                         if i == -1: continue # not found
                         alpha = mm_weights[n][i]
 
+                        # check elemental merge weights
+                        if mm_elementals[n] is not None and i >= 0:
+                            name = BLOCKID[i] if not isxl else BLOCKIDXL[i]
+                            ws = mm_elementals[n].get(name, None)
+                            new_alpha = None
+                            if ws is not None:
+                                for j, w in enumerate(ws):
+                                    flag = w["flag"]
+                                    elem = w["elements"]
+                                    if flag and any(item in key for item in w["elements"]):
+                                        new_alpha = w['ratio']
+                                        if "elemental merge" in debugs: print(' -', j, '-', key, w["elements"], new_alpha)
+                                    elif not flag and all(item not in key for item in w["elements"]):
+                                        new_alpha = w['ratio']
+                                        if "elemental merge" in debugs: print(' -', j, '- NOT', key, w["elements"], new_alpha)
+
+                            # apply elemental merging weight ratio
+                            if new_alpha is not None:
+                                alpha = new_alpha
+
                     if modes[n] == "Sum":
                         if alpha == 1.0:
                             theta_0[key] = theta_1[key]
@@ -1697,6 +1875,208 @@ class ModelMixerScript(scripts.Script):
         }
         return
 
+def prepare_model(model):
+    global elemental_blocks
+    if elemental_blocks is None:
+        elemental_blocks = {}
+        elemental_blocks = prepare_elemental_blocks(model)
+    else:
+        # check settings again
+        isxl = is_xl(model)
+        if isxl:
+            if elemental_blocks.get("IN09", None) is not None:
+                # read elements-xl.json
+                elemental_blocks = prepare_elemental_blocks(model)
+        else:
+            if elemental_blocks.get("IN09", None) is None:
+                # read elements.json
+                elemental_blocks = prepare_elemental_blocks(model)
+
+def prepare_elemental_blocks(model=None, force=False):
+    if model is not None:
+        isxl = is_xl(model)
+    else:
+        isxl = False
+    elemdata = "elements.json" if not isxl else "elements-xl.json"
+    elempath = os.path.join(scriptdir, "data", elemdata)
+    if not os.path.exists(os.path.join(scriptdir, "data")):
+        os.makedirs(os.path.join(scriptdir, "data"))
+    if os.path.isfile(elempath):
+        try:
+            with open(elempath) as f:
+                data = json.load(f)
+        except OSError as e:
+            print(f"Fail to load {elempath}, e = {e}")
+            pass
+
+        return data
+
+    # try to load any valid safetenors
+    res = {}
+    if model is None and sd_models.checkpoints_list is not None:
+        for checkpoint in sd_models.checkpoints_list:
+            if checkpoint.is_safetensors:
+                abspath = os.path.abspath(checkpoint.filename)
+                if os.path.exists(abspath):
+                    res = get_safetensors_header(abspath)
+                    if len(res) > 0:
+                        break
+        if len(res) == 0:
+            return None
+    elif model is not None:
+        checkpoint = sd_models.get_closet_checkpoint_match(model)
+        if checkpoint.is_safetensors:
+            abspath = os.path.abspath(checkpoint.filename)
+            if os.path.exists(abspath):
+                res = get_safetensors_header(abspath)
+                if len(res) == 0:
+                    return None
+        else:
+            return None
+    else:
+        return None
+
+    elements = get_blocks_elements(res)
+    try:
+        with open(elempath, 'w') as f:
+            json.dump(elements, f, indent=4, ensure_ascii=False)
+    except OSError as e:
+        print(f"Fail to save {elempath}, e = {e}")
+        pass
+
+    return elements
+
+def get_blocks_elements(res):
+    import collections
+
+    blockmap = { "input_blocks": "IN", "output_blocks": "OUT", "middle_block": "M" }
+
+    key_re = re.compile(r"^(?:\d+\.)?(.*?)(?:\.\d+)?$")
+    key_split_re = re.compile(r"\.\d+\.")
+
+    elements = {}
+    for key in res:
+        if ".bias" in key:
+            # ignore bias keys if .weight exists
+            k = key.replace(".bias", ".weight")
+            if res.get(k, None) is not None:
+                continue
+        k = key.replace(".weight", "") # strip .weight
+        k = k.replace("model.diffusion_model.", "")
+        k = k.replace("cond_stage_model.transformer.text_model.", "BASE.")
+
+        name = None
+        # only for block level keys
+        if any(item in k for item in ["input_blocks.", "output_blocks.", "middle_block."]):
+            tmp = k.split(".",2)
+            num = int(tmp[1])
+            name = f"{blockmap[tmp[0]]}{num:02d}"
+            if name in [ "M00", "M01", "M02" ]:
+                name = "M00" # supermerger does not distinguish M01 and M02
+            last = tmp[2]
+        elif "BASE" in k:
+            if "position_ids" in k: continue
+            tmp = k.split(".",1)
+            name = "BASE"
+            last = tmp[1]
+            last = last.replace("encoder.layers.", "")
+
+        if name and last != "":
+            m = key_re.match(last) # trim out some numbering: 0.foobar.1 => foobar
+            if m:
+                elem = elements.get(name, None)
+                if elem is None:
+                    elements[name] = {}
+                    elem = elements[name]
+                b = m.group(1)
+                tmp = key_split_re.split(b) # split foo.1.bar => foo, bar
+                if len(tmp)>0:
+                    for e in tmp:
+                        if e == "0": # for IN00 case, only has 0.bias and 0.weight -> "0" remain
+                            continue
+                        elem[e] = 1
+                        if e.find(".") != -1: # split attn1.to_q -> attn1, to_q
+                            tmp1 = e.split(".")
+                            if len(tmp1) > 0:
+                                for e1 in tmp1:
+                                    elem[e1] = 1
+                                    e2 = e1.rstrip("12345") # attn1 -> attn
+                                    if e1 != e2:
+                                        elem[e2] = 1
+
+    # sort elements
+    sorted_elements = collections.OrderedDict()
+    sort = sorted(elements)
+    for name in sort:
+        elems = sorted(elements[name])
+        sorted_elements[name] = elems
+
+    return sorted_elements
+
+# based on Supermerger with modification
+def blocker(flag, blocks, blockids):
+    output = []
+    flagger = [False]*len(blockids)
+    changer = True
+    for w in blocks:
+        if "-" in w:
+            wt = [wt.strip() for wt in w.split('-')]
+            if blockids.index(wt[1]) == -1 or blockids.index(wt[0]) == -1:
+                # ignore
+                print(f" - WARN: invalid elemental merge block range {w} was ignored...")
+                continue
+            if  blockids.index(wt[1]) > blockids.index(wt[0]):
+                flagger[blockids.index(wt[0]):blockids.index(wt[1])+1] = [changer]*(blockids.index(wt[1])-blockids.index(wt[0])+1)
+            else:
+                flagger[blockids.index(wt[1]):blockids.index(wt[0])+1] = [changer]*(blockids.index(wt[0])-blockids.index(wt[1])+1)
+        else:
+            if blockids.index(w) > -1:
+                flagger[blockids.index(w)] = True
+            else:
+                print(f" - WARN: invalid elemental merge block {w} was ignored...")
+    if not flag:
+        flagger = [not flagger[i] for i in range(0, len(blockids))]
+    for i in range(len(blockids)):
+        if flagger[i]:
+            output.append(blockids[i])
+    return output
+
+def parse_elemental(elemental):
+    if len(elemental) > 0:
+        elemental = elemental.replace(",","\n").strip().split("\n")
+        elemental = [f.strip() for f in elemental]
+
+    elemental_weights = {}
+    if len(elemental) > 0:
+        for d in elemental:
+            if d.count(":") != 2:
+                continue
+            dbs, dws, dr = [f.strip() for f in d.split(":")]
+            try:
+                dr = float(dr)
+            except:
+                pass
+
+            dbs = dbs.split(" ")
+            dbs = list(filter(None, dbs))
+            dbn, dbs = (False, dbs[1:]) if dbs[0].upper() == "NOT" else (True, dbs)
+            dbs = blocker(dbn, dbs, BLOCKID)
+
+            dws = dws.split(" ")
+            dws = list(filter(None, dws))
+            dwn, dws = (False, dws[1:]) if dws[0].upper() == "NOT" else (True, dws)
+
+            for block in dbs:
+                weights = elemental_weights.get(block, [])
+                was_empty = len(weights) == 0
+                weights.append({"flag": dwn, "elements": dws, "ratio": dr})
+                if was_empty:
+                    elemental_weights[block] = weights
+
+        print(elemental_weights)
+        return elemental_weights
+    return None
+
 # from modules/generation_parameters_copypaste.py
 re_param_code = r'\s*([\w ]+):\s*("(?:\\"[^,]|\\"|\\|[^\"])+"|[^,]*)(?:,|$)'
 re_param = re.compile(re_param_code)
@@ -1788,11 +2168,31 @@ def on_ui_settings():
         ),
     )
 
+    shared.opts.add_option(
+        "mm_debugs",
+        shared.OptionInfo(
+            default=["elemental merge"],
+            label="Debug Infos",
+            component=gr.CheckboxGroup,
+            component_args={"choices": ["elemental merge", "merge", "adjust"]},
+            section=section,
+        ),
+    )
+
 def on_infotext_pasted(infotext, results):
     updates = {}
     for k, v in results.items():
         if not k.startswith("ModelMixer"):
             continue
+
+        if k.find(" elemental ") > 0:
+            if v in [ "True", "False"]:
+                continue
+            if v[0] == '"' and v[-1] == '"':
+                v = v[1:-1]
+
+            arr = v.strip().split(",")
+            updates[k] = "\n".join(arr)
 
         if k.find(" mbw ") > 0:
             if v in [ "True", "False"]:
