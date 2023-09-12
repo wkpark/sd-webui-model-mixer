@@ -1342,6 +1342,8 @@ class ModelMixerScript(scripts.Script):
             return
         debugs = shared.opts.data.get("mm_debugs", ["elemental merge"])
         print("debugs = ", debugs)
+        use_extra_elements = shared.opts.data.get("mm_use_extra_elements", True)
+        print("use_extra_elements = ", use_extra_elements)
 
         base_model = None if base_model == "None" else base_model
         # extract model infos
@@ -1595,6 +1597,17 @@ class ModelMixerScript(scripts.Script):
                 if not keyadded:
                     keyremains.append(k)
 
+            # add some missing extra_elements
+            last_block = "output_blocks.11." if not isxl else "output_blocks.8."
+            if use_extra_elements and last_block in selected_blocks:
+                for el in [ "time_embed.0.bias", "time_embed.0.weight", "time_embed.2.bias", "time_embed.2.weight", "out.0.bias", "out.0.weight", "out.2.bias", "out.2.weight" ]:
+                    k = f"model.diffusion_model.{el}"
+                    keys.append(k)
+                    theta_0[k] = models['model_a'][k]
+                    if k in keyremains:
+                        j = keyremains.index(k)
+                        del keyremains[j]
+
         else:
             # get all keys()
             keys = list(models['model_a'].keys())
@@ -1637,6 +1650,18 @@ class ModelMixerScript(scripts.Script):
             add_model_metadata(model_a)
         if base_model is not None:
             add_model_metadata(base_model)
+
+        # non block section U-Net elements
+        extra_elements = {
+            "time_embed.0.bias":-1,
+            "time_embed.0.weight":-1,
+            "time_embed.2.bias":-1,
+            "time_embed.2.weight":-1,
+            "out.0.bias":-1,
+            "out.0.weight":-1,
+            "out.2.bias":-1,
+            "out.2.weight":-1,
+        }
 
         # merge main
         weight_start = 0
@@ -1690,7 +1715,12 @@ class ModelMixerScript(scripts.Script):
                 if "model" in key and key in theta_1:
                     if usembw:
                         i = _weight_index(key, isxl=isxl)
-                        if i == -1: continue # not found
+                        if i == -1:
+                            if use_extra_elements and any(s in key for s in extra_elements.keys()):
+                                # FIXME
+                                i = -1
+                            else:
+                                continue # not found
                         alpha = mm_weights[n][i]
 
                         # check elemental merge weights
@@ -2186,6 +2216,17 @@ def on_ui_settings():
             label="Debug Infos",
             component=gr.CheckboxGroup,
             component_args={"choices": ["elemental merge", "merge", "adjust"]},
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        "mm_use_extra_elements",
+        shared.OptionInfo(
+            default=True,
+            label="Merge Extra Elements (.time_embed.*, .out.*)",
+            component=gr.Checkbox,
+            component_args={"interactive": True},
             section=section,
         ),
     )
