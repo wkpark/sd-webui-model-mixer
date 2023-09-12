@@ -1320,6 +1320,13 @@ class ModelMixerScript(scripts.Script):
 
         # check SDXL
         isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in models['model_a']
+        recheck_xl = "model.diffusion_model.input_blocks.11.0.out_layers.3.weight" not in models['model_a']
+        if recheck_xl and not isxl:
+            print(f"WARN: Loaded SDXL from shared.sd_model has size mismatch. Loading again from file {checkpoint_info.filename}...")
+            del models['model_a']
+            models['model_a'] = sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
+            isxl = True
+
         print("isxl =", isxl)
 
         # prepare for merges
@@ -1644,13 +1651,7 @@ class ModelMixerScript(scripts.Script):
 
         checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256)
         state_dict = theta_0.copy()
-        try:
-            sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
-        except Exception as e:
-            print(f"FATAL: Fail to load_model(). fallback load load_model_weights()... {e}")
-            # XXX call load_model_weights() to work with --medvram-sdxl option
-            timer = Timer()
-            sd_models.load_model_weights(shared.sd_model, checkpoint_info, theta_0, timer)
+        sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
         del state_dict
 
         # XXX fix checkpoint_info.filename
