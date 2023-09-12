@@ -807,6 +807,15 @@ class ModelMixerScript(scripts.Script):
             else:
                 return gr.update(value="Not a valid merged model")
 
+            sha256 = current["hash"]
+            if shared.sd_model.sd_checkpoint_info.sha256 != sha256:
+                err_msg = "Current checkpoint is not a merged one."
+                print(err_msg)
+                return gr.update(value=err_msg)
+
+            if "sd_merge_recipe" not in metadata or "sd_merge_models" not in metadata:
+                return gr.update(value="Not a valid merged model")
+
             if  "merge recipe" in metadata_settings:
                 metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"])
             else:
@@ -826,12 +835,6 @@ class ModelMixerScript(scripts.Script):
             else:
                 pre = ""
             ext = ".safetensors" if "safetensors" in save_settings else ".ckpt"
-
-            sha256 = current["hash"]
-            if shared.sd_model.sd_checkpoint_info.sha256 != sha256:
-                err_msg = "Current checkpoint is not a merged one."
-                print(err_msg)
-                return gr.update(value=err_msg)
 
             if not custom_name or custom_name == "":
                 fname = shared.sd_model.sd_checkpoint_info.name_for_extra.replace(" ","").replace(",","_").replace("(","_").replace(")","_") + pre + ext
