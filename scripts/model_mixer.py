@@ -20,7 +20,7 @@ from safetensors.torch import save_file
 
 from copy import copy, deepcopy
 from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings, ui_common
-from modules import scripts, cache
+from modules import scripts, cache, devices, lowvram
 from modules.sd_models import model_hash, model_path, checkpoints_loaded
 from modules.scripts import basedir
 from modules.timer import Timer
@@ -823,8 +823,16 @@ class ModelMixerScript(scripts.Script):
             metadata["sd_merge_models"] = json.dumps(metadata["sd_merge_models"])
 
             if shared.sd_model is not None:
-                print("load from shared.sd_model..")
+                print("Load state_dict from shared.sd_model..")
+                # save to cpu
+                sd_models.send_model_to_cpu(shared.sd_model)
+                sd_hijack.model_hijack.undo_hijack(shared.sd_model)
+
                 state_dict = shared.sd_model.state_dict()
+
+                # restore to gpu
+                sd_models.send_model_to_device(shared.sd_model)
+                sd_hijack.model_hijack.hijack(shared.sd_model)
             else:
                 print("No loaded model found")
                 return gr.update(value="No loaded model found")
@@ -867,6 +875,7 @@ class ModelMixerScript(scripts.Script):
 
             print("Saving...")
             isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in state_dict
+            print("isxl = ", isxl)
             if isxl:
                 # prune share memory tensors, "cond_stage_model." prefixed base tensors are share memory with "conditioner." prefixed tensors
                 for i, key in enumerate(state_dict.keys()):
@@ -1651,8 +1660,13 @@ class ModelMixerScript(scripts.Script):
 
         checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256)
         state_dict = theta_0.copy()
+        was_sdxl = hasattr(shared.sd_model, 'conditioner') if shared.sd_model is not None else None
+        if was_sdxl and isxl:
+            print("WARN: load_model() with minor workaround")
+            sd_models.model_data.__init__()
         sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
         del state_dict
+        devices.torch_gc()
 
         # XXX fix checkpoint_info.filename
         filename = os.path.join(model_path, f"{model_name}.safetensors")
