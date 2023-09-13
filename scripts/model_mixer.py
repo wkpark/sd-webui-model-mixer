@@ -1070,11 +1070,20 @@ class ModelMixerScript(scripts.Script):
             if len(blocks) == 0:
                 return gr.update()
 
-            info = ("NOT " if not_blocks else "") + " ".join(blocks)
-            info += ":" + ("NOT " if not_elements else "") + " ".join(elements) + ":" + str(ratio) + "\n"
-            if len(elemental) > 0 and elemental[-1] != "\n":
-                elemental += "\n"
-            info = elemental + info
+            # newly added
+            info = ("NOT " if not_blocks else "") + " ".join(prepblocks(blocks, BLOCKID))
+            info += ":" + ("NOT " if not_elements else "") + " ".join(elements) + ":" + str(ratio)
+
+            # old
+            tmp = elemental.strip().replace(",", "\n").strip().split("\n")
+            tmp = list(filter(None, tmp))
+            tmp = [f.strip() for f in tmp]
+
+            edit = [info]
+
+            # add newly added entries only
+            newtmp = tmp + [l for l in edit if l not in tmp]
+            info = "\n".join(newtmp) + "\n"
             return gr.update(value=info)
 
         def read_elemental(elemental):
@@ -2047,6 +2056,16 @@ def get_blocks_elements(res):
         sorted_elements[name] = elems
 
     return sorted_elements
+
+def prepblocks(blocks, blockids):
+    #blocks = sorted(set(blocks)) # one liner
+    out = []
+    for b in blockids:
+        for s in blocks:
+            if s == b:
+                out.append(s)
+                break
+    return out
 
 # based on Supermerger with modification
 def blocker(flag, blocks, blockids):
