@@ -1301,7 +1301,17 @@ class ModelMixerScript(scripts.Script):
             if already_loaded is not None and already_loaded.title == checkpoint_info.title:
                 # model is already loaded
                 print(f"Loading {checkpoint_info.title} from loaded model...")
-                return {k: v.cpu() for k, v in shared.sd_model.state_dict().items()}
+                # save to cpu
+                sd_models.send_model_to_cpu(shared.sd_model)
+                sd_hijack.model_hijack.undo_hijack(shared.sd_model)
+
+                state_dict = shared.sd_model.state_dict()
+
+                # restore to gpu
+                sd_models.send_model_to_device(shared.sd_model)
+                sd_hijack.model_hijack.hijack(shared.sd_model)
+
+                return state_dict
 
             # get cached state_dict
             if shared.opts.sd_checkpoint_cache > 0:
