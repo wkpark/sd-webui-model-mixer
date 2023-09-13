@@ -429,15 +429,14 @@ class ModelMixerScript(scripts.Script):
 
         with gr.Row():
             mm_alpha = gr.Slider(label=f"Multiplier for Model {name}", minimum=-1.0, maximum=2, step=0.001, value=0.5)
-        with gr.Row():
-            with gr.Column(scale=3):
+        with gr.Group():
+            with gr.Row():
                 with gr.Group(Visible=True) as mbw_advanced:
                     mm_usembws = gr.Dropdown(["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:], value=[], multiselect=True, label="Merge Block Weights", show_label=False, info="or use Merge Block Weights for selected blocks")
                 with gr.Group(visible=False) as mbw_simple:
                     mm_usembws_simple = gr.CheckboxGroup(["BASE","INP*","MID","OUT*"], value=[], label="Merge Block Weights", show_label=False, info="or use Merge Block Weights for selected blocks")
-            with gr.Column(scale=1):
-                with gr.Row():
-                    mbw_use_advanced = gr.Checkbox(label="Use advanced MBW mode", value=True, visible=True)
+            with gr.Row():
+                mbw_use_advanced = gr.Checkbox(label="Use advanced MBW mode", value=True, visible=True)
         with gr.Row():
             mm_explain = gr.HTML("")
         with gr.Row():
@@ -640,20 +639,20 @@ class ModelMixerScript(scripts.Script):
 
             with gr.Accordion("Elemental Merge",open = False):
                 with gr.Row():
-                    mm_elemental_main = gr.Textbox(label="Elemental Blocks", show_label=False, info="Blocks:Elements:Ratio,Blocks:Elements:Ratio,...",lines=2,value="")
+                    mm_elemental_main = gr.Textbox(label="Blocks:Elements:Ratio,Blocks:Elements:Ratio,...",lines=2,value="", show_copy_button=True)
+                    elemental_read = gr.Button(value="↓", elem_classes=["tool"])
                 with gr.Row():
                     with gr.Column(variant="compact"):
                         with gr.Row():
-                            not_elemblks = gr.Checkbox(value=False, label="NOT", info="\u2003", scale=1, min_width=30)
+                            not_elemblks = gr.Checkbox(value=False, label="", info="NOT", scale=1, min_width=30, elem_classes=["not-button"])
                             elemblks = gr.Dropdown(BLOCKID, value=[], label="Blocks", show_label=False, multiselect=True, info="Select Blocks", scale=7)
                     with gr.Column(variant="compact"):
                         with gr.Row():
-                            not_elements = gr.Checkbox(value=False, label="NOT", info="\u2003", scale=1, min_width=30)
+                            not_elements = gr.Checkbox(value=False, label="", info="NOT", scale=1, min_width=30, elem_classes=["not-button"])
                             elements = gr.Dropdown([], values=[], label="Elements", show_label=False, multiselect=True, info="Select Elements", elem_id="mm_elemental_elements", scale=7)
                 with gr.Row():
                     elemental_ratio = gr.Slider(minimum=0, maximum=2, value=0.5, step=0.01, label="Ratio")
                     elemental_write = gr.Button(value="↑", elem_classes=["tool"])
-                    elemental_read = gr.Button(value="↓", elem_classes=["tool"])
                     elemental_reset = gr.Button(value="\U0001f5d1\ufe0f", elem_classes=["tool"])
 
             with gr.Accordion("Save the current merged model", open=False):
@@ -1066,6 +1065,8 @@ class ModelMixerScript(scripts.Script):
 
         def write_elemental(not_blocks, not_elements, blocks, elements, ratio, elemental):
             # update elemental information
+            if len(blocks) == 0:
+                return gr.update()
 
             info = ("NOT " if not_blocks else "") + " ".join(blocks)
             info += ":" + ("NOT " if not_elements else "") + " ".join(elements) + ":" + str(ratio) + "\n"
@@ -1077,12 +1078,12 @@ class ModelMixerScript(scripts.Script):
         def read_elemental(elemental):
             tmp = elemental.strip()
             if len(tmp) == 0:
-                return
+                return [gr.update()]*5
             lines = tmp.splitlines()
             sel = lines[len(lines) - 1]
             tmp = sel.split(":")
             if len(tmp) != 3:
-                return
+                return [gr.update()]*5
             ratio = float(tmp[2])
 
             blks = tmp[0].strip().split(" ")
@@ -1095,7 +1096,7 @@ class ModelMixerScript(scripts.Script):
             elem = tmp[1].strip().split(" ")
             elem = list(filter(None, elem))
             not_elem = False
-            if elem[0].upper() == "NOT":
+            if len(elem) > 0 and elem[0].upper() == "NOT":
                 not_elem = True
                 elem = elem[1:]
 
@@ -1430,10 +1431,12 @@ class ModelMixerScript(scripts.Script):
         print("  - elementals", mm_elementals)
 
         # parse elemental weights
+        if "elemental merge" in debugs: print("  - Parse elemental merge...")
         for j in range(len(mm_models)):
             elemental_ws = None
             if use_elemental:
                 elemental_ws = parse_elemental(mm_elementals[j])
+                if "elemental merge" in debugs: print(elemental_ws)
                 if elemental_ws is not None:
                     mm_elementals[j] = elemental_ws
             if elemental_ws is None:
@@ -2050,20 +2053,27 @@ def parse_elemental(elemental):
     if len(elemental) > 0:
         for d in elemental:
             if d.count(":") != 2:
+                # invalid case
                 continue
             dbs, dws, dr = [f.strip() for f in d.split(":")]
             try:
                 dr = float(dr)
             except:
+                print(f"Invalid elemental entry - {d}")
                 pass
 
             dbs = dbs.split(" ")
             dbs = list(filter(None, dbs))
+            if len(dbs) == 0:
+                # invalid case
+                print(f"Invalid elemental entry - {d}")
+                continue
             dbn, dbs = (False, dbs[1:]) if dbs[0].upper() == "NOT" else (True, dbs)
             dbs = blocker(dbn, dbs, BLOCKID)
 
             dws = dws.split(" ")
             dws = list(filter(None, dws))
+            dws = [""] if len(dws) == 0 else dws # empty elements case
             dwn, dws = (False, dws[1:]) if dws[0].upper() == "NOT" else (True, dws)
 
             for block in dbs:
@@ -2073,7 +2083,6 @@ def parse_elemental(elemental):
                 if was_empty:
                     elemental_weights[block] = weights
 
-        print(elemental_weights)
         return elemental_weights
     return None
 
