@@ -1039,9 +1039,9 @@ class ModelMixerScript(scripts.Script):
 
         def config_sdxl(isxl, num_models):
             if isxl:
-                BLOCKS = BLOCKID
+                BLOCKS = BLOCKIDXL
             else:
-                BLOCKS = BLOCKIDXLL[:-1]
+                BLOCKS = BLOCKID
             ret = [gr.update(choices=BLOCKS)]
             ret += [gr.update(visible=True) for _ in range(26)] if not isxl else [gr.update(visible=ISXLBLOCK[i]) for i in range(26)]
             choices = ["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:] if not isxl else ["ALL","BASE","INP*","MID","OUT*"]+BLOCKIDXL[1:]
