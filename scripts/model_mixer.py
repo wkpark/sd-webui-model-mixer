@@ -450,7 +450,7 @@ class ModelMixerScript(scripts.Script):
                 mm_use_elemental = gr.Checkbox(label="Use Elemental merge", value=False, visible=True)
         with gr.Group(visible=False) as elemental_ui:
             with gr.Row():
-                mm_elemental = gr.Textbox(label="Blocks:Elements:Ratio,Blocks:Elements:Ratio,...", lines=1, max_lines=4, value="", show_copy_button=True)
+                mm_elemental = gr.Textbox(label="Blocks:Elements:Ratio,Blocks:Elements:Ratio,...", lines=2, max_lines=4, value="", show_copy_button=True)
             with gr.Row():
                 mm_set_elem = gr.Button(value="↑ Set elemental merge weights")
 
@@ -614,10 +614,11 @@ class ModelMixerScript(scripts.Script):
                     dtrue =  gr.Checkbox(value = True, visible = False)
                     dfalse =  gr.Checkbox(value = False, visible = False)
 
-            with gr.Accordion("Adjust settings", open=False):
+            with gr.Row(elem_classes="accordions"):
+              with gr.Accordion("Adjust settings", open=False, elem_classes=["input-accordion"]):
                 with gr.Row():
                     mm_finetune = gr.Textbox(label="IN,OUT,OUT2,Contrast,COL1,COL2,COL3", visible=True, value="", lines=1, show_copy_button=True)
-                    finetune_write = gr.Button(value="↑", elem_classes=["tool"])
+                    finetune_write = gr.Button(value="↖", elem_classes=["tool"])
                     finetune_read = gr.Button(value="↓", elem_classes=["tool"])
                     finetune_reset = gr.Button(value="\U0001f5d1\ufe0f", elem_classes=["tool"])
                 with gr.Row():
@@ -637,10 +638,12 @@ class ModelMixerScript(scripts.Script):
                     with gr.Column(scale=1, min_width=100):
                         col3 = gr.Slider(label="Color3", minimum=-10, maximum=10, step=0.01, value=0, info="Color Tone 3")
 
-            with gr.Accordion("Elemental Merge",open = False):
+              with gr.Accordion("Elemental Merge",open = False, elem_classes=["input-accordion"]):
                 with gr.Row():
-                    mm_elemental_main = gr.Textbox(label="Blocks:Elements:Ratio,Blocks:Elements:Ratio,...",lines=2,value="", show_copy_button=True)
+                    mm_elemental_main = gr.Textbox(label="Blocks:Elements:Ratio,Blocks:Elements:Ratio,...",lines=1,max_lines=4,value="", show_copy_button=True)
+                    elemental_write = gr.Button(value="↖", elem_classes=["tool"])
                     elemental_read = gr.Button(value="↓", elem_classes=["tool"])
+                    elemental_reset = gr.Button(value="\U0001f5d1\ufe0f", elem_classes=["tool"])
                 with gr.Row():
                     with gr.Column(variant="compact"):
                         with gr.Row():
@@ -650,10 +653,9 @@ class ModelMixerScript(scripts.Script):
                         with gr.Row():
                             not_elements = gr.Checkbox(value=False, label="", info="NOT", scale=1, min_width=30, elem_classes=["not-button"])
                             elements = gr.Dropdown([], values=[], label="Elements", show_label=False, multiselect=True, info="Select Elements", elem_id="mm_elemental_elements", scale=7)
-                with gr.Row():
-                    elemental_ratio = gr.Slider(minimum=0, maximum=2, value=0.5, step=0.01, label="Ratio")
-                    elemental_write = gr.Button(value="↑", elem_classes=["tool"])
-                    elemental_reset = gr.Button(value="\U0001f5d1\ufe0f", elem_classes=["tool"])
+                    with gr.Column(variant="compact"):
+                        with gr.Row():
+                            elemental_ratio = gr.Slider(minimum=0, maximum=2, value=0.5, step=0.01, label="Ratio", scale=8)
 
             with gr.Accordion("Save the current merged model", open=False):
                 with gr.Row():
