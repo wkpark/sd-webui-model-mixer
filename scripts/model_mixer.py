@@ -1071,7 +1071,7 @@ class ModelMixerScript(scripts.Script):
                 return gr.update()
 
             # newly added
-            info = ("NOT " if not_blocks else "") + " ".join(prepblocks(blocks, BLOCKID))
+            info = ("NOT " if not_blocks else "") + " ".join(zipblocks(blocks, BLOCKID))
             info += ":" + ("NOT " if not_elements else "") + " ".join(elements) + ":" + str(ratio)
 
             # old
@@ -1103,6 +1103,8 @@ class ModelMixerScript(scripts.Script):
             if blks[0].upper() == "NOT":
                 not_blks = True
                 blks = blks[1:]
+            # expand any block ranges
+            blks = prepblocks(blks, BLOCKID)
 
             elem = tmp[1].strip().split(" ")
             elem = list(filter(None, elem))
@@ -2087,6 +2089,40 @@ def prepblocks(blocks, blockids, select=True):
     for i, s in enumerate(selected):
         if s:
             out.append(blockids[i])
+    return out
+
+def zipblocks(blocks, blockids):
+    """zip blocks to block ranges"""
+    selected = [False]*len(blockids)
+    for b in blocks:
+        if b in blockids:
+            selected[blockids.index(b)] = True
+        else:
+            # ignore
+            print(f" - WARN: Invalid block {b} was ignored...")
+
+    i = 0
+    out = []
+    while i < len(selected):
+        try:
+            start = selected.index(True, i)
+        except:
+            break
+
+        if selected[start+1] is True:
+            try:
+                end = selected.index(False, start+2)
+            except:
+                end = len(selected)
+
+            if end - start == 2:
+                out += blockids[start:end]
+            else:
+                out.append(f"{blockids[start]}-{blockids[end-1]}")
+            i = end + 1
+        else:
+            out.append(blockids[start])
+            i = start + 1
     return out
 
 def parse_elemental(elemental):
