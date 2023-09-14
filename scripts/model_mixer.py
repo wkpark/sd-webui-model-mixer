@@ -2057,43 +2057,37 @@ def get_blocks_elements(res):
 
     return sorted_elements
 
-def prepblocks(blocks, blockids):
-    #blocks = sorted(set(blocks)) # one liner
-    out = []
-    for b in blockids:
-        for s in blocks:
-            if s == b:
-                out.append(s)
-                break
-    return out
-
-# based on Supermerger with modification
-def blocker(flag, blocks, blockids):
-    output = []
-    flagger = [False]*len(blockids)
-    changer = True
-    for w in blocks:
-        if "-" in w:
-            wt = [wt.strip() for wt in w.split('-')]
-            if blockids.index(wt[1]) == -1 or blockids.index(wt[0]) == -1:
+def prepblocks(blocks, blockids, select=True):
+    #blocks = sorted(set(blocks)) # one liner block sorter
+    expands = []
+    for br in blocks:
+        if "-" in br:
+            bs = [b.strip() for b in br.split('-')]
+            try:
+                si, ei = blockids.index(bs[0]), blockids.index(bs[1])
+            except:
                 # ignore
-                print(f" - WARN: invalid elemental merge block range {w} was ignored...")
+                print(f" - WARN: Invalid block range {br} was ignored...")
                 continue
-            if  blockids.index(wt[1]) > blockids.index(wt[0]):
-                flagger[blockids.index(wt[0]):blockids.index(wt[1])+1] = [changer]*(blockids.index(wt[1])-blockids.index(wt[0])+1)
-            else:
-                flagger[blockids.index(wt[1]):blockids.index(wt[0])+1] = [changer]*(blockids.index(wt[0])-blockids.index(wt[1])+1)
+            if si > ei:
+                si, ei = ei, si
+            expands += blockids[si:ei+1]
         else:
-            if blockids.index(w) > -1:
-                flagger[blockids.index(w)] = True
+            if br in blockids:
+                expands.append(br)
             else:
-                print(f" - WARN: invalid elemental merge block {w} was ignored...")
-    if not flag:
-        flagger = [not flagger[i] for i in range(0, len(blockids))]
-    for i in range(len(blockids)):
-        if flagger[i]:
-            output.append(blockids[i])
-    return output
+                print(f" - WARN: Invalid block {br} was ignored...")
+
+    selected = [not select]*len(blockids)
+
+    for b in expands:
+        selected[blockids.index(b)] = select
+
+    out = []
+    for i, s in enumerate(selected):
+        if s:
+            out.append(blockids[i])
+    return out
 
 def parse_elemental(elemental):
     if len(elemental) > 0:
@@ -2120,7 +2114,7 @@ def parse_elemental(elemental):
                 print(f"Invalid elemental entry - {d}")
                 continue
             dbn, dbs = (False, dbs[1:]) if dbs[0].upper() == "NOT" else (True, dbs)
-            dbs = blocker(dbn, dbs, BLOCKID)
+            dbs = prepblocks(dbs, BLOCKID, select=dbn)
 
             dws = dws.split(" ")
             dws = list(filter(None, dws))
