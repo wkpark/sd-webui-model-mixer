@@ -18,6 +18,9 @@ from tqdm import tqdm
 import torch
 from safetensors.torch import save_file
 
+from multiprocessing import cpu_count
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from copy import copy, deepcopy
 from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings, ui_common
 from modules import scripts, cache, devices, lowvram
@@ -1355,6 +1358,7 @@ class ModelMixerScript(scripts.Script):
         print("debugs = ", debugs)
         use_extra_elements = shared.opts.data.get("mm_use_extra_elements", True)
         print("use_extra_elements = ", use_extra_elements)
+        use_multithread = shared.opts.data.get("mm_use_multithread", True)
 
         base_model = None if base_model == "None" else base_model
         # extract model infos
@@ -1744,54 +1748,82 @@ class ModelMixerScript(scripts.Script):
                 alphas.append(mm_weights[n])
                 print(f"mode = {modes[n]}, mbw mode, alpha = {mm_weights[n]}")
 
+            def nth(k):
+                return {1:"1st",2:"2nd",3:"3rd"}.get(k, f"{k}th")
+
             # main routine
-            for key in (tqdm(keys, desc=f"Stage #{stage}/{stages}")):
-                if "model_" in key:
-                    continue
-                if key in checkpoint_dict_skip_on_merge:
-                    continue
-                if "model" in key and key in theta_1:
-                    if usembw:
-                        i = _weight_index(key, isxl=isxl)
-                        if i == -1:
-                            if use_extra_elements and any(s in key for s in extra_elements.keys()):
-                                # FIXME
-                                i = -1
-                            else:
-                                continue # not found
-                        alpha = mm_weights[n][i]
+            def calc_loop(k, keys):
+                desc=f"Stage #{stage}/{stages}"
+                if k is not None:
+                    desc+=f"-{nth(k)}"
+                for key in (tqdm(keys, desc=desc)):
+                    if "model_" in key:
+                        continue
+                    if key in checkpoint_dict_skip_on_merge:
+                        continue
+                    if "model" in key and key in theta_1:
+                        alpha = mm_alpha[n]
+                        if usembw:
+                            i = _weight_index(key, isxl=isxl)
+                            if i == -1:
+                                if use_extra_elements and any(s in key for s in extra_elements.keys()):
+                                    # FIXME
+                                    i = -1
+                                else:
+                                    continue # not found
+                            alpha = mm_weights[n][i]
 
-                        # check elemental merge weights
-                        if mm_elementals[n] is not None:
-                            if i < 0:
-                                name = "" # empty block name -> extra elements
-                            else:
-                                name = BLOCKID[i] if not isxl else BLOCKIDXL[i]
-                            ws = mm_elementals[n].get(name, None)
-                            new_alpha = None
-                            if ws is not None:
-                                for j, w in enumerate(ws):
-                                    flag = w["flag"]
-                                    elem = w["elements"]
-                                    if flag and any(item in key for item in w["elements"]):
-                                        new_alpha = w['ratio']
-                                        if "elemental merge" in debugs: print(f' - Elemental: merge wiehts[{j}] - {key} -', key, w["elements"], new_alpha)
-                                    elif not flag and all(item not in key for item in w["elements"]):
-                                        new_alpha = w['ratio']
-                                        if "elemental merge" in debugs: print(f' - Elemental: merge wiehts[{j}] - {key} - NOT', key, w["elements"], new_alpha)
+                            # check elemental merge weights
+                            if mm_elementals[n] is not None:
+                                if i < 0:
+                                    name = "" # empty block name -> extra elements
+                                else:
+                                    name = BLOCKID[i] if not isxl else BLOCKIDXL[i]
+                                ws = mm_elementals[n].get(name, None)
+                                new_alpha = None
+                                if ws is not None:
+                                    for j, w in enumerate(ws):
+                                        flag = w["flag"]
+                                        elem = w["elements"]
+                                        if flag and any(item in key for item in w["elements"]):
+                                            new_alpha = w['ratio']
+                                            if "elemental merge" in debugs: print(f' - Elemental: merge wiehts[{j}] - {key} -', key, w["elements"], new_alpha)
+                                        elif not flag and all(item not in key for item in w["elements"]):
+                                            new_alpha = w['ratio']
+                                            if "elemental merge" in debugs: print(f' - Elemental: merge wiehts[{j}] - {key} - NOT', key, w["elements"], new_alpha)
 
-                            # apply elemental merging weight ratio
-                            if new_alpha is not None:
-                                alpha = new_alpha
+                                # apply elemental merging weight ratio
+                                if new_alpha is not None:
+                                    alpha = new_alpha
 
-                    if modes[n] == "Sum":
-                        if alpha == 1.0:
-                            theta_0[key] = theta_1[key]
-                        elif alpha != 0.0:
-                            theta_0[key] = (1 - alpha) * (theta_0[key]) + alpha * theta_1[key]
-                    else:
-                        if alpha != 0.0:
-                            theta_0[key] = theta_0[key] + (theta_1[key] - model_base[key]) * alpha
+                        if modes[n] == "Sum":
+                            if alpha == 1.0:
+                                theta_0[key] = theta_1[key]
+                            elif alpha != 0.0:
+                                theta_0[key] = (1 - alpha) * (theta_0[key]) + alpha * theta_1[key]
+                        else:
+                            if alpha != 0.0:
+                                theta_0[key] = theta_0[key] + (theta_1[key] - model_base[key]) * alpha
+
+            def mt_calc_loop(threads, tasks_per_thread, keys):
+                total_threads = threads * tasks_per_thread
+
+                print(f"Multi-thread merge: {total_threads}-threads")
+
+                futures = []
+                with ThreadPoolExecutor(max_workers=threads) as executor:
+                    futures = [executor.submit(calc_loop, i+1, keys[i::total_threads]) for i in range(total_threads)]
+                    for future in as_completed(futures):
+                        if not future.result():
+                            executor.shutdown()
+
+            # call multithread loop conditionally
+            if use_multithread != 0 and len(keys) > use_multithread:
+                threads = cpu_count()
+                tasks_per_thread = shared.opts.data.get("mm_tasks_per_thread", 1)
+                mt_calc_loop(threads, tasks_per_thread, keys)
+            else:
+                calc_loop(None, keys)
 
             if n == weight_start:
                 stage += 1
@@ -2312,6 +2344,27 @@ def on_ui_settings():
             label="Merge Extra Elements (.time_embed.*, .out.*)",
             component=gr.Checkbox,
             component_args={"interactive": True},
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        "mm_use_multithread",
+        shared.OptionInfo(
+            default=500,
+            label="Use Multithread merge if the number of elements is greater than this size (default:500, 0: turn off)",
+            component=gr.Slider,
+            component_args={"minimum": 0, "maximum": 2000, "step": 100},
+            section=section,
+        ),
+    )
+    shared.opts.add_option(
+        "mm_tasks_per_thread",
+        shared.OptionInfo(
+            default=1,
+            label="Tasks per thread (default: 1)",
+            component=gr.Slider,
+            component_args={"minimum": 1, "maximum": 8, "step": 1},
             section=section,
         ),
     )
