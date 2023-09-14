@@ -1449,7 +1449,7 @@ class ModelMixerScript(scripts.Script):
         if "elemental merge" in debugs: print("  - Parse elemental merge...")
         for j in range(len(mm_models)):
             elemental_ws = None
-            if use_elemental:
+            if mm_use_elemental[j]:
                 elemental_ws = parse_elemental(mm_elementals[j])
                 if "elemental merge" in debugs: print(elemental_ws)
                 if elemental_ws is not None:
