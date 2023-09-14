@@ -1447,15 +1447,31 @@ class ModelMixerScript(scripts.Script):
 
         # parse elemental weights
         if "elemental merge" in debugs: print("  - Parse elemental merge...")
+        all_elemental_blocks = []
         for j in range(len(mm_models)):
             elemental_ws = None
             if mm_use_elemental[j]:
                 elemental_ws = parse_elemental(mm_elementals[j])
-                if "elemental merge" in debugs: print(elemental_ws)
+                if "elemental merge" in debugs: print(" Elemental merge wegiths = ", elemental_ws)
                 if elemental_ws is not None:
                     mm_elementals[j] = elemental_ws
+                    all_elemental_blocks = all_elemental_blocks + list(elemental_ws.keys())
             if elemental_ws is None:
                 mm_elementals[j] = None
+
+        # get all elemental blocks
+        if len(all_elemental_blocks) > 0:
+            all_elemental_blocks = set(all_elemental_blocks)
+            if "elemental merge" in debugs: print(" Elemental: all elemental blocks = ", all_elemental_blocks)
+
+        def selected_elemental_blocks(blocks, isxl):
+            max_blocks = 26 - (0 if not isxl else 6)
+            BLOCKIDS = BLOCKID if not isxl else BLOCKIDXL
+            elemental_selected = [False] * max_blocks
+            for j, b in enumerate(BLOCKIDS):
+                if b in blocks:
+                    elemental_selected[j] = True
+            return elemental_selected
 
         mm_weights_orig = mm_weights
 
@@ -1524,6 +1540,11 @@ class ModelMixerScript(scripts.Script):
 
         print("isxl =", isxl)
 
+        # get all selected elemental blocks
+        elemental_selected = []
+        if len(all_elemental_blocks) > 0:
+            elemental_selected = selected_elemental_blocks(all_elemental_blocks, isxl)
+
         # prepare for merges
         compact_mode = None
         mm_selected = [[]] * num_models
@@ -1543,6 +1564,12 @@ class ModelMixerScript(scripts.Script):
             for j in range(len(mm_models)):
                 for k in range(max_blocks):
                     mm_selected_all[k] = mm_selected_all[k] or mm_selected[j][k]
+
+            # add elemental_selected blocks
+            if len(elemental_selected) > 0:
+                for k in range(max_blocks):
+                    mm_selected_all[k] = mm_selected_all[k] or elemental_selected[k]
+
             all_blocks = _all_blocks(isxl)
             for k in range(max_blocks):
                 if mm_selected_all[k]:
@@ -1610,7 +1637,7 @@ class ModelMixerScript(scripts.Script):
 
             # add some missing extra_elements
             last_block = "output_blocks.11." if not isxl else "output_blocks.8."
-            if use_extra_elements and last_block in selected_blocks:
+            if use_extra_elements and (last_block in selected_blocks) or ("" in all_elemental_blocks):
                 for el in [ "time_embed.0.bias", "time_embed.0.weight", "time_embed.2.bias", "time_embed.2.weight", "out.0.bias", "out.0.weight", "out.2.bias", "out.2.weight" ]:
                     k = f"model.diffusion_model.{el}"
                     keys.append(k)
@@ -1735,8 +1762,11 @@ class ModelMixerScript(scripts.Script):
                         alpha = mm_weights[n][i]
 
                         # check elemental merge weights
-                        if mm_elementals[n] is not None and i >= 0:
-                            name = BLOCKID[i] if not isxl else BLOCKIDXL[i]
+                        if mm_elementals[n] is not None:
+                            if i < 0:
+                                name = "" # empty block name -> extra elements
+                            else:
+                                name = BLOCKID[i] if not isxl else BLOCKIDXL[i]
                             ws = mm_elementals[n].get(name, None)
                             new_alpha = None
                             if ws is not None:
@@ -1745,10 +1775,10 @@ class ModelMixerScript(scripts.Script):
                                     elem = w["elements"]
                                     if flag and any(item in key for item in w["elements"]):
                                         new_alpha = w['ratio']
-                                        if "elemental merge" in debugs: print(' -', j, '-', key, w["elements"], new_alpha)
+                                        if "elemental merge" in debugs: print(f' - Elemental: merge wiehts[{j}] - {key} -', key, w["elements"], new_alpha)
                                     elif not flag and all(item not in key for item in w["elements"]):
                                         new_alpha = w['ratio']
-                                        if "elemental merge" in debugs: print(' -', j, '- NOT', key, w["elements"], new_alpha)
+                                        if "elemental merge" in debugs: print(f' - Elemental: merge wiehts[{j}] - {key} - NOT', key, w["elements"], new_alpha)
 
                             # apply elemental merging weight ratio
                             if new_alpha is not None:
@@ -2145,15 +2175,21 @@ def parse_elemental(elemental):
 
             dbs = dbs.split(" ")
             dbs = list(filter(None, dbs))
-            if len(dbs) == 0:
-                # invalid case
-                print(f"Invalid elemental entry - {d}")
-                continue
-            dbn, dbs = (False, dbs[1:]) if dbs[0].upper() == "NOT" else (True, dbs)
-            dbs = prepblocks(dbs, BLOCKID, select=dbn)
+            if len(dbs) > 0:
+                dbn, dbs = (False, dbs[1:]) if dbs[0].upper() == "NOT" else (True, dbs)
+                dbs = prepblocks(dbs, BLOCKID, select=dbn)
+            else:
+                dbn = True
 
             dws = dws.split(" ")
             dws = list(filter(None, dws))
+            if len(dbs) == 0 and len(dws) == 0:
+                # invalid case
+                print(f"Invalid elemental entry - {d}")
+                continue
+
+            if len(dws) > 0 and len(dbs) == 0:
+                dbs = [""] # empty blocks case
             dws = [""] if len(dws) == 0 else dws # empty elements case
             dwn, dws = (False, dws[1:]) if dws[0].upper() == "NOT" else (True, dws)
 
