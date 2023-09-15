@@ -6,6 +6,7 @@
 #
 import collections
 import os
+import sys
 import gradio as gr
 import hashlib
 import json
@@ -16,6 +17,8 @@ import time
 import tqdm
 from tqdm import tqdm
 import torch
+import traceback
+from functools import partial
 from safetensors.torch import save_file
 
 from copy import copy, deepcopy
@@ -1377,6 +1380,35 @@ class ModelMixerScript(scripts.Script):
         mm_use_elemental = []
         mm_elementals = []
 
+        # check xyz grid and override args_
+        if hasattr(p, "modelmixer_xyz"):
+            args = list(args_)
+            for k, v in p.modelmixer_xyz.items():
+                print("XYZ:",k,"->",v)
+                if k == "model a":
+                    model_a = p.modelmixer_xyz[k]
+                elif k == "base model":
+                    base_model = p.modelmixer_xyz[k]
+                elif k == "adjust":
+                    mm_finetune = p.modelmixer_xyz[k]
+                else:
+                    # extract model index, field name etc.
+                    j = k.rfind(" ")
+                    name = k[j+1:] # model name: model b -> get "b"
+                    field = k[:j] # field name
+                    idx = ord(name) - 98 # model index: model b -> get 0
+
+                    if idx >= 0 and idx < num_models:
+                        if field == "model":
+                            args[num_models+idx] = v
+                        elif field == "alpha":
+                            args[num_models*3+idx] = v
+                        elif field == "mbw alpha":
+                            args[num_models*7+idx] = v
+                        elif field == "elemental":
+                            args[num_models*9+idx] = v
+            args_ = tuple(args)
+
         for n in range(num_models):
             use = args_[n]
             if type(use) is str:
@@ -2352,6 +2384,101 @@ def on_infotext_pasted(infotext, results):
 
     results.update(updates)
 
+# xyz support
+def make_axis_on_xyz_grid():
+    xyz_grid = None
+    for script in scripts.scripts_data:
+        if script.script_class.__module__ == "xyz_grid.py":
+            xyz_grid = script.module
+            break
+
+    if xyz_grid is None:
+        return
+
+    model_list = ["None"]+sd_models.checkpoint_tiles()
+
+    num_models = shared.opts.data.get("mm_max_models", 2)
+
+    def set_value(p, x, xs, *, field: str):
+        if not hasattr(p, "modelmixer_xyz"):
+            p.modelmixer_xyz = {}
+
+        p.modelmixer_xyz[field] = x
+
+    def format_weights_add_label(p, opt, x):
+        if type(x) == str:
+            x = x.replace(" ", ",")
+        return f"{opt.label}: {x}"
+
+    def format_elemental_add_label(p, opt, x):
+        x = x.replace(";", ",")
+        return f"{opt.label}: {x}"
+
+    axis = [
+        xyz_grid.AxisOption(
+            "[Model Mixer] Model A",
+            str,
+            partial(set_value, field="model a"),
+            choices=lambda: model_list,
+        ),
+        xyz_grid.AxisOption(
+            "[Model Mixer] Base model",
+            str,
+            partial(set_value, field="base model"),
+            choices=lambda: model_list,
+        ),
+        xyz_grid.AxisOption(
+            "[Model Mixer] Adjust (IN,OUT,OUT2,CONT,COL1,COL2,COL3)",
+            str,
+            partial(set_value, field="adjust"),
+            format_value=format_weights_add_label
+        )
+    ]
+
+    for n in range(num_models):
+        name = chr(98+n)
+        Name = chr(66+n)
+        entries = [
+            xyz_grid.AxisOption(
+                f"[Model Mixer] Model {Name}",
+                str,
+                partial(set_value, field=f"model {name}"),
+                choices=lambda: model_list,
+            ),
+            xyz_grid.AxisOption(
+                f"[Model Mixer] alpha {Name}",
+                float,
+                partial(set_value, field=f"alpha {name}"),
+            ),
+            xyz_grid.AxisOption(
+                f"[Model Mixer] MBW alpha {Name}",
+                str,
+                partial(set_value, field=f"mbw alpha {name}"),
+                format_value=format_weights_add_label
+            ),
+            xyz_grid.AxisOption(
+                f"[Model Mixer] elemental merge {Name}",
+                str,
+                partial(set_value, field=f"elemental {name}"),
+                format_value=format_elemental_add_label,
+            ),
+        ]
+        axis += entries
+
+    if not any(x.label.startswith("[Model Mixer]") for x in xyz_grid.axis_options):
+        xyz_grid.axis_options.extend(axis)
+
+def on_before_ui():
+    try:
+        make_axis_on_xyz_grid()
+    except Exception:
+        error = traceback.format_exc()
+        print(
+            f" - Model Mixer: xyz_grid error:\n{error}",
+            file=sys.stderr,
+        )
+
 script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_before_image_saved(on_image_save)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
+script_callbacks.on_before_ui(on_before_ui)
