@@ -1380,8 +1380,26 @@ class ModelMixerScript(scripts.Script):
         mm_use_elemental = []
         mm_elementals = []
 
+        # save given model index
+        modelindex = [None]*num_models
+
+        FINETUNES = [ "IN","OUT", "OUT2", "CONT", "COL1", "COL2", "COL3" ]
+
+        # save xyz pinpoint block info.
+        xyz_pinpoint_blocks = [{}]*num_models
+
+        # cleanup mm_finetune
+        mm_finetune = mm_finetune.strip()
+        mm_finetune = "" if mm_finetune.rstrip(",0") == "" else mm_finetune
+
         # check xyz grid and override args_
         if hasattr(p, "modelmixer_xyz"):
+            # prepare some variables
+            fines = mm_finetune.split(",")
+            if len(fines) < 7:
+                fines += [0]*(7-len(fines))
+            fines = fines[0:7]
+
             args = list(args_)
             for k, v in p.modelmixer_xyz.items():
                 print("XYZ:",k,"->",v)
@@ -1391,7 +1409,43 @@ class ModelMixerScript(scripts.Script):
                     base_model = p.modelmixer_xyz[k]
                 elif k == "adjust":
                     mm_finetune = p.modelmixer_xyz[k]
-                else:
+                    fines = mm_finetune.strip().split(",")[0:7]
+                elif k == "pinpoint adjust":
+                    pinpoint = p.modelmixer_xyz[k]
+                    if pinpoint in FINETUNES:
+                        idx = FINETUNES.index(pinpoint)
+                        if "pinpoint alpha" in p.modelmixer_xyz:
+                            alpha = p.modelmixer_xyz["pinpoint alpha"]
+                        else:
+                            raise RuntimeError(f"'Pinpoint adjust' needs 'pinpoint alpha' in another axis")
+                        fines[idx] = str(alpha)
+                    else:
+                        raise RuntimeError(f"Invalid pinpoint adjust {pinpoint}")
+                elif "pinpoint block" in k:
+                    pinpoint = p.modelmixer_xyz[k]
+                    j = k.rfind(" ")
+                    name = k[j+1:] # model name: model b -> get "b"
+                    idx = ord(name) - 98 # model index: model b -> get 0
+                    if pinpoint in BLOCKID:
+                        if f"pinpoint alpha {name}" in p.modelmixer_xyz:
+                            alpha = p.modelmixer_xyz[f"pinpoint alpha {name}"]
+                        else:
+                            raise RuntimeError(f"Pinpoint block' needs 'pinpoint alpha' in another axis")
+                        # save pinpoint alpha to use later.
+                        xyz_pinpoint_blocks[idx][pinpoint] = alpha
+
+                        # insert pinpoint block into selected mbws blocks
+                        mbw_use_advanced = args[num_models*4+idx]
+                        usembws = args[num_models*5+idx]
+                        usembws_simple = args[num_models*6+idx]
+                        if not mbw_use_advanced:
+                            usembws = usembws_simple
+                        if pinpoint not in usembws:
+                            usembws += [pinpoint]
+                    else:
+                        raise RuntimeError(f"Pinpoint block' name {pinpoint} not found")
+
+                elif "pinpoint" not in k:
                     # extract model index, field name etc.
                     j = k.rfind(" ")
                     name = k[j+1:] # model name: model b -> get "b"
@@ -1407,7 +1461,9 @@ class ModelMixerScript(scripts.Script):
                             args[num_models*7+idx] = v
                         elif field == "elemental":
                             args[num_models*9+idx] = v
+            # restore
             args_ = tuple(args)
+            mm_finetune = ",".join([str(int(float(x))) if float(x) == int(float(x)) else str(x) for x in fines])
 
         for n in range(num_models):
             use = args_[n]
@@ -1415,8 +1471,6 @@ class ModelMixerScript(scripts.Script):
                 use = True if use == "True" else False
             mm_use[n] = use
 
-        mm_finetune = mm_finetune.strip()
-        mm_finetune = "" if mm_finetune.rstrip(",0") == "" else mm_finetune
         if True not in mm_use and mm_finetune == "":
             # no selected merge models
             print("No selected models found")
@@ -1452,6 +1506,9 @@ class ModelMixerScript(scripts.Script):
                 if model is None:
                     continue
 
+                # save original model index
+                modelindex[len(mm_models)] = j
+
                 mm_models.append(model)
                 mm_modes.append(mode)
                 mm_alpha.append(alpha)
@@ -1464,8 +1521,12 @@ class ModelMixerScript(scripts.Script):
         extra_params = self.modelmixer_extra_params(model_a, base_model, mm_max_models, mm_finetune, *args_)
         p.extra_generation_params.update(extra_params)
 
+        # make hash different for xyz-grid
+        xyz = None
+        if hasattr(p, "modelmixer_xyz"):
+            xyz = p.modelmixer_xyz
         # make a hash to cache results
-        sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_alpha, mm_usembws, mm_weights]).encode("utf-8")).hexdigest()
+        sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
         print("config hash = ", sha256)
         if shared.sd_model.sd_checkpoint_info is not None and shared.sd_model.sd_checkpoint_info.sha256 == sha256:
             # already mixed
@@ -1595,6 +1656,18 @@ class ModelMixerScript(scripts.Script):
                 compact_mode = True if compact_mode is None else compact_mode
             else:
                 compact_mode = False
+
+        # fix mm_weights to use poinpoint blocks xyz
+        for j in range(len(mm_models)):
+            # get original model index
+            n = modelindex[j]
+            BLOCKS = BLOCKID if not isxl else BLOCKIDXL
+            if len(xyz_pinpoint_blocks[n]) > 0:
+                for pin in xyz_pinpoint_blocks[n].keys():
+                    if pin in BLOCKS:
+                        mm_weights[j][BLOCKS.index(pin)] = xyz_pinpoint_blocks[n][pin]
+                    else:
+                        print("WARN: No pinpoint block found. ignore...")
 
         # get overall selected blocks
         if compact_mode:
@@ -2428,11 +2501,23 @@ def make_axis_on_xyz_grid():
             choices=lambda: model_list,
         ),
         xyz_grid.AxisOption(
-            "[Model Mixer] Adjust (IN,OUT,OUT2,CONT,COL1,COL2,COL3)",
+            "[Model Mixer] Adjust",
             str,
             partial(set_value, field="adjust"),
             format_value=format_weights_add_label
-        )
+        ),
+        xyz_grid.AxisOption(
+            "[Model Mixer] Pinpoint Adjust",
+            str,
+            partial(set_value, field="pinpoint adjust"),
+            choices=lambda: ["IN", "OUT", "OUT2", "CONT", "COL1", "COL2", "COL3"],
+        ),
+        xyz_grid.AxisOption(
+            "[Model Mixer] Pinpoint alpha",
+            float,
+            partial(set_value, field="pinpoint alpha"),
+            choices=lambda: [-6,-4,-2,0,2,4,6],
+        ),
     ]
 
     for n in range(num_models):
@@ -2461,6 +2546,18 @@ def make_axis_on_xyz_grid():
                 str,
                 partial(set_value, field=f"elemental {name}"),
                 format_value=format_elemental_add_label,
+            ),
+            xyz_grid.AxisOption(
+                f"[Model Mixer] Pinpoint block {Name}",
+                str,
+                partial(set_value, field=f"pinpoint block {name}"),
+                choices=lambda: BLOCKID,
+            ),
+            xyz_grid.AxisOption(
+                f"[Model Mixer] Pinpoint alpha {Name}",
+                float,
+                partial(set_value, field=f"pinpoint alpha {name}"),
+                choices=lambda: [0.2,0.4,0.6,0.8,1.0],
             ),
         ]
         axis += entries
