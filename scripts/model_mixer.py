@@ -439,12 +439,13 @@ class ModelMixerScript(scripts.Script):
                 mbw_use_advanced = gr.Checkbox(label="Use advanced MBW mode", value=True, visible=True)
         with gr.Row():
             mm_explain = gr.HTML("")
-        with gr.Row():
-            mm_weights = gr.Textbox(label="Merge Block Weights: BASE,IN00,IN02,...IN11,M00,OUT00,...,OUT11", show_copy_button=True,
-                value="0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5")
-        with gr.Row():
-            mm_setalpha = gr.Button(elem_id="copytogen", value="↑ set alpha")
-            mm_readalpha = gr.Button(elem_id="copytogen", value="↓ read alpha")
+        with gr.Group() as mbw_ui:
+            with gr.Row():
+                mm_weights = gr.Textbox(label="Merge Block Weights: BASE,IN00,IN02,...IN11,M00,OUT00,...,OUT11", show_copy_button=True,
+                    value="0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5")
+            with gr.Row():
+                mm_setalpha = gr.Button(elem_id="copytogen", value="↑ set alpha")
+                mm_readalpha = gr.Button(elem_id="copytogen", value="↓ read alpha")
         with gr.Column():
             with gr.Row():
                 mm_use_elemental = gr.Checkbox(label="Use Elemental merge", value=False, visible=True)
@@ -454,7 +455,14 @@ class ModelMixerScript(scripts.Script):
             with gr.Row():
                 mm_set_elem = gr.Button(value="↑ Set elemental merge weights")
 
+        # some interactions between controls
+        mm_usembws.change(fn=lambda a,b: [gr.update(visible=len(a)>0 or len(b)>0), gr_enable(len(a)==0 and len(b)==0)],
+            inputs=[mm_usembws, mm_usembws_simple], outputs=[mbw_ui, mm_alpha], show_progress=False)
+        mm_usembws_simple.change(fn=lambda a,b: [gr.update(visible=len(a)>0 or len(b)>0), gr_enable(len(a)==0 and len(b)==0)],
+            inputs=[mm_usembws, mm_usembws_simple], outputs=[mbw_ui, mm_alpha], show_progress=False)
         mm_use_elemental.change(fn=lambda u: gr.update(visible=u), inputs=[mm_use_elemental], outputs=[elemental_ui])
+        mbw_use_advanced.change(fn=lambda mode: [gr.update(visible=True), gr.update(visible=False)] if mode==True else [gr.update(visible=False),gr.update(visible=True)],
+            inputs=[mbw_use_advanced], outputs=[mbw_advanced, mbw_simple])
 
         return mm_alpha, mm_usembws, mm_usembws_simple, mbw_use_advanced, mbw_advanced, mbw_simple, mm_explain, mm_weights, mm_use_elemental, mm_elemental, mm_setalpha, mm_readalpha, mm_set_elem
 
@@ -816,13 +824,15 @@ class ModelMixerScript(scripts.Script):
                 # component is the setting_sd_model_checkpoint
                 model_a.change(fn=sync_main_checkpoint,
                     inputs=[enable_sync, model_a],
-                    outputs=[is_sdxl, model_a, component]
+                    outputs=[is_sdxl, model_a, component],
+                    show_progress=False,
                 )
                 self.init_model_a_change = True
 
                 enable_sync.change(fn=sync_main_checkpoint,
                     inputs=[enable_sync, model_a],
-                    outputs=[is_sdxl, model_a, component]
+                    outputs=[is_sdxl, model_a, component],
+                    show_progress=False,
                 )
 
         def current_metadata():
@@ -1294,11 +1304,9 @@ class ModelMixerScript(scripts.Script):
             mm_set_elem[n].click(fn=set_elemental, inputs=[mm_elementals[n], mm_elemental_main], outputs=[mm_elementals[n]])
 
             mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=members)
-            mm_usembws[n].change(fn=lambda mbws: gr_enable(len(mbws) == 0), inputs=[mm_usembws[n]], outputs=[mm_alpha[n]], show_progress=False)
             mm_models[n].change(fn=lambda modelname: [gr_show(modelname != "None"), gr.update(value="<h3>...</h3>")], inputs=[mm_models[n]], outputs=[model_options[n], recipe_all], show_progress=False)
             mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
-            mbw_use_advanced[n].change(fn=lambda mode: [gr.update(visible=True), gr.update(visible=False)] if mode==True else [gr.update(visible=False),gr.update(visible=True)], inputs=[mbw_use_advanced[n]], outputs=[mbw_advanced[n], mbw_simple[n]])
 
         return [enabled, model_a, base_model, mm_max_models, mm_finetune, *mm_use, *mm_models, *mm_modes, *mm_alpha,
             *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights, *mm_use_elemental, *mm_elementals]
