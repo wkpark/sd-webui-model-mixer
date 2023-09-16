@@ -2329,7 +2329,6 @@ def parse_elemental(elemental):
 # from modules/generation_parameters_copypaste.py
 re_param_code = r'\s*([\w ]+):\s*("(?:\\"[^,]|\\"|\\|[^\"])+"|[^,]*)(?:,|$)'
 re_param = re.compile(re_param_code)
-re_imagesize = re.compile(r"^(\d+)x(\d+)$")
 
 def quote(text):
     if ',' not in str(text) and '\n' not in str(text) and ':' not in str(text):
@@ -2354,12 +2353,7 @@ def parse(lastline):
             if v[0] == '"' and v[-1] == '"':
                 v = unquote(v)
 
-            m = re_imagesize.match(v)
-            if m is not None:
-                res[f"{k}-1"] = m.group(1)
-                res[f"{k}-2"] = m.group(2)
-            else:
-                res[k] = v
+            res[k] = v
         except Exception:
             print(f"Error parsing \"{k}: {v}\"")
 
