@@ -1936,7 +1936,7 @@ class ModelMixerScript(scripts.Script):
             save_settings = shared.opts.data.get("mm_save_model", ["safetensors", "fp16"])
             save_filename = shared.opts.data.get("mm_save_model_filename", "modelmixer-[hash].safetensors")
             save_filename = save_filename.replace("[hash]", f"{sha256[0:10]}").replace("[model_name]", f"{model_name}")
-            save_current_model(save_filename, "None", save_settings, ["merge_recipe"], state_dict=theta_0, metadata=metadata)
+            save_current_model(save_filename, "None", save_settings, ["merge_recipe"], state_dict=theta_0, metadata=metadata.copy())
 
         checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256)
         state_dict = theta_0.copy()
