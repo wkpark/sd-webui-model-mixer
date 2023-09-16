@@ -276,7 +276,7 @@ def print_blocks(blocks):
             block = f"IN{n:02d}"
             str.append(block)
         elif "middle_block." in x:
-            block = "MID00"
+            block = "M00"
             str.append(block)
         elif "output_blocks." in x:
             n = int(x[14:len(x)-1])
