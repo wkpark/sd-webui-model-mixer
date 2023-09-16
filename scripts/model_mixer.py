@@ -854,109 +854,6 @@ class ModelMixerScript(scripts.Script):
 
                 return gr.update(value=data)
 
-        def save_current_model(custom_name, bake_in_vae, save_settings, metadata_settings):
-            current = shared.opts.data.get("sd_webui_model_mixer_model", None)
-            if current is None:
-                return gr.update(value="No merged model found")
-
-            if shared.sd_model and shared.sd_model.sd_checkpoint_info:
-                metadata = shared.sd_model.sd_checkpoint_info.metadata.copy()
-            else:
-                return gr.update(value="Not a valid merged model")
-
-            sha256 = current["hash"]
-            if shared.sd_model.sd_checkpoint_info.sha256 != sha256:
-                err_msg = "Current checkpoint is not a merged one."
-                print(err_msg)
-                return gr.update(value=err_msg)
-
-            if "sd_merge_recipe" not in metadata or "sd_merge_models" not in metadata:
-                return gr.update(value="Not a valid merged model")
-
-            if  "merge recipe" in metadata_settings:
-                metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"])
-            else:
-                del metadata["sd_merge_recipe"]
-            metadata["sd_merge_models"] = json.dumps(metadata["sd_merge_models"])
-
-            if shared.sd_model is not None:
-                print("Load state_dict from shared.sd_model..")
-                # save to cpu
-                sd_models.send_model_to_cpu(shared.sd_model)
-                sd_hijack.model_hijack.undo_hijack(shared.sd_model)
-
-                state_dict = shared.sd_model.state_dict()
-
-                # restore to gpu
-                sd_models.send_model_to_device(shared.sd_model)
-                sd_hijack.model_hijack.hijack(shared.sd_model)
-            else:
-                print("No loaded model found")
-                return gr.update(value="No loaded model found")
-
-            # setup file, imported from supermerger
-            if "fp16" in save_settings:
-                pre = ".fp16"
-            else:
-                pre = ""
-            ext = ".safetensors" if "safetensors" in save_settings else ".ckpt"
-
-            if not custom_name or custom_name == "":
-                fname = shared.sd_model.sd_checkpoint_info.name_for_extra.replace(" ","").replace(",","_").replace("(","_").replace(")","_") + pre + ext
-                if fname[0] == "_":
-                    fname = fname[1:]
-            else:
-                fname = custom_name if ext in custom_name else custom_name + pre + ext
-
-            fname = os.path.join(model_path, fname)
-
-            if len(fname) > 255:
-               fname.replace(ext, "")
-               fname = fname[:240] + ext
-
-            # check if output file already exists
-            if os.path.isfile(fname) and not "overwrite" in save_settings:
-                err_msg = f"Output file ({fname}) exists. not saved."
-                print(err_msg)
-                return gr.update(value=err_msg)
-
-            # bake in VAE
-            bake_in_vae_filename = sd_vae.vae_dict.get(bake_in_vae, None)
-            if bake_in_vae_filename is not None:
-                print(f"Baking in VAE from {bake_in_vae_filename}")
-                vae_dict = sd_vae.load_vae_dict(bake_in_vae_filename, map_location='cpu')
-                for key in (tqdm(vae_dict.keys(), desc=f"Bake in VAE...")):
-                    key_name = 'first_stage_model.' + key
-                    state_dict[key_name] = copy.deepcopy(vae_dict[key])
-                del vae_dict
-
-            print("Saving...")
-            isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in state_dict
-            print("isxl = ", isxl)
-            if isxl:
-                # prune share memory tensors, "cond_stage_model." prefixed base tensors are share memory with "conditioner." prefixed tensors
-                for i, key in enumerate(state_dict.keys()):
-                    if "cond_stage_model." in key:
-                        del state_dict[key]
-
-            if "fp16" in save_settings:
-                state_dict = to_half(state_dict, True)
-            if "prune" in save_settings:
-                state_dict = prune_model(state_dict, isxl)
-
-            try:
-                if ext == ".safetensors":
-                    save_file(state_dict, fname, metadata=metadata)
-                else:
-                    torch.save(state_dict, fname)
-            except Exception as e:
-                print(f"ERROR: Couldn't saved:{fname},ERROR is {e}")
-                return gr.update(value=f"ERROR: Couldn't saved:{fname},ERROR is {e}")
-            print("Done!")
-
-            data = "Merged model saved in " + fname
-            return gr.update(value=data)
-
         # set callback
         if self.init_model_a_change is False:
             script_callbacks.on_after_component(on_after_components)
@@ -2035,6 +1932,12 @@ class ModelMixerScript(scripts.Script):
             checkpoint_info.ids = [checkpoint_info.model_name, checkpoint_info.name, checkpoint_info.name_for_extra]
             return checkpoint_info
 
+        if "save model" in debugs:
+            save_settings = shared.opts.data.get("mm_save_model", ["safetensors", "fp16"])
+            save_filename = shared.opts.data.get("mm_save_model_filename", "modelmixer-[hash].safetensors")
+            save_filename = save_filename.replace("[hash]", f"{sha256[0:10]}").replace("[model_name]", f"{model_name}")
+            save_current_model(save_filename, "None", save_settings, ["merge_recipe"], state_dict=theta_0, metadata=metadata)
+
         checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256)
         state_dict = theta_0.copy()
         if shared.sd_model is not None and hasattr(shared.sd_model, 'lowvram') and shared.sd_model.lowvram:
@@ -2063,6 +1966,113 @@ class ModelMixerScript(scripts.Script):
             "recipe": recipe_all + alphastr,
         }
         return
+
+def save_current_model(custom_name, bake_in_vae, save_settings, metadata_settings, state_dict=None, metadata=None):
+    if state_dict is None:
+        current = shared.opts.data.get("sd_webui_model_mixer_model", None)
+        if current is None:
+            return gr.update(value="No merged model found")
+
+        if shared.sd_model and shared.sd_model.sd_checkpoint_info:
+            metadata = shared.sd_model.sd_checkpoint_info.metadata.copy()
+        else:
+            return gr.update(value="Not a valid merged model")
+
+        sha256 = current["hash"]
+        if shared.sd_model.sd_checkpoint_info.sha256 != sha256:
+            err_msg = "Current checkpoint is not a merged one."
+            print(err_msg)
+            return gr.update(value=err_msg)
+
+    if "sd_merge_recipe" not in metadata or "sd_merge_models" not in metadata:
+        return gr.update(value="Not a valid merged model")
+
+    if metadata_settings is not None and "merge recipe" in metadata_settings:
+        metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"])
+    else:
+        del metadata["sd_merge_recipe"]
+    if "sd_merge_models" in metadata:
+        metadata["sd_merge_models"] = json.dumps(metadata["sd_merge_models"])
+
+    if state_dict is None and shared.sd_model is not None:
+        print("Load state_dict from shared.sd_model..")
+        # save to cpu
+        sd_models.send_model_to_cpu(shared.sd_model)
+        sd_hijack.model_hijack.undo_hijack(shared.sd_model)
+
+        state_dict = shared.sd_model.state_dict().copy()
+
+        # restore to gpu
+        sd_models.send_model_to_device(shared.sd_model)
+        sd_hijack.model_hijack.hijack(shared.sd_model)
+    elif state_dict is None:
+        print("No loaded model found")
+        return gr.update(value="No loaded model found")
+
+    # setup file, imported from supermerger
+    if "fp16" in save_settings:
+        pre = ".fp16"
+    else:
+        pre = ""
+    ext = ".safetensors" if "safetensors" in save_settings else ".ckpt"
+
+    if not custom_name or custom_name == "":
+        fname = shared.sd_model.sd_checkpoint_info.name_for_extra.replace(" ","").replace(",","_").replace("(","_").replace(")","_") + pre + ext
+        if fname[0] == "_":
+            fname = fname[1:]
+    else:
+        fname = custom_name if ext in custom_name else custom_name + pre + ext
+
+    fname = os.path.join(model_path, fname)
+
+    if len(fname) > 255:
+       fname.replace(ext, "")
+       fname = fname[:240] + ext
+
+    # check if output file already exists
+    if os.path.isfile(fname) and not "overwrite" in save_settings:
+        err_msg = f"Output file ({fname}) exists. not saved."
+        print(err_msg)
+        return gr.update(value=err_msg)
+
+    # bake in VAE
+    bake_in_vae_filename = sd_vae.vae_dict.get(bake_in_vae, None)
+    if bake_in_vae_filename is not None:
+        print(f"Baking in VAE from {bake_in_vae_filename}")
+        vae_dict = sd_vae.load_vae_dict(bake_in_vae_filename, map_location='cpu')
+        for key in (tqdm(vae_dict.keys(), desc=f"Bake in VAE...")):
+            key_name = 'first_stage_model.' + key
+            state_dict[key_name] = copy.deepcopy(vae_dict[key])
+        del vae_dict
+
+    print("Saving...")
+    isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in state_dict
+    print("isxl = ", isxl)
+    if isxl:
+        # prune share memory tensors, "cond_stage_model." prefixed base tensors are share memory with "conditioner." prefixed tensors
+        for i, key in enumerate(state_dict.keys()):
+            if "cond_stage_model." in key:
+                del state_dict[key]
+
+    if "fp16" in save_settings:
+        state_dict = to_half(state_dict, True)
+    if "prune" in save_settings:
+        state_dict = prune_model(state_dict, isxl)
+
+    try:
+        if ext == ".safetensors":
+            save_file(state_dict, fname, metadata=metadata)
+        else:
+            torch.save(state_dict, fname)
+    except Exception as e:
+        print(f"ERROR: Couldn't saved:{fname},ERROR is {e}")
+        return gr.update(value=f"ERROR: Couldn't saved:{fname},ERROR is {e}")
+    print(f"Successfully model saved! - {fname}")
+    print("Done!")
+
+    data = "Merged model saved in " + fname
+    return gr.update(value=data)
+
 
 def prepare_model(model):
     global elemental_blocks
@@ -2413,7 +2423,29 @@ def on_ui_settings():
             default=["elemental merge"],
             label="Debug Infos",
             component=gr.CheckboxGroup,
-            component_args={"choices": ["elemental merge", "merge", "adjust"]},
+            component_args={"choices": ["elemental merge", "merge", "adjust", "save model"]},
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        "mm_save_model",
+        shared.OptionInfo(
+            default=["safetensors", "fp16", "prune", "overwrite"],
+            label="Auto save merged model",
+            component=gr.CheckboxGroup,
+            component_args={"choices": ["overwrite", "safetensors", "fp16", "prune"]},
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        "mm_save_model_filename",
+        shared.OptionInfo(
+            default="modelmixer-[hash]",
+            label="Filename of auto save model",
+            component=gr.Textbox,
+            component_args={"interactive": True, "placeholder": "save model filename e.g) [model_name]-[hash]"},
             section=section,
         ),
     )
