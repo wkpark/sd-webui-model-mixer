@@ -825,14 +825,14 @@ class ModelMixerScript(scripts.Script):
 
             if elem_id == "setting_sd_model_checkpoint":
                 # component is the setting_sd_model_checkpoint
-                model_a.change(fn=sync_main_checkpoint,
+                model_a.select(fn=sync_main_checkpoint,
                     inputs=[enable_sync, model_a],
                     outputs=[is_sdxl, model_a, component],
                     show_progress=False,
                 )
                 self.init_model_a_change = True
 
-                enable_sync.change(fn=sync_main_checkpoint,
+                enable_sync.select(fn=sync_main_checkpoint,
                     inputs=[enable_sync, model_a],
                     outputs=[is_sdxl, model_a, component],
                     show_progress=False,
