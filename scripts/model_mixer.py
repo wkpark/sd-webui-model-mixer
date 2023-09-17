@@ -1425,10 +1425,12 @@ class ModelMixerScript(scripts.Script):
         # make a hash to cache results
         sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
         print("config hash = ", sha256)
-        if shared.sd_model.sd_checkpoint_info is not None and shared.sd_model.sd_checkpoint_info.sha256 == sha256:
-            # already mixed
-            print(f"  - use current mixed model {sha256}")
-            return
+
+        if shared.sd_model is not None and shared.sd_model.sd_checkpoint_info is not None:
+            if shared.sd_model.sd_checkpoint_info.sha256 == sha256 and sd_models.get_closet_checkpoint_match(shared.sd_model.sd_checkpoint_info.title) is not None:
+                # already mixed
+                print(f"  - use current mixed model {sha256}")
+                return
 
         print("  - mm_use", mm_use)
         print("  - model_a", model_a)
