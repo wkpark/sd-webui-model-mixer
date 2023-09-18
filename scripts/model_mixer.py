@@ -28,6 +28,10 @@ from modules.sd_models import model_hash, model_path, checkpoints_loaded
 from modules.scripts import basedir
 from modules.timer import Timer
 from modules.ui import create_refresh_button
+from ldm.modules.attention import CrossAttention
+
+from scripts.vxa import generate_vxa, default_hidden_layer_name
+from scripts.vxa import update_layer_names
 
 dump_cache = cache.dump_cache
 cache = cache.cache
@@ -667,6 +671,33 @@ class ModelMixerScript(scripts.Script):
                     with gr.Column(variant="compact"):
                         with gr.Row():
                             elemental_ratio = gr.Slider(minimum=0, maximum=2, value=0.5, step=0.01, label="Ratio", scale=8)
+
+            with gr.Accordion("Cross-Attention Visualizer", open=False):
+                with gr.Row():
+                    with gr.Column():
+                        input_image = gr.Image(elem_id="vxa_input_image")
+                        vxa_prompt = gr.Textbox(label="Prompt", lines=2, placeholder="Prompt to be visualized")
+                        vxa_token_indices = gr.Textbox(value="", label="Indices of tokens to be visualized", lines=2, placeholder="Example: 1, 3 means the sum of the first and the third tokens. 1 is suggected for a single token. Leave blank to visualize all tokens.")
+                        vxa_time_embedding = gr.Textbox(value="1.0", label="Time embedding")
+
+                        hidden_layers = []
+                        if shared.sd_model is not None:
+                            for n, m in shared.sd_model.named_modules():
+                                if isinstance(m, CrossAttention):
+                                    hidden_layers.append(n)
+                        else:
+                            hidden_layers = [default_hidden_layer_name]
+                        hidden_layer_names = list(filter(lambda s : "attn2" in s, hidden_layers))
+                        hidden_layer_select = gr.Dropdown(value=default_hidden_layer_name, label="Cross-attention layer", choices=hidden_layer_names)
+                        vxa_output_mode = gr.Dropdown(value="masked", label="Output mode", choices=["masked", "grey"])
+                        vxa_generate = gr.Button(value="Visualize Cross-Attention", elem_id="vxa_gen_btn")
+                        vxa_output = gr.Image(elem_id="vxa_output_image")
+
+                vxa_generate.click(
+                    fn=generate_vxa,
+                    inputs=[input_image, vxa_prompt, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
+                    outputs=[vxa_output],
+                )
 
             with gr.Accordion("Save the current merged model", open=False):
                 with gr.Row():
@@ -2607,3 +2638,4 @@ script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_before_image_saved(on_image_save)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
 script_callbacks.on_before_ui(on_before_ui)
+script_callbacks.on_model_loaded(update_layer_names)
