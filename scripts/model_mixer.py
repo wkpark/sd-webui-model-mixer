@@ -30,8 +30,8 @@ from modules.timer import Timer
 from modules.ui import create_refresh_button
 from ldm.modules.attention import CrossAttention
 
-from scripts.vxa import generate_vxa, default_hidden_layer_name
-from scripts.vxa import update_layer_names
+from scripts.vxa import generate_vxa, default_hidden_layer_name, get_layer_names
+from scripts.vxa import tokenize
 
 dump_cache = cache.dump_cache
 cache = cache.cache
@@ -674,29 +674,44 @@ class ModelMixerScript(scripts.Script):
 
             with gr.Accordion("Cross-Attention Visualizer", open=False):
                 with gr.Row():
-                    with gr.Column():
+                    with gr.Column(variant="compact"):
                         input_image = gr.Image(elem_id="vxa_input_image")
                         vxa_prompt = gr.Textbox(label="Prompt", lines=2, placeholder="Prompt to be visualized")
+                        go = gr.Button(value="Tokenize")
+                        with gr.Row():
+                            with gr.Tabs():
+                                with gr.Tab("Text"):
+                                    tokenized_text = gr.HTML(elem_id="mm_tokenized_text")
+
+                                with gr.Tab("Tokens"):
+                                    tokens = gr.HTML(elem_id="mm_tokenized_tokens")
+                        tokens_checkbox = gr.CheckboxGroup(label="Select words", choices=[], value=[], interactive=True)
+
                         vxa_token_indices = gr.Textbox(value="", label="Indices of tokens to be visualized", lines=2, placeholder="Example: 1, 3 means the sum of the first and the third tokens. 1 is suggected for a single token. Leave blank to visualize all tokens.")
                         vxa_time_embedding = gr.Textbox(value="1.0", label="Time embedding")
 
-                        hidden_layers = []
-                        if shared.sd_model is not None:
-                            for n, m in shared.sd_model.named_modules():
-                                if isinstance(m, CrossAttention):
-                                    hidden_layers.append(n)
-                        else:
-                            hidden_layers = [default_hidden_layer_name]
-                        hidden_layer_names = list(filter(lambda s : "attn2" in s, hidden_layers))
-                        hidden_layer_select = gr.Dropdown(value=default_hidden_layer_name, label="Cross-attention layer", choices=hidden_layer_names)
+                        with gr.Row():
+                            hidden_layer_select = gr.Dropdown(value=default_hidden_layer_name, label="Cross-attention layer", choices=get_layer_names())
+                            create_refresh_button(hidden_layer_select, lambda: None, lambda: {"choices": get_layer_names()},"imm_refresh_vxa_layer_names")
                         vxa_output_mode = gr.Dropdown(value="masked", label="Output mode", choices=["masked", "grey"])
-                        vxa_generate = gr.Button(value="Visualize Cross-Attention", elem_id="vxa_gen_btn")
-                        vxa_output = gr.Image(elem_id="vxa_output_image")
+                        vxa_generate = gr.Button(value="Visualize Cross-Attention", elem_id="mm_vxa_gen_btn", variant="primary")
+                        vxa_output = gr.Image(elem_id="mm_vxa_output_image")
 
                 vxa_generate.click(
                     fn=generate_vxa,
                     inputs=[input_image, vxa_prompt, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
                     outputs=[vxa_output],
+                )
+                go.click(
+                    fn=tokenize,
+                    inputs=[vxa_prompt],
+                    outputs=[tokenized_text, tokens, tokens_checkbox],
+                )
+                tokens_checkbox.select(
+                    fn=lambda n: ",".join([str(x) for x in sorted(n)]),
+                    inputs=[tokens_checkbox],
+                    outputs=vxa_token_indices,
+                    show_progress=False,
                 )
 
             with gr.Accordion("Save the current merged model", open=False):
@@ -2638,4 +2653,3 @@ script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_before_image_saved(on_image_save)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
 script_callbacks.on_before_ui(on_before_ui)
-script_callbacks.on_model_loaded(update_layer_names)

@@ -1,28 +1,154 @@
+import html
 import os
+import gradio as gr
 from PIL import Image
 import numpy as np
+import open_clip.tokenizer
+import re
 import torch
-import modules.shared as shared
-from modules import devices
+from modules import devices, shared, extra_networks, prompt_parser
 from torch import nn, einsum
 from einops import rearrange
 import math
 from ldm.modules.attention import CrossAttention
+from ldm.modules.encoders.modules import FrozenCLIPEmbedder, FrozenOpenCLIPEmbedder
+from modules.ui import create_refresh_button
 
-
-hidden_layers = {}
 hidden_layer_names = []
 default_hidden_layer_name = "model.diffusion_model.middle_block.1.transformer_blocks.0.attn2"
-hidden_layer_select = None
 
-def update_layer_names(model):
-    global hidden_layers
-    hidden_layers = {}
+# from https://github.com/AUTOMATIC1111/stable-diffusion-webui-tokenizer
+
+class VanillaClip:
+    def __init__(self, clip):
+        self.clip = clip
+
+    def vocab(self):
+        return self.clip.tokenizer.get_vocab()
+
+    def byte_decoder(self):
+        return self.clip.tokenizer.byte_decoder
+
+class OpenClip:
+    def __init__(self, clip):
+        self.clip = clip
+        self.tokenizer = open_clip.tokenizer._tokenizer
+
+    def vocab(self):
+        return self.tokenizer.encoder
+
+    def byte_decoder(self):
+        return self.tokenizer.byte_decoder
+
+def tokenize(text, input_is_ids=False):
+    if shared.sd_model is None:
+        raise gr.Error("Model not loaded...")
+
+    text, res = extra_networks.parse_prompt(text)
+    #_, prompt_flat_list, _ = prompt_parser.get_multicond_prompt_list([text])
+    #prompt_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(prompt_flat_list, 20)
+
+    clip = shared.sd_model.cond_stage_model.wrapped
+    if isinstance(clip, FrozenCLIPEmbedder):
+        clip = VanillaClip(shared.sd_model.cond_stage_model.wrapped)
+    elif isinstance(clip, FrozenOpenCLIPEmbedder):
+        clip = OpenClip(shared.sd_model.cond_stage_model.wrapped)
+    else:
+        raise gr.Error(f'Unknown CLIP model: {type(clip).__name__}')
+
+    if input_is_ids:
+        tokens = [int(x.strip()) for x in text.split(",")]
+    else:
+        tokens = shared.sd_model.cond_stage_model.tokenize([text])[0]
+
+    vocab = {v: k for k, v in clip.vocab().items()}
+
+    code = ''
+    ids = []
+    choices = []
+
+    current_ids = []
+    class_index = 0
+
+    byte_decoder = clip.byte_decoder()
+
+    def dump(last=False):
+        nonlocal code, ids, current_ids
+        nonlocal choices
+
+        words = [vocab.get(x, "") for x in current_ids]
+
+        def wordscode(n, ids, word):
+            nonlocal class_index
+            w = html.escape(word)
+            if bool(re.match("[-_,.0-9:;()\[\]]", w)):
+                class_name = 'mm-vxa-punct'
+                n = ''
+            else:
+                class_name = f"mm-vxa-token mm-vxa-token-{class_index%4}"
+                class_index += 1
+                choices.append((w, n+1))
+                if n is not None: n = f"({n+1})"
+            res = f"""<span class='{class_name}' title='{html.escape(", ".join([str(x) for x in ids]))}'>{w}{n}</span>"""
+            return res
+
+        try:
+            word = bytearray([byte_decoder[x] for x in ''.join(words)]).decode("utf-8")
+        except UnicodeDecodeError:
+            if last:
+                word = "❌" * len(current_ids)
+            elif len(current_ids) > 4:
+                id = current_ids[0]
+                ids += [id]
+                local_ids = current_ids[1:]
+                code += wordscode([id], "❌")
+
+                current_ids = []
+                for id in local_ids:
+                    current_ids.append(id)
+                    dump()
+
+                return
+            else:
+                return
+
+        word = word.replace("</w>", " ")
+
+        code += wordscode(len(ids), current_ids, word)
+        ids += current_ids
+
+        current_ids = []
+
+    for j, token in enumerate(tokens):
+        token = int(token)
+        current_ids.append(token)
+
+        dump()
+
+    if len(current_ids) > 0:
+        dump(last=True)
+
+    ids_html = f"""
+<p>
+Token count: {len(ids)}<br>
+{", ".join([str(x) for x in ids])}
+</p>
+"""
+
+    return code, ids_html, gr.update(choices=choices, value=[])
+
+def get_layer_names(model=None):
+    if model is None:
+        if shared.sd_model is None:
+            return [default_hidden_layer_name]
+        else:
+            model = shared.sd_model
+
+    hidden_layers = []
     for n, m in model.named_modules():
         if(isinstance(m, CrossAttention)):
-            hidden_layers[n] = m
-    hidden_layer_names = list(filter(lambda s : "attn2" in s, hidden_layers.keys()))
-    print("update_layer_names")
+            hidden_layers.append(n)
+    return list(filter(lambda s : "attn2" in s, hidden_layers))
 
 def get_attn(emb, ret):
     def hook(self, sin, sout):
@@ -38,6 +164,7 @@ def get_attn(emb, ret):
 
 def generate_vxa(image, prompt, idx, time, layer_name, output_mode):
     if(not isinstance(image, np.ndarray)):
+        print("Not a valid image")
         return image
     output = image.copy()
     image = image.astype(np.float32) / 255.0
@@ -45,7 +172,16 @@ def generate_vxa(image, prompt, idx, time, layer_name, output_mode):
     image = torch.from_numpy(image).unsqueeze(0)
 
     model = shared.sd_model
-    layer = hidden_layers[layer_name]
+    layer = None
+    print(f"Search {layer_name}...")
+    for n, m in model.named_modules():
+        if isinstance(m, CrossAttention) and n == layer_name:
+            print("layer found = ", n)
+            layer = m
+            break
+    if layer is None:
+        print("Layer not found")
+        return image
     cond_model = model.cond_stage_model
     with torch.no_grad(), devices.autocast():
         image = image.to(devices.device)
@@ -53,6 +189,7 @@ def generate_vxa(image, prompt, idx, time, layer_name, output_mode):
         try:
             t = torch.tensor([float(time)]).to(devices.device)
         except:
+            print(f"Not a valid timesteps {time}")
             return output
         emb = cond_model([prompt])
 
@@ -70,6 +207,7 @@ def generate_vxa(image, prompt, idx, time, layer_name, output_mode):
             idxs = list(map(int, filter(lambda x : x != '', idx.strip().split(','))))
             img = attn_out["out"][:,:,idxs].sum(-1).sum(0)
         except:
+            print("Fail to get attn_out")
             return output
 
     scale = round(math.sqrt((image.shape[2] * image.shape[3]) / img.shape[0]))
@@ -87,4 +225,8 @@ def generate_vxa(image, prompt, idx, time, layer_name, output_mode):
             for j in range(output.shape[1]):
                 output[i][j] = [img[i // scale][j // scale] * 255.0] * 3
     output = output.astype(np.uint8)
+
+    devices.torch_gc()
+
+    print("Done")
     return output
