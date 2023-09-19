@@ -20,6 +20,9 @@ import torch
 import traceback
 from functools import partial
 from safetensors.torch import save_file
+import numpy as np
+
+from PIL import Image
 
 from copy import copy, deepcopy
 from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings, ui_common
@@ -499,6 +502,8 @@ class ModelMixerScript(scripts.Script):
 
         default_use[0] = True
 
+        components = {}
+
         def initial_checkpoint():
             if shared.sd_model is not None and shared.sd_model.sd_checkpoint_info is not None:
                 return shared.sd_model.sd_checkpoint_info.title
@@ -675,7 +680,11 @@ class ModelMixerScript(scripts.Script):
             with gr.Accordion("Cross-Attention Visualizer", open=False):
                 with gr.Row():
                     with gr.Column(variant="compact"):
-                        input_image = gr.Image(elem_id="vxa_input_image")
+                        if is_img2img:
+                            input_image = gr.Image(elem_id="mm_vxa_input_image", visible=False)
+                        else:
+                            input_image = gr.Image(elem_id="mm_vxa_input_image")
+                        import_image = gr.Button(value="Import image", visible=False if is_img2img else True)
                         vxa_prompt = gr.Textbox(label="Prompt", lines=2, placeholder="Prompt to be visualized")
                         go = gr.Button(value="Tokenize")
                         with gr.Row():
@@ -695,13 +704,10 @@ class ModelMixerScript(scripts.Script):
                             create_refresh_button(hidden_layer_select, lambda: None, lambda: {"choices": get_layer_names()},"imm_refresh_vxa_layer_names")
                         vxa_output_mode = gr.Dropdown(value="masked", label="Output mode", choices=["masked", "grey"])
                         vxa_generate = gr.Button(value="Visualize Cross-Attention", elem_id="mm_vxa_gen_btn", variant="primary")
-                        vxa_output = gr.Image(elem_id="mm_vxa_output_image")
 
-                vxa_generate.click(
-                    fn=generate_vxa,
-                    inputs=[input_image, vxa_prompt, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
-                    outputs=[vxa_output],
-                )
+                        #output_gallery = gr.Image(label="Output", show_label=False)
+                        #output_gallery = gr.Gallery(label="Output", columns=[1], rows=[1], height="auto", show_label=False)
+
                 go.click(
                     fn=tokenize,
                     inputs=[vxa_prompt],
@@ -857,7 +863,22 @@ class ModelMixerScript(scripts.Script):
 
             return ret
 
+        def import_image_from_gallery(gallery):
+            if len(gallery) == 0:
+                return gr.update()
+            if isinstance(gallery[0], dict) and gallery[0].get("name", None) is not None:
+                print("Import ", gallery[0]["name"])
+                image = Image.open(gallery[0]["name"])
+                return np.asarray(image)
+            elif isinstance(gallery[0], np.ndarray):
+                return gallery[0]
+            else:
+                print("Invalid gallery image {type(gallery[0]}")
+            return gr.update()
+
         def on_after_components(component, **kwargs):
+            nonlocal input_image
+
             elem_id = getattr(component, "elem_id", None)
             if elem_id is None:
                 return
@@ -867,20 +888,52 @@ class ModelMixerScript(scripts.Script):
                 prepare_model(get_valid_checkpoint_title())
                 return
 
-            if elem_id == "setting_sd_model_checkpoint":
-                # component is the setting_sd_model_checkpoint
-                model_a.select(fn=sync_main_checkpoint,
-                    inputs=[enable_sync, model_a],
-                    outputs=[is_sdxl, model_a, component],
-                    show_progress=False,
-                )
-                self.init_on_after_callback = True
+            if elem_id == "img2img_image": #and is_img2img:
+                print("img2img_image", "is_img2img = ", is_img2img)
+                if components.get(elem_id, None) is None:
+                    input_image = components[elem_id] = component
 
-                enable_sync.select(fn=sync_main_checkpoint,
-                    inputs=[enable_sync, model_a],
-                    outputs=[is_sdxl, model_a, component],
-                    show_progress=False,
-                )
+            if elem_id == "img2img_gallery" and is_img2img:
+                if components.get(elem_id) is None:
+                    components[elem_id] = component
+                    vxa_generate.click(
+                        fn=lambda *a: [generate_vxa(*a)],
+                        inputs=[input_image, vxa_prompt, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
+                        outputs=[components["img2img_gallery"]]
+                    )
+                    return
+
+            elif elem_id == "txt2img_gallery":
+                if components.get(elem_id, None) is None:
+                    components[elem_id] = component
+                    vxa_generate.click(
+                        fn=lambda *a: [generate_vxa(*a)],
+                        inputs=[input_image, vxa_prompt, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
+                        outputs=[components[elem_id]]
+                    )
+
+                    import_image.click(
+                        fn=import_image_from_gallery,
+                        inputs=[component],
+                        outputs=[input_image]
+                    )
+
+            if elem_id == "setting_sd_model_checkpoint":
+                if components.get(elem_id, None) is None:
+                    components[elem_id] = component
+                    # component is the setting_sd_model_checkpoint
+                    model_a.select(fn=sync_main_checkpoint,
+                        inputs=[enable_sync, model_a],
+                        outputs=[is_sdxl, model_a, component],
+                        show_progress=False,
+                    )
+                    self.init_on_after_callback = True
+
+                    enable_sync.select(fn=sync_main_checkpoint,
+                        inputs=[enable_sync, model_a],
+                        outputs=[is_sdxl, model_a, component],
+                        show_progress=False,
+                    )
 
         def current_metadata():
             if shared.sd_model and shared.sd_model.sd_checkpoint_info:
