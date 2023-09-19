@@ -420,7 +420,7 @@ class ModelMixerScript(scripts.Script):
     global elemental_blocks
     elemental_blocks = None
 
-    init_model_a_change = False
+    init_on_after_callback = False
 
     def __init__(self):
         super().__init__()
@@ -858,8 +858,6 @@ class ModelMixerScript(scripts.Script):
             return ret
 
         def on_after_components(component, **kwargs):
-            if self.init_model_a_change is True:
-                return
             elem_id = getattr(component, "elem_id", None)
             if elem_id is None:
                 return
@@ -876,7 +874,7 @@ class ModelMixerScript(scripts.Script):
                     outputs=[is_sdxl, model_a, component],
                     show_progress=False,
                 )
-                self.init_model_a_change = True
+                self.init_on_after_callback = True
 
                 enable_sync.select(fn=sync_main_checkpoint,
                     inputs=[enable_sync, model_a],
@@ -900,8 +898,8 @@ class ModelMixerScript(scripts.Script):
 
                 return gr.update(value=data)
 
-        # set callback
-        if self.init_model_a_change is False:
+        # set callback only once
+        if self.init_on_after_callback is False:
             script_callbacks.on_after_component(on_after_components)
 
         members = [base,in00,in01,in02,in03,in04,in05,in06,in07,in08,in09,in10,in11,mi00,ou00,ou01,ou02,ou03,ou04,ou05,ou06,ou07,ou08,ou09,ou10,ou11]
