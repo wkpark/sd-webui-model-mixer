@@ -163,8 +163,13 @@ def get_attn(emb, ret):
     return hook
 
 def generate_vxa(image, prompt, idx, time, layer_name, output_mode):
-    if(not isinstance(image, np.ndarray)):
-        print("Not a valid image")
+    if isinstance(image, str):
+        print("Invalid str image", image)
+        return None
+    elif isinstance(image, Image.Image):
+        image = image.asarray()
+    elif not isinstance(image, np.ndarray):
+        print("Invalid image #")
         return image
     output = image.copy()
     image = image.astype(np.float32) / 255.0
