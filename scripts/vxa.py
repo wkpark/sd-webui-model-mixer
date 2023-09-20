@@ -46,8 +46,6 @@ def tokenize(text, input_is_ids=False):
         raise gr.Error("Model not loaded...")
 
     text, res = extra_networks.parse_prompt(text)
-    #_, prompt_flat_list, _ = prompt_parser.get_multicond_prompt_list([text])
-    #prompt_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(prompt_flat_list, 20)
 
     conditioner = getattr(shared.sd_model, 'conditioner', None)
     if conditioner:
