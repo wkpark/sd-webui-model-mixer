@@ -270,9 +270,9 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
             print("Fail to get attn_out")
             return output
 
-    scale = round(math.sqrt((image.shape[2] * image.shape[3]) / img.shape[0]))
-    h = image.shape[2] // scale
-    w = image.shape[3] // scale
+    scale = round(math.sqrt((output.shape[0] * output.shape[1]) / img.shape[0]))
+    h = output.shape[0] // scale
+    w = output.shape[1] // scale
     img = img.reshape(h, w) / img.max()
     img = img.to("cpu").numpy()
     output = output.astype(np.float64)
