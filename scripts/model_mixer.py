@@ -711,7 +711,7 @@ class ModelMixerScript(scripts.Script):
                         with gr.Row():
                             hidden_layer_select = gr.Dropdown(value=default_hidden_layer_name, label="Cross-attention layer", choices=get_layer_names())
                             create_refresh_button(hidden_layer_select, lambda: None, lambda: {"choices": get_layer_names()},"imm_refresh_vxa_layer_names")
-                        vxa_output_mode = gr.Dropdown(value="masked", label="Output mode", choices=["masked", "grey"])
+                        vxa_output_mode = gr.CheckboxGroup(choices=["masked", "gray", "resize"], value=["masked", "resize"], label="Visualize options")
                         vxa_generate = gr.Button(value="Visualize Cross-Attention", elem_id="mm_vxa_gen_btn", variant="primary")
 
                         #output_gallery = gr.Image(label="Output", show_label=False)

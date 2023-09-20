@@ -216,11 +216,30 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
             seed = params.get("Seed", "None")
             modelname = params.get("Model", "None")
             basename = basename_pattern.replace("[seed]", seed).replace("[model_name]", modelname)
-        image = np.asarray(image)
-    elif not isinstance(image, np.ndarray):
-        print("Invalid image #")
+    elif isinstance(image, np.ndarray):
+        image = Image.fromarray(image)
+    else:
+        print("Unknown type image")
         return image
-    output = image.copy()
+
+    # check PIL image size
+    origin = np.asarray(image)
+
+    w, h = image.size
+    if "resize" in output_mode and w > 512:
+        # resize image to reduce computational time
+        print(f"Resize image {w}x{h} ", end="")
+        s = 1.0 / (w / 512)
+        h2 = int(h * s)
+        w2 = int(w * s)
+        print(f"to {w2}x{h2}.")
+        image = image.resize((w2, h2))
+        image = np.asarray(image)
+    else:
+        image = origin.copy()
+
+    output = origin.copy()
+
     image = image.astype(np.float32) / 255.0
     image = np.moveaxis(image, 2, 0)
     image = torch.from_numpy(image).unsqueeze(0)
@@ -235,7 +254,7 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
             break
     if layer is None:
         print("Layer not found")
-        return image
+        return output
 
     with torch.no_grad(), devices.autocast():
         image = image.to(devices.device, dtype=devices.dtype_vae)
@@ -276,11 +295,11 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
     img = img.reshape(h, w) / img.max()
     img = img.to("cpu").numpy()
     output = output.astype(np.float64)
-    if output_mode == "masked":
+    if "masked" in output_mode:
         for i in range(output.shape[0]):
             for j in range(output.shape[1]):
                 output[i][j] *= img[i // scale][j // scale]
-    elif output_mode == "grey":
+    elif "gray" in output_mode:
         for i in range(output.shape[0]):
             for j in range(output.shape[1]):
                 output[i][j] = [img[i // scale][j // scale] * 255.0] * 3
