@@ -16,3 +16,11 @@ button.reset {
 .mm-vxa-token-2:hover {background: rgba(0, 174, 219, 0.65);}
 .mm-vxa-token-3 {background: rgba(255, 196, 37, 0.85); border-radius:3px;}
 .mm-vxa-token-3:hover {background: rgba(255, 196, 37, 0.65);}
+
+@media (prefers-color-scheme: light) {
+.mm-vxa-punct {background: rgba(136, 136, 136, 0.35);}
+.mm-vxa-token-0 {background: rgba(209, 17, 65, 0.35);}
+.mm-vxa-token-1 {background: rgba(0, 177, 89, 0.35);}
+.mm-vxa-token-2 {background: rgba(0, 174, 219, 0.35);}
+.mm-vxa-token-3 {background: rgba(255, 196, 37, 0.35);}
+}

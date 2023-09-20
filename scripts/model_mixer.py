@@ -26,7 +26,8 @@ from PIL import Image
 
 from copy import copy, deepcopy
 from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings, ui_common
-from modules import scripts, cache, devices, lowvram, deepbooru
+from modules import scripts, cache, devices, lowvram, deepbooru, images
+from modules.generation_parameters_copypaste import parse_generation_parameters
 from modules.sd_models import model_hash, model_path, checkpoints_loaded
 from modules.scripts import basedir
 from modules.timer import Timer
@@ -681,9 +682,9 @@ class ModelMixerScript(scripts.Script):
                 with gr.Row():
                     with gr.Column(variant="compact"):
                         if is_img2img:
-                            input_image = gr.Image(elem_id="mm_vxa_input_image", visible=False)
+                            input_image = gr.Image(elem_id="mm_vxa_input_image", visible=False, type="pil")
                         else:
-                            input_image = gr.Image(elem_id="mm_vxa_input_image")
+                            input_image = gr.Image(elem_id="mm_vxa_input_image", type="pil")
                         with gr.Row():
                             import_image = gr.Button(value="Import image", visible=False if is_img2img else True)
                             deepbooru_image = gr.Button(value="Interrogate Deepbooru")
@@ -717,19 +718,34 @@ class ModelMixerScript(scripts.Script):
                         #output_gallery = gr.Gallery(label="Output", columns=[1], rows=[1], height="auto", show_label=False)
 
                 def interrogate_deepbooru(image):
-                    if image is None: return ''
+                    if image is None:
+                        return
+                        #return gr.update(), gr.update()
 
                     # deepboru
                     if isinstance(image, np.ndarray):
                         image = Image.fromarray(np.uint8(image)).convert('RGB')
 
                     prompt = deepbooru.model.tag(image)
-                    return prompt
+                    return prompt, ''
+
+                def get_prompt(image):
+                    prompt = ''
+                    if image is None:
+                        return gr.update(), gr.update()
+
+                    geninfo, _ = images.read_info_from_image(image)
+
+                    if geninfo is not None:
+                        params = parse_generation_parameters(geninfo)
+                        prompt = params.get("Prompt", "")
+
+                    return prompt, ''
 
                 deepbooru_image.click(
                     fn=interrogate_deepbooru,
                     inputs=[input_image],
-                    outputs=[vxa_prompt],
+                    outputs=[vxa_prompt, stripped],
                 )
 
                 go.click(
@@ -741,6 +757,12 @@ class ModelMixerScript(scripts.Script):
                     fn=lambda n: ",".join([str(x) for x in sorted(n)]),
                     inputs=[tokens_checkbox],
                     outputs=vxa_token_indices,
+                    show_progress=False,
+                )
+                input_image.change(
+                    fn=get_prompt,
+                    inputs=[input_image],
+                    outputs=[vxa_prompt, stripped],
                     show_progress=False,
                 )
 
@@ -888,17 +910,22 @@ class ModelMixerScript(scripts.Script):
             return ret
 
         def import_image_from_gallery(gallery):
+            prompt = ""
             if len(gallery) == 0:
                 return gr.update()
             if isinstance(gallery[0], dict) and gallery[0].get("name", None) is not None:
                 print("Import ", gallery[0]["name"])
                 image = Image.open(gallery[0]["name"])
-                return np.asarray(image)
+                geninfo, _ = images.read_info_from_image(image)
+                if geninfo is not None:
+                    params = parse_generation_parameters(geninfo)
+                    prompt = params.get("Prompt", "")
+                return image, prompt
             elif isinstance(gallery[0], np.ndarray):
-                return gallery[0]
+                return gallery[0], prompt
             else:
                 print("Invalid gallery image {type(gallery[0]}")
-            return gr.update()
+            return gr.update(), prompt
 
         def on_after_components(component, **kwargs):
             nonlocal input_image
@@ -921,7 +948,7 @@ class ModelMixerScript(scripts.Script):
                 if components.get(elem_id) is None:
                     components[elem_id] = component
                     vxa_generate.click(
-                        fn=lambda *a: [generate_vxa(*a)],
+                        fn=lambda *a: [generate_vxa(*a, is_img2img)],
                         inputs=[input_image, vxa_prompt, stripped, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
                         outputs=[components["img2img_gallery"]]
                     )
@@ -931,7 +958,7 @@ class ModelMixerScript(scripts.Script):
                 if components.get(elem_id, None) is None:
                     components[elem_id] = component
                     vxa_generate.click(
-                        fn=lambda *a: [generate_vxa(*a)],
+                        fn=lambda *a: [generate_vxa(*a, is_img2img)],
                         inputs=[input_image, vxa_prompt, stripped, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
                         outputs=[components[elem_id]]
                     )

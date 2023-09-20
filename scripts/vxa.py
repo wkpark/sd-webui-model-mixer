@@ -6,7 +6,8 @@ import numpy as np
 import open_clip.tokenizer
 import re
 import torch
-from modules import devices, shared, extra_networks, prompt_parser
+from modules import devices, shared, extra_networks, prompt_parser, images
+from modules.generation_parameters_copypaste import parse_generation_parameters
 from torch import nn, einsum
 from einops import rearrange
 import math
@@ -201,11 +202,20 @@ def get_attn(emb, ret):
         ret["out"] = attn
     return hook
 
-def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode):
+def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is_img2img=False):
+    geninfo = ""
+    basename = "mm_vxa"
     if isinstance(image, str):
         print("Invalid str image", image)
         return None
     elif isinstance(image, Image.Image):
+        geninfo, _ = images.read_info_from_image(image)
+        if geninfo is not None:
+            params = parse_generation_parameters(geninfo)
+            basename_pattern = "[seed]-[model_name]-mm_vxa"
+            seed = params.get("Seed", "None")
+            modelname = params.get("Model", "None")
+            basename = basename_pattern.replace("[seed]", seed).replace("[model_name]", modelname)
         image = np.asarray(image)
     elif not isinstance(image, np.ndarray):
         print("Invalid image #")
@@ -278,5 +288,7 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode):
 
     devices.torch_gc()
 
+    image_to_save = Image.fromarray(output)
+    images.save_image(image_to_save, shared.opts.outdir_img2img_samples if is_img2img else shared.opts.outdir_txt2img_samples, basename, info=geninfo)
     print("Done")
-    return output
+    return image_to_save
