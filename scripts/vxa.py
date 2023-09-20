@@ -170,7 +170,7 @@ def get_attn(emb, ret):
             context = emb
 
         k = self.to_k(context)
-        q, k = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h=h), (q, k))
+        q, k = (rearrange(t, 'b n (h d) -> (b h) n d', h=h) for t in (q, k))
         sim = einsum('b i d, b j d -> b i j', q, k) * self.scale
         attn = sim.softmax(dim=-1)
         ret["out"] = attn
@@ -229,7 +229,7 @@ def generate_vxa(image, prompt, idx, time, layer_name, output_mode):
         img = attn_out["out"][:,:,1:].sum(-1).sum(0)
     else:
         try:
-            idxs = list(map(int, filter(lambda x : x != '', idx.strip().split(','))))
+            idxs = [int(x) for x in idx.strip().split(',') if x.strip().isdigit()]
             img = attn_out["out"][:,:,idxs].sum(-1).sum(0)
         except:
             print("Fail to get attn_out")
