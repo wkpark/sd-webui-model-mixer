@@ -11,6 +11,7 @@ from torch import nn, einsum
 from einops import rearrange
 import math
 from ldm.modules.attention import CrossAttention
+from sgm.modules.attention import CrossAttention as CrossAttention2
 from ldm.modules.encoders.modules import FrozenCLIPEmbedder, FrozenOpenCLIPEmbedder
 from modules.ui import create_refresh_button
 
@@ -48,18 +49,26 @@ def tokenize(text, input_is_ids=False):
     #_, prompt_flat_list, _ = prompt_parser.get_multicond_prompt_list([text])
     #prompt_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(prompt_flat_list, 20)
 
-    clip = shared.sd_model.cond_stage_model.wrapped
-    if isinstance(clip, FrozenCLIPEmbedder):
-        clip = VanillaClip(shared.sd_model.cond_stage_model.wrapped)
-    elif isinstance(clip, FrozenOpenCLIPEmbedder):
-        clip = OpenClip(shared.sd_model.cond_stage_model.wrapped)
+    conditioner = getattr(shared.sd_model, 'conditioner', None)
+    if conditioner:
+        # SDXL, only the first embedder selected
+        cond_stage_model = conditioner.embedders[0]
     else:
-        raise gr.Error(f'Unknown CLIP model: {type(clip).__name__}')
+        # SD1.5, SD2.1
+        cond_stage_model = shared.sd_model.cond_stage_model
+
+    typename = type(cond_stage_model.wrapped).__name__
+    if typename == "FrozenCLIPEmbedder":
+        clip = VanillaClip(cond_stage_model.wrapped)
+    elif typename == "FrozenOpenCLIPEmbedder":
+        clip = OpenClip(cond_stage_model.wrapped)
+    else:
+        raise gr.Error(f'Unknown CLIP model: {typename}')
 
     if input_is_ids:
         tokens = [int(x.strip()) for x in text.split(",")]
     else:
-        tokens = shared.sd_model.cond_stage_model.tokenize([text])[0]
+        tokens = cond_stage_model.tokenize([text])[0]
 
     vocab = {v: k for k, v in clip.vocab().items()}
 
@@ -146,7 +155,7 @@ def get_layer_names(model=None):
 
     hidden_layers = []
     for n, m in model.named_modules():
-        if(isinstance(m, CrossAttention)):
+        if isinstance(m, CrossAttention) or isinstance(m, CrossAttention2):
             hidden_layers.append(n)
     return list(filter(lambda s : "attn2" in s, hidden_layers))
 
@@ -154,7 +163,12 @@ def get_attn(emb, ret):
     def hook(self, sin, sout):
         h = self.heads
         q = self.to_q(sin[0])
-        context = emb
+
+        if type(emb) is dict:
+            context = emb.get("crossattn", sin[0])
+        else:
+            context = emb
+
         k = self.to_k(context)
         q, k = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h=h), (q, k))
         sim = einsum('b i d, b j d -> b i j', q, k) * self.scale
@@ -180,28 +194,34 @@ def generate_vxa(image, prompt, idx, time, layer_name, output_mode):
     layer = None
     print(f"Search {layer_name}...")
     for n, m in model.named_modules():
-        if isinstance(m, CrossAttention) and n == layer_name:
+        if (isinstance(m, CrossAttention) or isinstance(m, CrossAttention2)) and n == layer_name:
             print("layer found = ", n)
             layer = m
             break
     if layer is None:
         print("Layer not found")
         return image
-    cond_model = model.cond_stage_model
+
     with torch.no_grad(), devices.autocast():
-        image = image.to(devices.device)
+        image = image.to(devices.device, dtype=devices.dtype_vae)
         latent = model.get_first_stage_encoding(model.encode_first_stage(image))
         try:
             t = torch.tensor([float(time)]).to(devices.device)
         except:
             print(f"Not a valid timesteps {time}")
             return output
-        emb = cond_model([prompt])
 
         attn_out = {}
+        if hasattr(model, 'conditioner'):
+            emb = model.get_learned_conditioning([prompt])
+        else:
+            emb = model.cond_stage_model([prompt])
+
         handle = layer.register_forward_hook(get_attn(emb, attn_out))
         try:
             model.apply_model(latent, t, emb)
+        except:
+            print("Error apply_model()")
         finally:
             handle.remove()
 
