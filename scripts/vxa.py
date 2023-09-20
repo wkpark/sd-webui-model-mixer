@@ -267,9 +267,9 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
 
         attn_out = {}
         if hasattr(model, 'conditioner'):
-            emb = model.get_learned_conditioning([prompt if stripped is "" else stripped])
+            emb = model.get_learned_conditioning([prompt if stripped == "" else stripped])
         else:
-            emb = model.cond_stage_model([prompt if stripped is "" else stripped])
+            emb = model.cond_stage_model([prompt if stripped == "" else stripped])
 
         handle = layer.register_forward_hook(get_attn(emb, attn_out))
         try:
