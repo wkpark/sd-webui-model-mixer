@@ -26,7 +26,7 @@ from PIL import Image
 
 from copy import copy, deepcopy
 from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings, ui_common
-from modules import scripts, cache, devices, lowvram
+from modules import scripts, cache, devices, lowvram, deepbooru
 from modules.sd_models import model_hash, model_path, checkpoints_loaded
 from modules.scripts import basedir
 from modules.timer import Timer
@@ -684,7 +684,9 @@ class ModelMixerScript(scripts.Script):
                             input_image = gr.Image(elem_id="mm_vxa_input_image", visible=False)
                         else:
                             input_image = gr.Image(elem_id="mm_vxa_input_image")
-                        import_image = gr.Button(value="Import image", visible=False if is_img2img else True)
+                        with gr.Row():
+                            import_image = gr.Button(value="Import image", visible=False if is_img2img else True)
+                            deepbooru_image = gr.Button(value="Interrogate Deepbooru")
                         vxa_prompt = gr.Textbox(label="Prompt", lines=2, placeholder="Prompt to be visualized")
                         go = gr.Button(value="Tokenize")
                         with gr.Row():
@@ -707,6 +709,22 @@ class ModelMixerScript(scripts.Script):
 
                         #output_gallery = gr.Image(label="Output", show_label=False)
                         #output_gallery = gr.Gallery(label="Output", columns=[1], rows=[1], height="auto", show_label=False)
+
+                def interrogate_deepbooru(image):
+                    if image is None: return ''
+
+                    # deepboru
+                    if isinstance(image, np.ndarray):
+                        image = Image.fromarray(np.uint8(image)).convert('RGB')
+
+                    prompt = deepbooru.model.tag(image)
+                    return prompt
+
+                deepbooru_image.click(
+                    fn=interrogate_deepbooru,
+                    inputs=[input_image],
+                    outputs=[vxa_prompt],
+                )
 
                 go.click(
                     fn=tokenize,

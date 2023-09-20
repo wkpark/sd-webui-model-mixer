@@ -181,7 +181,7 @@ def generate_vxa(image, prompt, idx, time, layer_name, output_mode):
         print("Invalid str image", image)
         return None
     elif isinstance(image, Image.Image):
-        image = image.asarray()
+        image = np.asarray(image)
     elif not isinstance(image, np.ndarray):
         print("Invalid image #")
         return image
