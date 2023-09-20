@@ -688,6 +688,12 @@ class ModelMixerScript(scripts.Script):
                             import_image = gr.Button(value="Import image", visible=False if is_img2img else True)
                             deepbooru_image = gr.Button(value="Interrogate Deepbooru")
                         vxa_prompt = gr.Textbox(label="Prompt", lines=2, placeholder="Prompt to be visualized")
+                        stripped = gr.Textbox(label="Prompt", value="", visible=False)
+                        ignore_webui = gr.Checkbox(label="Ignore sd-webui grammar", value=True, interactive=True)
+                        with gr.Row():
+                            current_step = gr.Slider(label='Current steps', minimum=1, maximum=150, value=1, step=1, interactive=True)
+                            total_step = gr.Slider(label='Total steps', minimum=1, maximum=150, value=28, step=1, interactive=True)
+                            and_block = gr.Number(label='Prompt block (separated by AND)', value=0, step=1, interactive=True)
                         go = gr.Button(value="Tokenize")
                         with gr.Row():
                             with gr.Tabs():
@@ -728,8 +734,8 @@ class ModelMixerScript(scripts.Script):
 
                 go.click(
                     fn=tokenize,
-                    inputs=[vxa_prompt],
-                    outputs=[tokenized_text, tokens, tokens_checkbox],
+                    inputs=[vxa_prompt, current_step, total_step, and_block, ignore_webui],
+                    outputs=[tokenized_text, tokens, stripped, tokens_checkbox],
                 )
                 tokens_checkbox.select(
                     fn=lambda n: ",".join([str(x) for x in sorted(n)]),
@@ -916,7 +922,7 @@ class ModelMixerScript(scripts.Script):
                     components[elem_id] = component
                     vxa_generate.click(
                         fn=lambda *a: [generate_vxa(*a)],
-                        inputs=[input_image, vxa_prompt, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
+                        inputs=[input_image, vxa_prompt, stripped, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
                         outputs=[components["img2img_gallery"]]
                     )
                     return
@@ -926,7 +932,7 @@ class ModelMixerScript(scripts.Script):
                     components[elem_id] = component
                     vxa_generate.click(
                         fn=lambda *a: [generate_vxa(*a)],
-                        inputs=[input_image, vxa_prompt, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
+                        inputs=[input_image, vxa_prompt, stripped, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
                         outputs=[components[elem_id]]
                     )
 

@@ -41,10 +41,11 @@ class OpenClip:
     def byte_decoder(self):
         return self.tokenizer.byte_decoder
 
-def tokenize(text, input_is_ids=False):
+def tokenize(text, current_step=1, total_step=1, block=0, ignore_webui=True, input_is_ids=False):
     if shared.sd_model is None:
         raise gr.Error("Model not loaded...")
 
+    token_count = None
     text, res = extra_networks.parse_prompt(text)
 
     conditioner = getattr(shared.sd_model, 'conditioner', None)
@@ -63,8 +64,32 @@ def tokenize(text, input_is_ids=False):
     else:
         raise gr.Error(f'Unknown CLIP model: {typename}')
 
+    stripped = ""
     if input_is_ids:
         tokens = [int(x.strip()) for x in text.split(",")]
+    elif ignore_webui:
+        from modules import sd_hijack, prompt_parser
+        from functools import reduce
+        _, prompt_flat_list, _ = prompt_parser.get_multicond_prompt_list([text])
+        prompt_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(prompt_flat_list, int(total_step))
+        flat_prompts = reduce(lambda list1, list2: list1+list2, prompt_schedules)
+        prompts = [prompt_text for step, prompt_text in flat_prompts]
+
+        def find_current_prompt_idx(steps, block):
+            idx = 0
+            for i, prompts_block in enumerate(prompt_schedules):
+                for step_prompt_chunk in prompts_block:
+                    if i == block:
+                        if steps <= step_prompt_chunk[0]:
+                            return idx
+                    idx += 1
+
+        idx = find_current_prompt_idx(current_step, block)
+        # get a sd-webui grammar stripped prompt
+        parsed = prompt_parser.parse_prompt_attention(prompts[idx])
+        stripped = "".join([x[0] for x in parsed])
+
+        tokens = cond_stage_model.tokenize([stripped])[0]
     else:
         tokens = cond_stage_model.tokenize([text])[0]
 
@@ -135,14 +160,16 @@ def tokenize(text, input_is_ids=False):
     if len(current_ids) > 0:
         dump(last=True)
 
+    if token_count is None:
+        token_count = len(ids)
     ids_html = f"""
 <p>
-Token count: {len(ids)}<br>
+Token count: {token_count}<br>
 {", ".join([str(x) for x in ids])}
 </p>
 """
 
-    return code, ids_html, gr.update(choices=choices, value=[])
+    return code, ids_html, stripped, gr.update(choices=choices, value=[])
 
 def get_layer_names(model=None):
     if model is None:
@@ -174,7 +201,7 @@ def get_attn(emb, ret):
         ret["out"] = attn
     return hook
 
-def generate_vxa(image, prompt, idx, time, layer_name, output_mode):
+def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode):
     if isinstance(image, str):
         print("Invalid str image", image)
         return None
@@ -211,9 +238,9 @@ def generate_vxa(image, prompt, idx, time, layer_name, output_mode):
 
         attn_out = {}
         if hasattr(model, 'conditioner'):
-            emb = model.get_learned_conditioning([prompt])
+            emb = model.get_learned_conditioning([prompt if stripped is "" else stripped])
         else:
-            emb = model.cond_stage_model([prompt])
+            emb = model.cond_stage_model([prompt if stripped is "" else stripped])
 
         handle = layer.register_forward_hook(get_attn(emb, attn_out))
         try:
