@@ -711,7 +711,7 @@ class ModelMixerScript(scripts.Script):
                         with gr.Row():
                             hidden_layer_select = gr.Dropdown(value=default_hidden_layer_name, label="Cross-attention layer", choices=get_layer_names())
                             create_refresh_button(hidden_layer_select, lambda: None, lambda: {"choices": get_layer_names()},"imm_refresh_vxa_layer_names")
-                        vxa_output_mode = gr.CheckboxGroup(choices=["masked", "gray", "resize"], value=["masked", "resize"], label="Visualize options")
+                        vxa_output_mode = gr.CheckboxGroup(choices=["masked", "gray", "resize"], value=["masked", "resize"], interactive=True, label="Visualize options")
                         vxa_generate = gr.Button(value="Visualize Cross-Attention", elem_id="mm_vxa_gen_btn", variant="primary")
 
                         #output_gallery = gr.Image(label="Output", show_label=False)
@@ -763,6 +763,23 @@ class ModelMixerScript(scripts.Script):
                     fn=get_prompt,
                     inputs=[input_image],
                     outputs=[vxa_prompt, stripped],
+                    show_progress=False,
+                )
+
+                def change_mode(mode):
+                    resize = True if "resize" in mode else False
+                    if resize: mode.pop(mode.index("resize"))
+                    if len(mode) == 0:
+                        return ["masked"] + (["resize"] if resize else [])
+                    if len(mode) == 1:
+                        return mode + (["resize"] if resize else [])
+                    mode.pop(0)
+                    return mode + (["resize"] if resize else [])
+
+                vxa_output_mode.change(
+                    fn=change_mode,
+                    inputs=[vxa_output_mode],
+                    outputs=[vxa_output_mode],
                     show_progress=False,
                 )
 
