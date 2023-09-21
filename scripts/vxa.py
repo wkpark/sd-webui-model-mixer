@@ -213,7 +213,7 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
         geninfo, _ = images.read_info_from_image(image)
         if geninfo is not None:
             params = parse_generation_parameters(geninfo)
-            basename_pattern = "[seed]-[model_name]-mm_vxa"
+            basename_pattern = "mm_vxa-[seed]-[model_name]"
             seed = params.get("Seed", "None")
             modelname = params.get("Model", "None")
             basename = basename_pattern.replace("[seed]", seed).replace("[model_name]", modelname)
