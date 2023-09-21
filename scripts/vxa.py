@@ -1,6 +1,7 @@
 import html
 import os
 import gradio as gr
+import cv2
 from PIL import Image
 import numpy as np
 import open_clip.tokenizer
@@ -230,8 +231,10 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
         # resize image to reduce computational time
         print(f"Resize image {w}x{h} ", end="")
         s = 1.0 / (w / 512)
-        h2 = int(h * s)
-        w2 = int(w * s)
+        h2 = round(h * s)
+        h2 += h2 % 2
+        w2 = round(w * s)
+        w2 += w2 % 2
         print(f"to {w2}x{h2}.")
         image = image.resize((w2, h2))
         image = np.asarray(image)
@@ -290,19 +293,21 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
             return output
 
     scale = round(math.sqrt((output.shape[0] * output.shape[1]) / img.shape[0]))
-    h = output.shape[0] // scale
-    w = output.shape[1] // scale
+    h = round(output.shape[0] / scale)
+    w = round(output.shape[1] / scale)
+
     img = img.reshape(h, w) / img.max()
     img = img.to("cpu").numpy()
+
+    img = cv2.resize(img, dsize=(output.shape[1], output.shape[0]), interpolation=cv2.INTER_NEAREST)
+
     output = output.astype(np.float64)
     if "masked" in output_mode:
-        for i in range(output.shape[0]):
-            for j in range(output.shape[1]):
-                output[i][j] *= img[i // scale][j // scale]
+        img = np.stack((img,)*3, axis=-1)
+        output = np.multiply(output, img)
     elif "gray" in output_mode:
-        for i in range(output.shape[0]):
-            for j in range(output.shape[1]):
-                output[i][j] = [img[i // scale][j // scale] * 255.0] * 3
+        output = np.stack((img,)*3, axis=-1)
+        output = output * 255.0
     output = output.astype(np.uint8)
 
     devices.torch_gc()
