@@ -426,6 +426,8 @@ class ModelMixerScript(scripts.Script):
 
     init_on_after_callback = False
 
+    components = {}
+
     def __init__(self):
         super().__init__()
 
@@ -502,8 +504,6 @@ class ModelMixerScript(scripts.Script):
         mm_set_elem = [None]*num_models
 
         default_use[0] = True
-
-        components = {}
 
         def initial_checkpoint():
             if shared.sd_model is not None and shared.sd_model.sd_checkpoint_info is not None:
@@ -742,11 +742,12 @@ class ModelMixerScript(scripts.Script):
 
                     return prompt, ''
 
-                deepbooru_image.click(
-                    fn=interrogate_deepbooru,
-                    inputs=[input_image],
-                    outputs=[vxa_prompt, stripped],
-                )
+                if not is_img2img:
+                    deepbooru_image.click(
+                        fn=interrogate_deepbooru,
+                        inputs=[input_image],
+                        outputs=[vxa_prompt, stripped],
+                    )
 
                 go.click(
                     fn=tokenize,
@@ -929,7 +930,7 @@ class ModelMixerScript(scripts.Script):
         def import_image_from_gallery(gallery):
             prompt = ""
             if len(gallery) == 0:
-                return gr.update()
+                return gr.update(), gr.update()
             if isinstance(gallery[0], dict) and gallery[0].get("name", None) is not None:
                 print("Import ", gallery[0]["name"])
                 image = Image.open(gallery[0]["name"])
@@ -946,6 +947,7 @@ class ModelMixerScript(scripts.Script):
 
         def on_after_components(component, **kwargs):
             nonlocal input_image
+            MM = ModelMixerScript
 
             elem_id = getattr(component, "elem_id", None)
             if elem_id is None:
@@ -956,39 +958,48 @@ class ModelMixerScript(scripts.Script):
                 prepare_model(get_valid_checkpoint_title())
                 return
 
-            if elem_id == "img2img_image": #and is_img2img:
-                print("img2img_image", "is_img2img = ", is_img2img)
-                if components.get(elem_id, None) is None:
-                    input_image = components[elem_id] = component
-
-            if elem_id == "img2img_gallery" and is_img2img:
-                if components.get(elem_id) is None:
-                    components[elem_id] = component
-                    vxa_generate.click(
-                        fn=lambda *a: [generate_vxa(*a, is_img2img)],
-                        inputs=[input_image, vxa_prompt, stripped, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
-                        outputs=[components["img2img_gallery"]]
-                    )
+            if elem_id == "img2img_image":
+                if MM.components.get(elem_id, None) is None:
+                    MM.components[elem_id] = component
                     return
 
-            elif elem_id == "txt2img_gallery":
-                if components.get(elem_id, None) is None:
-                    components[elem_id] = component
+            if elem_id == "img2img_gallery":
+                if MM.components.get(elem_id, None) is None and MM.components.get("img2img_image", None) is not None:
+                    MM.components[elem_id] = component
+
+            if is_img2img and (MM.components.get("__vxa_generate_img2img", None) is None and
+                    MM.components.get("img2img_gallery", None) is not None and MM.components.get("img2img_image", None) is not None):
+                # HACK
+                MM.components["__vxa_generate_img2img"] = True
+                vxa_generate.click(
+                    fn=lambda *a: [generate_vxa(*a, is_img2img)],
+                    inputs=[MM.components["img2img_image"], vxa_prompt, stripped, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
+                    outputs=[MM.components["img2img_gallery"]]
+                )
+                deepbooru_image.click(
+                    fn=interrogate_deepbooru,
+                    inputs=[MM.components["img2img_image"]],
+                    outputs=[vxa_prompt, stripped],
+                )
+
+            if elem_id == "txt2img_gallery":
+                if MM.components.get(elem_id, None) is None:
+                    MM.components[elem_id] = component
                     vxa_generate.click(
                         fn=lambda *a: [generate_vxa(*a, is_img2img)],
                         inputs=[input_image, vxa_prompt, stripped, vxa_token_indices, vxa_time_embedding, hidden_layer_select, vxa_output_mode],
-                        outputs=[components[elem_id]]
+                        outputs=[MM.components[elem_id]]
                     )
 
                     import_image.click(
                         fn=import_image_from_gallery,
                         inputs=[component],
-                        outputs=[input_image]
+                        outputs=[input_image, vxa_prompt]
                     )
 
             if elem_id == "setting_sd_model_checkpoint":
-                if components.get(elem_id, None) is None:
-                    components[elem_id] = component
+                if MM.components.get(elem_id, None) is None:
+                    MM.components[elem_id] = component
                     # component is the setting_sd_model_checkpoint
                     model_a.select(fn=sync_main_checkpoint,
                         inputs=[enable_sync, model_a],

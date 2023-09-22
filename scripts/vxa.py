@@ -217,10 +217,13 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
             seed = params.get("Seed", "None")
             modelname = params.get("Model", "None")
             basename = basename_pattern.replace("[seed]", seed).replace("[model_name]", modelname)
+
+        # confirm RGB mode
+        image = image.convert("RGB")
     elif isinstance(image, np.ndarray):
         image = Image.fromarray(image)
     else:
-        print("Unknown type image")
+        print(f"Unknown type {type(image)} image")
         return image
 
     # check PIL image size
