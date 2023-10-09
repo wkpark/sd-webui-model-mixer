@@ -510,11 +510,11 @@ class ModelMixerScript(scripts.Script):
                 return shared.sd_model.sd_checkpoint_info.title
             return sd_models.checkpoint_tiles()[0]
 
-        with gr.Accordion("Checkpoint Model Mixer", open=False):
+        with gr.Accordion("Checkpoint Model Mixer", open=False, elem_id="mm_main_" + ("txt2img" if not is_img2img else "img2img")):
             with gr.Row():
                 mm_information = gr.HTML("Merge multiple models and load it for image generation.")
             with gr.Row():
-                enabled = gr.Checkbox(label="Enable Model Mixer", value=False, visible=True)
+                enabled = gr.Checkbox(label="Enable Model Mixer", value=False, visible=True, elem_classes=["mm-enabled"])
             with gr.Row():
                 recipe_all = gr.HTML("<h3></h3>")
 
