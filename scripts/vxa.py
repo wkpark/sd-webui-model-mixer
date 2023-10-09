@@ -2,6 +2,7 @@ import html
 import os
 import gradio as gr
 import cv2
+import importlib
 from PIL import Image
 import numpy as np
 import open_clip.tokenizer
@@ -13,9 +14,12 @@ from torch import nn, einsum
 from einops import rearrange
 import math
 from ldm.modules.attention import CrossAttention
-from sgm.modules.attention import CrossAttention as CrossAttention2
 from ldm.modules.encoders.modules import FrozenCLIPEmbedder, FrozenOpenCLIPEmbedder
 from modules.ui import create_refresh_button
+
+has_sgm = importlib.util.find_spec("sgm") is not None
+if has_sgm:
+    from sgm.modules.attention import CrossAttention as CrossAttention2
 
 hidden_layer_names = []
 default_hidden_layer_name = "model.diffusion_model.middle_block.1.transformer_blocks.0.attn2"
@@ -182,7 +186,7 @@ def get_layer_names(model=None):
 
     hidden_layers = []
     for n, m in model.named_modules():
-        if isinstance(m, CrossAttention) or isinstance(m, CrossAttention2):
+        if isinstance(m, CrossAttention) or (has_sgm and isinstance(m, CrossAttention2)):
             hidden_layers.append(n)
     return list(filter(lambda s : "attn2" in s, hidden_layers))
 
@@ -254,7 +258,7 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
     layer = None
     print(f"Search {layer_name}...")
     for n, m in model.named_modules():
-        if (isinstance(m, CrossAttention) or isinstance(m, CrossAttention2)) and n == layer_name:
+        if (isinstance(m, CrossAttention) or (has_sgm and isinstance(m, CrossAttention2))) and n == layer_name:
             print("layer found = ", n)
             layer = m
             break
