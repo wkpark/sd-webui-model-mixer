@@ -2130,9 +2130,13 @@ class ModelMixerScript(scripts.Script):
         filename = os.path.join(model_path, f"{model_name}.safetensors")
         shared.sd_model.sd_model_checkpoint = checkpoint_info.filename = filename
 
-        #if shared.opts.sd_checkpoint_cache > 0:
-        #    # unload cached merged model
-        #    checkpoints_loaded.popitem()
+        if shared.opts.sd_checkpoint_cache > 0:
+            # check checkponts_loaded bug
+            # unload cached merged model
+            saved_state_dict = checkpoints_loaded[checkpoint_info]
+            if len(saved_state_dict.keys()) < 600:
+                print("sd-webui bug workaround!")
+                checkpoints_loaded[checkpoint_info] = theta_0.copy()
 
         del theta_0
 
