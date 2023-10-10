@@ -25,6 +25,7 @@ onUiUpdate(() => {
         badge.checked = checkbox.checked;
         badge.addEventListener('click', (e) => {
             checkbox.checked = !checkbox.checked;
+            badge.checked = checkbox.checked;
             triggerEvent(checkbox, 'change');
             e.stopPropagation();
         });
@@ -36,11 +37,10 @@ onUiUpdate(() => {
         space.innerHTML = "&nbsp;";
         span.insertBefore(space, badge.nextSibling);
 
-        checkbox.addEventListener('click', () => {
+        checkbox.addEventListener('change', () => {
             updateActiveState(checkbox, accordion);
         });
-        // comment out for some case
-        //checkbox.parentNode.style.display = "none";
+        checkbox.parentNode.style.display = "none";
     }
 
     if (Object.keys(accordions).length < 2) {
