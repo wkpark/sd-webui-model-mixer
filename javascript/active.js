@@ -39,7 +39,8 @@ onUiUpdate(() => {
         checkbox.addEventListener('click', () => {
             updateActiveState(checkbox, accordion);
         });
-        checkbox.parentNode.style.display = "none";
+        // comment out for some case
+        //checkbox.parentNode.style.display = "none";
     }
 
     if (Object.keys(accordions).length < 2) {
