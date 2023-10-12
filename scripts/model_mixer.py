@@ -2122,6 +2122,12 @@ class ModelMixerScript(scripts.Script):
             print("WARN: lowvram/medvram load_model() with minor workaround")
             sd_models.unload_model_weights()
             #sd_models.model_data.__init__()
+
+        if sd_models.model_data.sd_model:
+            sd_models.send_model_to_cpu(sd_models.model_data.sd_model)
+            sd_models.model_data.sd_model = None
+            devices.torch_gc()
+
         sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
         del state_dict
         devices.torch_gc()
