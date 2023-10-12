@@ -810,6 +810,22 @@ class ModelMixerScript(scripts.Script):
                     read_model_a_metadata = gr.Button("model A metadata")
                     read_model_b_metadata = gr.Button("model B metadata")
 
+            with gr.Row(variant="compact"):
+                unload_sd_model = gr.Button("Unload model to free VRAM")
+                reload_sd_model = gr.Button("Reload model back to VRAM")
+
+            unload_sd_model.click(
+                fn=sd_models.unload_model_weights,
+                inputs=[],
+                outputs=[]
+            )
+
+            reload_sd_model.click(
+                fn=sd_models.reload_model_weights,
+                inputs=[],
+                outputs=[]
+            )
+
         def addblockweights(val, blockopt, *blocks):
             if val == "none":
                 val = 0
