@@ -789,18 +789,21 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
   perm_sizes = {p: params_a[axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_axes.items() if axes[0][0] in params_b}
   perm = dict()
   perm = {p: torch.arange(n) for p, n in perm_sizes.items()} if init_perm is None else init_perm
-  special_layers = special_layers if special_layers and len(special_layers) > 0 else list(perm.keys())
+  special_layers = special_layers if special_layers and len(special_layers) > 0 else sorted(list(perm.keys()))
   sum = 0
   number = 0
 
   if usefp16:
-    for iteration in range(max_iter):
+    for iteration in (desc:= tqdm(range(max_iter), position=1, bar_format='{desc}')):
+      message=desc.set_description_str
+      message(f'Rebasin #{iteration}/{max_iter}:')
       progress = False
       shuffle(special_layers)
-      for p_ix in (pbar:= tqdm(special_layers, desc=f"Rebasin {iteration}/{max_iter}")):
+      for p_ix in (pbar:= tqdm(special_layers, desc="calc...")):
         log=pbar.set_description_str
         p = p_ix
         if p in perm_sizes:
+          log(f"{p}")
           n = perm_sizes[p]
           A = torch.zeros((n, n), dtype=torch.float16).to(device)
           for wk, axis in ps.perm_to_axes[p]:
@@ -821,7 +824,7 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
           if newL - oldL != 0:
             sum += abs((newL-oldL).item())
             number += 1
-            log(f"{p}: {newL - oldL}")
+          message(f"{p}: new - old = {newL - oldL}")
 
           progress = progress or newL > oldL + 1e-12
 
@@ -837,12 +840,16 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
     return (perm, average)
 
   else:
-    for iteration in range(max_iter):
+    for iteration in (desc:= tqdm(range(max_iter), position=1, bar_format='{desc}')):
+      message=desc.set_description_str
+      message(f'Rebasin #{iteration}/{max_iter}:')
       progress = False
       shuffle(special_layers)
-      for p_ix in special_layers:
+      for p_ix in (pbar:= tqdm(special_layers, desc="calc...")):
+        log=pbar.set_description_str
         p = p_ix
         if p in perm_sizes:
+          log(f"{p}")
           n = perm_sizes[p]
           A = torch.zeros((n, n), dtype=torch.float32).to(device="cpu")
           for wk, axis in ps.perm_to_axes[p]:
@@ -862,7 +869,7 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
           if newL - oldL != 0:
             sum += abs((newL-oldL).item())
             number += 1
-            log(f"{p}: {newL - oldL}")
+          message(f"{p}: new - old = {newL - oldL}")
 
           progress = progress or newL > oldL + 1e-12
 
