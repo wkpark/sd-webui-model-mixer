@@ -37,6 +37,8 @@ from ldm.modules.attention import CrossAttention
 from scripts.vxa import generate_vxa, default_hidden_layer_name, get_layer_names
 from scripts.vxa import tokenize
 
+from scripts.weight_matching import sdunet_permutation_spec, weight_matching, apply_permutation
+
 dump_cache = cache.dump_cache
 cache = cache.cache
 
@@ -143,6 +145,57 @@ def find_preset_by_name(preset, presets=None, reload=False):
         return presets[preset]
 
     return None
+
+
+def get_selected_blocks(mbw_blocks, isxl=False):
+    MAXLEN = 26 - (0 if not isxl else 6)
+    BLOCKLEN = 12 - (0 if not isxl else 3)
+    BLOCKOFFSET = 13 if not isxl else 10
+    selected = [False]*MAXLEN
+    BLOCKIDS = BLOCKID if not isxl else BLOCKIDXL
+
+    # no mbws blocks selected or have 'ALL' alias
+    if 'ALL' in mbw_blocks:
+        # select all blocks
+        mbw_blocks += [ 'BASE', 'INP*', 'MID', 'OUT*' ]
+
+    # fix alias
+    if 'MID' in mbw_blocks:
+        i = mbw_blocks.index('MID')
+        mbw_blocks[i] = 'M00'
+
+    # expand some aliases
+    if 'INP*' in mbw_blocks:
+        for i in range(0, BLOCKLEN):
+            name = f"IN{i:02d}"
+            if name not in mbw_blocks:
+                mbw_blocks.append(name)
+    if 'OUT*' in mbw_blocks:
+        for i in range(0, BLOCKLEN):
+            name = f"OUT{i:02d}"
+            if name not in mbw_blocks:
+                mbw_blocks.append(name)
+
+    for i, name in enumerate(BLOCKIDS):
+        if name in mbw_blocks:
+            if name[0:2] == 'IN':
+                num = int(name[2:])
+                selected[num + 1] = True
+            elif name[0:3] == 'OUT':
+                num = int(name[3:])
+                selected[num + BLOCKOFFSET + 1] = True
+            elif name == 'M00':
+                selected[BLOCKOFFSET] = True
+            elif name == 'BASE':
+                selected[0] = True
+
+    all_blocks = _all_blocks(isxl)
+    selected_blocks = []
+    for i, v in enumerate(selected):
+        if v:
+            selected_blocks.append(all_blocks[i])
+    return selected_blocks
+
 
 def calc_mbws(mbw, mbw_blocks, isxl=False):
     weights = [t.strip() for t in mbw.split(",")]
@@ -420,6 +473,68 @@ def mm_list_models():
         # register again
         checkpoint_info.register()
 
+
+permutation_spec = sdunet_permutation_spec()
+def get_rebasin_perms(mbws, isxl):
+    """all blocks permutations of selected blocks"""
+
+    selected = get_selected_blocks(mbws, isxl)
+    all_blocks = _all_blocks(isxl)
+
+    if len(selected) > 0:
+        axes = []
+        perms = []
+        for block in selected:
+            for axe, perm in permutation_spec.axes_to_perm.items():
+                if block in axe:
+                    axes.append(axe)
+                    perms += list(perm)
+
+        perms = sorted(list(set(perms)))
+
+        return perms
+    return None
+
+
+def get_rebasin_groups(mbws, isxl):
+    """select all blocks correspond their permutation groups"""
+
+    perms = get_rebasin_perms(mbws, isxl)
+    if perms is None:
+        return None
+
+    # get all axes and corresponde blocks
+    blocks = []
+    axes = []
+    for perm in perms:
+        axes += [axes[0] for axes in permutation_spec.perm_to_axes[perm]]
+    axes = list(set(axes))
+
+    # get all block representations to show gr.Dropdown
+    MAXLEN = 26 - (0 if not isxl else 6)
+    BLOCKLEN = 12 - (0 if not isxl else 3)
+    BLOCKOFFSET = 13 if not isxl else 10
+    new_selected = [False]*MAXLEN
+    BLOCKIDS = BLOCKID if not isxl else BLOCKIDXL
+
+    all_blocks = _all_blocks(isxl)
+    blocknames = []
+    for j, block in enumerate(all_blocks):
+        if any(block in axe for axe in axes):
+            blocknames.append(BLOCKIDS[j])
+
+    return blocknames
+
+
+def get_device():
+    device_id = shared.cmd_opts.device_id
+    if device_id is not None:
+        cuda_device = f"cuda:{device_id}"
+    else:
+        cuda_device = "cpu"
+    return cuda_device
+
+
 class ModelMixerScript(scripts.Script):
     global elemental_blocks
     elemental_blocks = None
@@ -437,7 +552,7 @@ class ModelMixerScript(scripts.Script):
     def show(self, is_img2img):
         return scripts.AlwaysVisible
 
-    def _model_option_ui(self, n):
+    def _model_option_ui(self, n, isxl):
         name = chr(66+n)
 
         with gr.Row():
@@ -485,6 +600,7 @@ class ModelMixerScript(scripts.Script):
         mm_use = [None]*num_models
         mm_models = [None]*num_models
         mm_modes = [None]*num_models
+        mm_calcmodes = [None]*num_models
         mm_alpha = [None]*num_models
         mm_usembws = [None]*num_models
         mm_usembws_simple = [None]*num_models
@@ -548,7 +664,9 @@ class ModelMixerScript(scripts.Script):
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
                                 mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value="Sum")
-                            mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n)
+                            with gr.Row():
+                                mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin"], value="Normal")
+                            mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n, is_sdxl)
 
             with gr.Accordion("Merge Block Weights", open=False):
 
@@ -1065,6 +1183,7 @@ class ModelMixerScript(scripts.Script):
                 (mm_use[n], f"ModelMixer use model {name}"),
                 (mm_models[n], f"ModelMixer model {name}"),
                 (mm_modes[n], f"ModelMixer merge mode {name}"),
+                (mm_calcmodes[n], f"ModelMixer calcmode {name}"),
                 (mm_alpha[n], f"ModelMixer alpha {name}"),
                 (mbw_use_advanced[n], f"ModelMixer mbw mode {name}"),
                 (mm_usembws[n], f"ModelMixer mbw {name}"),
@@ -1401,7 +1520,7 @@ class ModelMixerScript(scripts.Script):
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
 
         return [enabled, model_a, base_model, mm_max_models, mm_finetune, *mm_use, *mm_models, *mm_modes, *mm_alpha,
-            *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights, *mm_use_elemental, *mm_elementals]
+            *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights, *mm_use_elemental, *mm_elementals, *mm_calcmodes]
 
     def modelmixer_extra_params(self, model_a, base_model, mm_max_models, mm_finetune, *args_):
         num_models = int(mm_max_models)
@@ -1429,6 +1548,7 @@ class ModelMixerScript(scripts.Script):
                     f"ModelMixer alpha {name}": args_[num_models*3+j],
                     f"ModelMixer mbw mode {name}": args_[num_models*4+j],
                     f"ModelMixer use elemental {name}": use_elemental,
+                    f"ModelMixer calcmode {name}": args_[num_models*10+j],
                 })
                 if len(args_[num_models*5+j]) > 0:
                     params.update({f"ModelMixer mbw {name}": ",".join(args_[num_models*5+j])})
@@ -1462,6 +1582,7 @@ class ModelMixerScript(scripts.Script):
         mm_use = ["False"]*num_models
         mm_models = []
         mm_modes = []
+        mm_calcmodes = []
         mm_alpha = []
         mbw_use_advanced = []
         mm_usembws = []
@@ -1585,6 +1706,8 @@ class ModelMixerScript(scripts.Script):
                     elemental = [f.strip() for f in elemental]
                     elemental = ",".join(elemental)
 
+                calcmode = args_[num_models*10+j]
+
                 if not mbw_use_advanced:
                     usembws = usembws_simple
 
@@ -1605,6 +1728,7 @@ class ModelMixerScript(scripts.Script):
                 mm_weights.append(weights)
                 mm_use_elemental.append(use_elemental)
                 mm_elementals.append(elemental)
+                mm_calcmodes.append(calcmode)
 
         # extra_params
         extra_params = self.modelmixer_extra_params(model_a, base_model, mm_max_models, mm_finetune, *args_)
@@ -1615,7 +1739,7 @@ class ModelMixerScript(scripts.Script):
         if hasattr(p, "modelmixer_xyz"):
             xyz = p.modelmixer_xyz
         # make a hash to cache results
-        sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
+        sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_calcmodes, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
         print("config hash = ", sha256)
 
         if shared.sd_model is not None and shared.sd_model.sd_checkpoint_info is not None:
@@ -1630,6 +1754,7 @@ class ModelMixerScript(scripts.Script):
         print("  - max_models", mm_max_models)
         print("  - models", mm_models)
         print("  - modes", mm_modes)
+        print("  - calcmodes", mm_calcmodes)
         print("  - usembws", mm_usembws)
         print("  - weights", mm_weights)
         print("  - alpha", mm_alpha)
@@ -1874,7 +1999,7 @@ class ModelMixerScript(scripts.Script):
             "alpha": mm_alpha,
             "model_a": model_a,
             "mode": mm_modes,
-            "calcmode": "normal",
+            "calcmode": mm_calcmodes,
         }
         metadata["sd_merge_models"] = {}
 
@@ -1910,6 +2035,7 @@ class ModelMixerScript(scripts.Script):
         # total stage = number of models + key uninitialized stage + key remains stage
         stages = len(mm_models) + 1 + (1 if len(keyremains) > 0 else 0)
         modes = mm_modes
+        calcmodes = mm_calcmodes
 
         # model info
         modelinfos = [ model_a ]
@@ -1918,6 +2044,19 @@ class ModelMixerScript(scripts.Script):
             checkpoint_info.calculate_shorthash()
         modelhashes = [ checkpoint_info.shorthash ]
         alphas = []
+
+        # check Rebasin mode
+        device = get_device()
+        usefp16 = True
+        if device == "cpu":
+            print("force cuda")
+            device = "cuda"
+        else:
+            print("device = ", device)
+
+        if not isxl and "Rebasin" in calcmodes:
+            # FIXME need to get all possible axes?
+            print("Rebasin mode")
 
         stage = 1
         for n, file in enumerate(mm_models,start=weight_start):
@@ -2005,6 +2144,15 @@ class ModelMixerScript(scripts.Script):
                             if s in key and key not in theta_0 and key not in checkpoint_dict_skip_on_merge:
                                 print(f" +{k}")
                                 theta_0[key] = theta_1[key]
+
+            if not isxl and "Rebasin" in calcmodes[n]:
+                print("Rebasin calc...")
+                # rebasin mode
+                # Replace theta_0 with a permutated version using model A and B
+                first_permutation, y = weight_matching(permutation_spec, models["model_a"], theta_0, usefp16=usefp16, device=device)
+                theta_0 = apply_permutation(permutation_spec, first_permutation, theta_0)
+                #second_permutation, z = weight_matching(permutation_spec, theta_1, theta_0, usefp16=usefp16, device=device)
+                #theta_3= apply_permutation(permutation_spec, second_permutation, theta_0)
 
             stage += 1
             del theta_1
