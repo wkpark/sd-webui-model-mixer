@@ -594,8 +594,20 @@ class ModelMixerScript(scripts.Script):
 
         return mm_alpha, mm_usembws, mm_usembws_simple, mbw_use_advanced, mbw_advanced, mbw_simple, mm_explain, mm_weights, mm_use_elemental, mm_elemental, mm_setalpha, mm_readalpha, mm_set_elem
 
+
+    def after_component(self, component, **_kwargs):
+        MM = ModelMixerScript
+
+        elem_id = getattr(component, "elem_id", None)
+        if elem_id in [ "txt2img_generate", "img2img_generate" ]:
+            MM.components[elem_id] = component
+            return
+
+
     def ui(self, is_img2img):
         import modules.ui
+        MM = ModelMixerScript
+
         num_models = shared.opts.data.get("mm_max_models", 2)
         mm_use = [None]*num_models
         mm_models = [None]*num_models
@@ -647,6 +659,7 @@ class ModelMixerScript(scripts.Script):
             mm_max_models = gr.Number(value=num_models, precision=0, visible=False)
             merge_method_info = [{}] * num_models
             with gr.Group(), gr.Tabs():
+                mm_states = gr.State({})
                 for n in range(num_models):
                     name_a = chr(66+n-1) if n == 0 else f"merge_{n}"
                     name = chr(66+n)
@@ -1519,10 +1532,23 @@ class ModelMixerScript(scripts.Script):
             mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
 
-        return [enabled, model_a, base_model, mm_max_models, mm_finetune, *mm_use, *mm_models, *mm_modes, *mm_alpha,
-            *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights, *mm_use_elemental, *mm_elementals, *mm_calcmodes]
+        def prepare_states(states, *calcmodes):
+            states["calcmodes"] = calcmodes
+            return states
 
-    def modelmixer_extra_params(self, model_a, base_model, mm_max_models, mm_finetune, *args_):
+        generate_button = MM.components["img2img_generate" if is_img2img else "txt2img_generate"]
+        generate_button.click(
+            fn=prepare_states,
+            inputs=[mm_states, *mm_calcmodes],
+            outputs=[mm_states],
+            show_progress=False,
+            queue=False,
+        )
+
+        return [enabled, model_a, base_model, mm_max_models, mm_finetune, mm_states, *mm_use, *mm_models, *mm_modes, *mm_alpha,
+            *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights, *mm_use_elemental, *mm_elementals]
+
+    def modelmixer_extra_params(self, model_a, base_model, mm_max_models, mm_finetune, mm_states, *args_):
         num_models = int(mm_max_models)
         params = {
             "ModelMixer model a": model_a,
@@ -1534,6 +1560,7 @@ class ModelMixerScript(scripts.Script):
         if base_model is not None and len(base_model) > 0:
             params.update({"ModelMixer base model": base_model})
 
+        _calcmodes = mm_states["calcmodes"]
         for j in range(num_models):
             name = f"{chr(98+j)}"
             params.update({f"ModelMixer use model {name}": args_[j]})
@@ -1548,7 +1575,7 @@ class ModelMixerScript(scripts.Script):
                     f"ModelMixer alpha {name}": args_[num_models*3+j],
                     f"ModelMixer mbw mode {name}": args_[num_models*4+j],
                     f"ModelMixer use elemental {name}": use_elemental,
-                    f"ModelMixer calcmode {name}": args_[num_models*10+j],
+                    f"ModelMixer calcmode {name}": _calcmodes[j],
                 })
                 if len(args_[num_models*5+j]) > 0:
                     params.update({f"ModelMixer mbw {name}": ",".join(args_[num_models*5+j])})
@@ -1568,7 +1595,7 @@ class ModelMixerScript(scripts.Script):
 
         return params
 
-    def before_process(self, p, enabled, model_a, base_model, mm_max_models, mm_finetune, *args_):
+    def before_process(self, p, enabled, model_a, base_model, mm_max_models, mm_finetune, mm_states, *args_):
         if not enabled:
             return
         debugs = shared.opts.data.get("mm_debugs", ["elemental merge"])
@@ -1686,6 +1713,7 @@ class ModelMixerScript(scripts.Script):
             print("No selected models found")
             return
 
+        _calcmodes = mm_states["calcmodes"]
         for j in range(num_models):
             if mm_use[j]:
                 model = args_[num_models+j]
@@ -1706,7 +1734,7 @@ class ModelMixerScript(scripts.Script):
                     elemental = [f.strip() for f in elemental]
                     elemental = ",".join(elemental)
 
-                calcmode = args_[num_models*10+j]
+                calcmode = _calcmodes[j]
 
                 if not mbw_use_advanced:
                     usembws = usembws_simple
@@ -1731,7 +1759,7 @@ class ModelMixerScript(scripts.Script):
                 mm_calcmodes.append(calcmode)
 
         # extra_params
-        extra_params = self.modelmixer_extra_params(model_a, base_model, mm_max_models, mm_finetune, *args_)
+        extra_params = self.modelmixer_extra_params(model_a, base_model, mm_max_models, mm_finetune, mm_states, *args_)
         p.extra_generation_params.update(extra_params)
 
         # make hash different for xyz-grid
@@ -1739,7 +1767,7 @@ class ModelMixerScript(scripts.Script):
         if hasattr(p, "modelmixer_xyz"):
             xyz = p.modelmixer_xyz
         # make a hash to cache results
-        sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_calcmodes, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
+        sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_states, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
         print("config hash = ", sha256)
 
         if shared.sd_model is not None and shared.sd_model.sd_checkpoint_info is not None:
