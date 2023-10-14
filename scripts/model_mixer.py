@@ -599,6 +599,9 @@ class ModelMixerScript(scripts.Script):
         MM = ModelMixerScript
 
         elem_id = getattr(component, "elem_id", None)
+        if elem_id is None:
+            return
+
         if elem_id in [ "txt2img_generate", "img2img_generate" ]:
             MM.components[elem_id] = component
             return
@@ -1094,6 +1097,7 @@ class ModelMixerScript(scripts.Script):
 
         def on_after_components(component, **kwargs):
             nonlocal input_image
+            self.init_on_after_callback = True
             MM = ModelMixerScript
 
             elem_id = getattr(component, "elem_id", None)
@@ -1153,7 +1157,6 @@ class ModelMixerScript(scripts.Script):
                         outputs=[is_sdxl, model_a, component],
                         show_progress=False,
                     )
-                    self.init_on_after_callback = True
 
                     enable_sync.select(fn=sync_main_checkpoint,
                         inputs=[enable_sync, model_a],
@@ -1207,8 +1210,6 @@ class ModelMixerScript(scripts.Script):
             )
 
         # load settings
-        print("checkpoint title = ", shared.sd_model.sd_checkpoint_info.title)
-
         read_metadata.click(fn=current_metadata, inputs=[], outputs=[metadata_json])
         read_model_a_metadata.click(fn=model_metadata, inputs=[model_a], outputs=[metadata_json])
         read_model_b_metadata.click(fn=model_metadata, inputs=[mm_models[0]], outputs=[metadata_json])
