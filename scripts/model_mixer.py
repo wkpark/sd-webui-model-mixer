@@ -948,16 +948,26 @@ class ModelMixerScript(scripts.Script):
                 unload_sd_model = gr.Button("Unload model to free VRAM")
                 reload_sd_model = gr.Button("Reload model back to VRAM")
 
+            def call_func_and_return_text(func, text):
+                def handler():
+                    t = Timer()
+                    func()
+                    t.record(text)
+
+                    return f'{text} in {t.total:.1f}s'
+
+                return handler
+
             unload_sd_model.click(
-                fn=sd_models.unload_model_weights,
+                fn=call_func_and_return_text(lambda: sd_models.send_model_to_cpu(shared.sd_model), 'Unloaded the checkpoint'),
                 inputs=[],
-                outputs=[]
+                outputs=[logging]
             )
 
             reload_sd_model.click(
-                fn=sd_models.reload_model_weights,
+                fn=call_func_and_return_text(lambda: sd_models.send_model_to_device(shared.sd_model), 'Reload the checkpoint'),
                 inputs=[],
-                outputs=[]
+                outputs=[logging]
             )
 
         def addblockweights(val, blockopt, *blocks):
