@@ -30,6 +30,13 @@ onUiUpdate(() => {
             e.stopPropagation();
         });
 
+        span.addEventListener('click', (e) => {
+            checkbox.checked = !checkbox.checked;
+            badge.checked = checkbox.checked;
+            triggerEvent(checkbox, 'change');
+            e.stopPropagation();
+        });
+
         badge.className = checkbox.className;
         badge.classList.add('primary');
         span.insertBefore(badge, span.firstChild);
