@@ -324,7 +324,7 @@ def _all_blocks(isxl=False):
     blocks = [ base_prefix ]
     for i in range(0, BLOCKLEN):
         blocks.append(f"input_blocks.{i}.")
-    blocks.append("middle_block.1.")
+    blocks.append("middle_block.")
     for i in range(0, BLOCKLEN):
         blocks.append(f"output_blocks.{i}.")
     return blocks
