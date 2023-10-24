@@ -2130,17 +2130,26 @@ class ModelMixerScript(scripts.Script):
         alphas = []
 
         # check Rebasin mode
-        device = get_device()
-        usefp16 = True
-        if device == "cpu":
-            print("force cuda")
-            device = "cuda"
-        else:
-            print("device = ", device)
-
         if not isxl and "Rebasin" in calcmodes:
-            # FIXME need to get all possible axes?
             print("Rebasin mode")
+
+            device = get_device()
+            usefp16 = True
+            if device == "cpu":
+                print("force cuda")
+                device = "cuda"
+            else:
+                print("device = ", device)
+
+        # set job_count
+        save_jobcount = None
+        if shared.state.job_count == -1:
+            save_jobcount = shared.state.job_count
+            shared.state.job_count = 0
+            if len(mm_models) > 0 and len(keys) > 0:
+                shared.state.job_count += len(mm_models)
+                if not isxl and "Rebasin" in calcmodes:
+                    shared.state.job_count += 1
 
         stage = 1
         for n, file in enumerate(mm_models,start=weight_start):
@@ -2172,7 +2181,10 @@ class ModelMixerScript(scripts.Script):
                 print(f"mode = {modes[n]}, mbw mode, alpha = {mm_weights[n]}")
 
             # main routine
+            shared.state.sampling_steps = len(keys)
+            shared.state.sampling_step = 0
             for key in (tqdm(keys, desc=f"Stage #{stage}/{stages}")):
+                shared.state.sampling_step += 1
                 if "model_" in key:
                     continue
                 if key in checkpoint_dict_skip_on_merge:
@@ -2220,6 +2232,8 @@ class ModelMixerScript(scripts.Script):
                         if alpha != 0.0:
                             theta_0[key] = theta_0[key] + (theta_1[key] - model_base[key]) * alpha
 
+            shared.state.nextjob()
+
             if n == weight_start:
                 stage += 1
                 for key in (tqdm(keys, desc=f"Check uninitialized #{n+2-weight_start}/{stages}")):
@@ -2237,6 +2251,7 @@ class ModelMixerScript(scripts.Script):
                 theta_0 = apply_permutation(permutation_spec, first_permutation, theta_0)
                 #second_permutation, z = weight_matching(permutation_spec, theta_1, theta_0, usefp16=usefp16, device=device)
                 #theta_3= apply_permutation(permutation_spec, second_permutation, theta_0)
+                shared.state.nextjob()
 
             stage += 1
             del theta_1
@@ -2257,6 +2272,11 @@ class ModelMixerScript(scripts.Script):
                     recipe_all = f"{recipe_all} + ({model_name} - {base_model}) * alpha_{n}"
 
             return recipe_all
+
+        if save_jobcount is not None and save_jobcount == -1:
+            # restore job_countm job_no
+            shared.state.job_count = -1
+            shared.state.job_no = 0
 
         # full recipe
         recipe_all = make_recipe(modes, model_a, mm_models)

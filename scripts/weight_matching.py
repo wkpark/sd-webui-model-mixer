@@ -6,6 +6,7 @@ from scipy.optimize import linear_sum_assignment
 import time
 from random import shuffle
 from tqdm import tqdm
+from modules import shared
 
 rngmix = lambda rng, x: random.fold_in(rng, hash(x))
 
@@ -799,7 +800,10 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
       message(f'Rebasin #{iteration}/{max_iter}:')
       progress = False
       shuffle(special_layers)
+      shared.state.sampling_steps = len(special_layers)
+      shared.state.sampling_step = 0
       for p_ix in (pbar:= tqdm(special_layers, desc="calc...")):
+        shared.state.sampling_step += 1
         log=pbar.set_description_str
         p = p_ix
         if p in perm_sizes:
