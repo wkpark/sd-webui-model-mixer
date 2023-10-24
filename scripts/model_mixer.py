@@ -795,7 +795,7 @@ class ModelMixerScript(scripts.Script):
             with gr.Row(elem_classes="accordions"):
               with gr.Accordion("Adjust settings", open=False, elem_classes=["input-accordion"]):
                 with gr.Row():
-                    mm_finetune = gr.Textbox(label="IN,OUT,OUT2,Contrast,COL1,COL2,COL3", visible=True, value="", lines=1, show_copy_button=True)
+                    mm_finetune = gr.Textbox(label="IN,OUT,OUT2,Contrast,Bright,COL1,COL2,COL3", visible=True, value="", lines=1, show_copy_button=True)
                     finetune_write = gr.Button(value="↖", elem_classes=["tool"])
                     finetune_read = gr.Button(value="↓", elem_classes=["tool"])
                     finetune_reset = gr.Button(value="\U0001f5d1\ufe0f", elem_classes=["tool"])
@@ -810,11 +810,14 @@ class ModelMixerScript(scripts.Script):
                     with gr.Column(scale=1, min_width=100):
                         contrast = gr.Slider(label="Contrast", minimum=-10, maximum=10, step=0.01, value=0, info="Contrast/\U0000200BDetail")
                     with gr.Column(scale=1, min_width=100):
-                        col1 = gr.Slider(label="Color1", minimum=-10, maximum=10, step=0.01, value=0, info="Color Tone 1")
+                        bri = gr.Slider(label="Brightness", minimum=-10, maximum=10, step=0.01, value=0, info="Dark(-)-Bright(+)")
+                with gr.Row():
                     with gr.Column(scale=1, min_width=100):
-                        col2 = gr.Slider(label="Color2", minimum=-10, maximum=10, step=0.01, value=0, info="Color Tone 2")
+                        col1 = gr.Slider(label="Cyan-Red", minimum=-10, maximum=10, step=0.01, value=0, info="Color1, Cyan(-)-Red(+)")
                     with gr.Column(scale=1, min_width=100):
-                        col3 = gr.Slider(label="Color3", minimum=-10, maximum=10, step=0.01, value=0, info="Color Tone 3")
+                        col2 = gr.Slider(label="Magenta-Green", minimum=-10, maximum=10, step=0.01, value=0, info="Color2, Magenta(-)-Green(+)")
+                    with gr.Column(scale=1, min_width=100):
+                        col3 = gr.Slider(label="Yellow-Blue", minimum=-10, maximum=10, step=0.01, value=0, info="Color3, Yellow(-)-Blue(+)")
 
               with gr.Accordion("Elemental Merge",open = False, elem_classes=["input-accordion"]):
                 with gr.Row():
@@ -1275,8 +1278,8 @@ class ModelMixerScript(scripts.Script):
         # recipe all
         recipe_all.change(fn=recipe_update, inputs=[mm_max_models, *mm_use, *mm_modes, *mm_models], outputs=recipe_all, show_progress=False)
 
-        def finetune_update(finetune, detail1, detail2, detail3,contrast, col1, col2, col3):
-            arr = [detail1, detail2, detail3, contrast, col1, col2, col3]
+        def finetune_update(finetune, detail1, detail2, detail3,contrast, bri, col1, col2, col3):
+            arr = [detail1, detail2, detail3, contrast, bri, col1, col2, col3]
             tmp = ",".join(map(lambda x: str(int(x)) if x == 0.0 else str(x), arr))
             if finetune != tmp:
                 return gr.update(value=tmp)
@@ -1284,8 +1287,8 @@ class ModelMixerScript(scripts.Script):
 
         def finetune_reader(finetune):
             tmp = [t.strip() for t in finetune.split(",")]
-            ret = [gr.update()]*7
-            for i, f in enumerate(tmp[0:7]):
+            ret = [gr.update()]*8
+            for i, f in enumerate(tmp[0:8]):
                 try:
                     f = float(f)
                     ret[i] = gr.update(value=f)
@@ -1294,14 +1297,15 @@ class ModelMixerScript(scripts.Script):
             return ret
 
         # update finetune
-        finetunes = [detail1, detail2, detail3, contrast, col1, col2, col3]
-        finetune_reset.click(fn=lambda: [gr.update(value="")]+[gr.update(value=0.0)]*7, inputs=[], outputs=[mm_finetune, *finetunes])
+        finetunes = [detail1, detail2, detail3, contrast, bri,  col1, col2, col3]
+        finetune_reset.click(fn=lambda: [gr.update(value="")]+[gr.update(value=0.0)]*8, inputs=[], outputs=[mm_finetune, *finetunes])
         finetune_read.click(fn=finetune_reader, inputs=[mm_finetune], outputs=[*finetunes])
         finetune_write.click(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=[mm_finetune])
         detail1.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
         detail2.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
         detail3.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
         contrast.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
+        bri.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
         col1.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
         col2.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
         col3.release(fn=finetune_update, inputs=[mm_finetune, *finetunes], outputs=mm_finetune, show_progress=False)
@@ -1656,7 +1660,7 @@ class ModelMixerScript(scripts.Script):
         # save given model index
         modelindex = [None]*num_models
 
-        FINETUNES = [ "IN","OUT", "OUT2", "CONT", "COL1", "COL2", "COL3" ]
+        FINETUNES = [ "IN","OUT", "OUT2", "CONT", "BRI", "COL1", "COL2", "COL3" ]
 
         # save xyz pinpoint block info.
         xyz_pinpoint_blocks = [{}]*num_models
@@ -2273,12 +2277,25 @@ class ModelMixerScript(scripts.Script):
             "model.diffusion_model.out.2.bias",
         ]
 
-        # parse finetune: IN,OUT1,OUT2,CONTRAST,COL1,COL2,COL3
-        def fineman(fine):
+        # from supermerger, CD-Tunner's method
+        COLS = [[-1, 1/3, 2/3], [1, 1, 0], [0, -1, -1], [1, 0, 1]]
+        COLSXL = [[0, 0, 1], [1, 0, 0], [-1, -1, 0], [-1, 1, 0]]
+        def colorcalc(cols, isxl):
+            old_finetune = shared.opts.data.get("mm_use_old_finetune", False)
+            if not isxl and old_finetune:
+                # old adjust method
+                return [x * 0.02 for x in cols[0:3]]
+
+            colors = COLSXL if isxl else COLS
+            outs = [[y * cols[i] * 0.02 for y in x] for i,x in enumerate(colors)]
+            return [sum(x) for x in zip(*outs)]
+
+        # parse finetune: IN,OUT1,OUT2,CONTRAST,BRI,COL1,COL2,COL3
+        def fineman(fine, isxl):
             if fine.find(",") != -1:
                 tmp = [t.strip() for t in fine.split(",")]
-                fines = [0.0]*7
-                for i,f in enumerate(tmp):
+                fines = [0.0]*8
+                for i,f in enumerate(tmp[0:8]):
                     try:
                         f = float(f)
                         fines[i] = f
@@ -2291,16 +2308,18 @@ class ModelMixerScript(scripts.Script):
                     1 - fines[1] * 0.01,
                     1 + fines[1] * 0.02,
                     1 - fines[2] * 0.01,
-                    [f * 0.02 for f in fines[3:7]]
+                    [fines[3] * 0.02] + colorcalc(fines[4:8], isxl)
                 ]
                 return fine
             return None
 
         # apply finetune
         if mm_finetune.rstrip(",0") != "":
-            fines = fineman(mm_finetune)
+            fines = fineman(mm_finetune, isxl)
             if fines is not None:
+                old_finetune = shared.opts.data.get("mm_use_old_finetune", False)
                 print(f"Apply fine tune {fines}")
+                if old_finetune: print(" - Old adjust")
                 for i, key in enumerate(tunekeys):
                     if i == 5:
                         theta_0[key] = theta_0[key] + torch.tensor(fines[5])
@@ -2887,6 +2906,17 @@ def on_ui_settings():
         ),
     )
 
+    shared.opts.add_option(
+        "mm_use_old_finetune",
+        shared.OptionInfo(
+            default=False,
+            label="Use old Adjust method",
+            component=gr.Checkbox,
+            component_args={"interactive": True},
+            section=section,
+        ),
+    )
+
 def on_infotext_pasted(infotext, results):
     updates = {}
     for k, v in results.items():
@@ -2912,6 +2942,14 @@ def on_infotext_pasted(infotext, results):
                 v = v[1:-1]
             arr = v.split(",")
             updates[k] = arr
+
+        # fix for old adjust value
+        if k.find(" adjust") > 0:
+            tmp = v.split(",")
+            if len(tmp) == 7: # old
+                tmp.insert(4, "0")
+                v = ",".join(tmp)
+                updates[k] = v
 
     results.update(updates)
 
