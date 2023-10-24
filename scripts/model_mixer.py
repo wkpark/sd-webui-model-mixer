@@ -1456,10 +1456,11 @@ class ModelMixerScript(scripts.Script):
                                 replaced = True
                                 break
 
-                        f.seek(0)
-                        raw = "\n".join(lines) + "\n"
-                        f.write(raw)
-                        f.truncate()
+                        if replaced:
+                            f.seek(0)
+                            raw = "\n".join(lines) + "\n"
+                            f.write(raw)
+                            f.truncate()
 
                     if not replaced:
                         raise gr.Error("Fail to save. Preset not found or mismatched")
@@ -1512,10 +1513,11 @@ class ModelMixerScript(scripts.Script):
                         if len(l) > 0:
                             newlines.append(l)
 
-                    raw = "\n".join(newlines) + "\n"
-                    f.seek(0)
-                    f.write(raw)
-                    f.truncate()
+                    if deleted:
+                        raw = "\n".join(newlines) + "\n"
+                        f.seek(0)
+                        f.write(raw)
+                        f.truncate()
 
             if not deleted:
                 raise gr.Error("Fail to delete. Preset not found or mismatched.")
