@@ -2284,7 +2284,7 @@ class ModelMixerScript(scripts.Script):
             old_finetune = shared.opts.data.get("mm_use_old_finetune", False)
             if not isxl and old_finetune:
                 # old adjust method
-                return [x * 0.02 for x in cols[0:3]]
+                return [x * 0.02 for x in cols[1:4]]
 
             colors = COLSXL if isxl else COLS
             outs = [[y * cols[i] * 0.02 for y in x] for i,x in enumerate(colors)]
