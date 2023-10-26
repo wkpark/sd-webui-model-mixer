@@ -833,7 +833,7 @@ class ModelMixerScript(scripts.Script):
                     with gr.Column(variant="compact"):
                         with gr.Row():
                             not_elements = gr.Checkbox(value=False, label="", info="NOT", scale=1, min_width=30, elem_classes=["not-button"])
-                            elements = gr.Dropdown([], values=[], label="Elements", show_label=False, multiselect=True, info="Select Elements", elem_id="mm_elemental_elements", scale=7)
+                            elements = gr.Dropdown(["time_embed", "time_embed.0", "time_embed.2", "out", "out.0", "out.2"], values=[], label="Elements", show_label=False, multiselect=True, info="Select Elements", elem_id="mm_elemental_elements", scale=7)
                     with gr.Column(variant="compact"):
                         with gr.Row():
                             elemental_ratio = gr.Slider(minimum=0, maximum=2, value=0.5, step=0.01, label="Ratio", scale=8)
@@ -1333,7 +1333,7 @@ class ModelMixerScript(scripts.Script):
             # change choices for selected blocks
             elements = []
             if elemental_blocks is None or len(elemental_blocks) == 0:
-                return gr.update()
+                return gr.update(choices=["time_embed", "time_embed.0", "time_embed.2", "out", "out.0", "out.2"])
 
             for b in blocks:
                 elements += elemental_blocks.get(b, [])
@@ -1344,7 +1344,7 @@ class ModelMixerScript(scripts.Script):
 
         def write_elemental(not_blocks, not_elements, blocks, elements, ratio, elemental):
             # update elemental information
-            if len(blocks) == 0:
+            if len(blocks) == 0 and len(elements) == 0:
                 return gr.update()
 
             # newly added
@@ -1377,7 +1377,7 @@ class ModelMixerScript(scripts.Script):
             blks = tmp[0].strip().split(" ")
             blks = list(filter(None, blks))
             not_blks = False
-            if blks[0].upper() == "NOT":
+            if len(blks) > 0 and blks[0].upper() == "NOT":
                 not_blks = True
                 blks = blks[1:]
             # expand any block ranges
@@ -2690,6 +2690,9 @@ def get_blocks_elements(res):
 
 def prepblocks(blocks, blockids, select=True):
     #blocks = sorted(set(blocks)) # one liner block sorter
+    if len(blocks) == 0 or (len(blocks) == 1 and blocks[0] == '*'):
+        return []
+
     expands = []
     for br in blocks:
         if "-" in br:
@@ -2722,6 +2725,9 @@ def prepblocks(blocks, blockids, select=True):
 
 def zipblocks(blocks, blockids):
     """zip blocks to block ranges"""
+    if len(blocks) == 0:
+        return ""
+
     selected = [False]*len(blockids)
     for b in blocks:
         if b in blockids:
