@@ -592,11 +592,11 @@ class ModelMixerScript(scripts.Script):
             mm_explain = gr.HTML("")
         with gr.Group() as mbw_ui:
             with gr.Row():
-                mm_weights = gr.Textbox(label="Merge Block Weights: BASE,IN00,IN02,...IN11,M00,OUT00,...,OUT11", show_copy_button=True,
+                mm_weights = gr.Textbox(label="Merge Block Weights: BASE,IN00,IN02,...IN11,M00,OUT00,...,OUT11", show_copy_button=True, elem_classes=["mm_mbw"],
                     value="0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5")
             with gr.Row():
-                mm_setalpha = gr.Button(elem_id="copytogen", value="↑ set alpha")
-                mm_readalpha = gr.Button(elem_id="copytogen", value="↓ read alpha")
+                mm_setalpha = gr.Button(elem_classes=["mm_mbw_set"], value="↑ set alpha")
+                mm_readalpha = gr.Button(elem_classes=["mm_mbw_read"], value="↓ read alpha")
         with gr.Column():
             with gr.Row():
                 mm_use_elemental = gr.Checkbox(label="Use Elemental merge", value=False, visible=True)
@@ -1222,6 +1222,11 @@ class ModelMixerScript(scripts.Script):
 
         members = [base,in00,in01,in02,in03,in04,in05,in06,in07,in08,in09,in10,in11,mi00,ou00,ou01,ou02,ou03,ou04,ou05,ou06,ou07,ou08,ou09,ou10,ou11]
 
+        # update block text using js
+        block_args = dict(_js="slider_to_text", fn=lambda *args: None, inputs=[is_sdxl, *members], outputs=[], show_progress=False)
+        for block in members:
+            block.release(**block_args)
+
         self.infotext_fields = (
             (model_a, "ModelMixer model a"),
             (base_model, "ModelMixer base model"),
@@ -1564,7 +1569,7 @@ class ModelMixerScript(scripts.Script):
         preset_edit_delete.click(fn=delete_preset_weight, inputs=[preset_edit_select, preset_edit_weight], outputs=[preset_edit_select])
 
         for n in range(num_models):
-            mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
+            mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]], show_progress=False)
             mm_set_elem[n].click(fn=set_elemental, inputs=[mm_elementals[n], mm_elemental_main], outputs=[mm_elementals[n]])
 
             mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=members)
