@@ -2414,6 +2414,15 @@ class ModelMixerScript(scripts.Script):
         if sd_models.model_data.sd_model:
             sd_models.send_model_to_cpu(sd_models.model_data.sd_model)
             sd_models.model_data.sd_model = None
+
+            # the follow procedure normally called at the reuse_model_from_already_loaded()
+            # manully check shared.opts.sd_checkpoints_limit here before call load_model()
+            if len(sd_models.model_data.loaded_sd_models) > shared.opts.sd_checkpoints_limit > 0:
+                print(f"Unloading model {len(sd_models.model_data.loaded_sd_models)} over the limit of {shared.opts.sd_checkpoints_limit}...")
+                while len(sd_models.model_data.loaded_sd_models) > shared.opts.sd_checkpoints_limit:
+                    loaded_model = sd_models.model_data.loaded_sd_models.pop()
+                    print(f" - model {len(sd_models.model_data.loaded_sd_models)}: {loaded_model.sd_checkpoint_info.title}")
+                    sd_models.send_model_to_trash(loaded_model)
             devices.torch_gc()
 
         sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
