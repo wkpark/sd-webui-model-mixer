@@ -710,6 +710,8 @@ class ModelMixerScript(scripts.Script):
             with gr.Accordion("Merge Block Weights", open=False):
 
                 with gr.Row():
+                    advanced_range_mode = gr.Checkbox(label="Enable Advanced block range", value=False, visible=True, interactive=True)
+                with gr.Row():
                     with gr.Group(), gr.Tabs():
                         with gr.Tab("Presets"):
                             with gr.Row():
@@ -1221,6 +1223,14 @@ class ModelMixerScript(scripts.Script):
             script_callbacks.on_after_component(on_after_components)
 
         members = [base,in00,in01,in02,in03,in04,in05,in06,in07,in08,in09,in10,in11,mi00,ou00,ou01,ou02,ou03,ou04,ou05,ou06,ou07,ou08,ou09,ou10,ou11]
+
+        def update_slider_range(advanced_mode):
+            if advanced_mode:
+                return [gr.update(minimum=-1, maximum=2) for _ in range(len(members))]
+            return [gr.update(minimum=0, maximum=1) for _ in range(len(members))]
+
+        # fix block range (gradio bug?)
+        advanced_range_mode.change(fn=update_slider_range, inputs=[advanced_range_mode], outputs=[*members])
 
         # update block text using js
         block_args = dict(_js="slider_to_text", fn=lambda *args: None, inputs=[is_sdxl, *members], outputs=[], show_progress=False)
