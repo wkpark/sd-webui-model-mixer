@@ -1579,10 +1579,10 @@ class ModelMixerScript(scripts.Script):
         preset_edit_delete.click(fn=delete_preset_weight, inputs=[preset_edit_select, preset_edit_weight], outputs=[preset_edit_select])
 
         for n in range(num_models):
-            mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]], show_progress=False)
+            mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
             mm_set_elem[n].click(fn=set_elemental, inputs=[mm_elementals[n], mm_elemental_main], outputs=[mm_elementals[n]])
 
-            mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=members)
+            mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=members, show_progress=False)
             mm_models[n].change(fn=lambda modelname: [gr_show(modelname != "None"), gr.update(value="<h3>...</h3>")], inputs=[mm_models[n]], outputs=[model_options[n], recipe_all], show_progress=False)
             mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
@@ -1722,7 +1722,7 @@ class ModelMixerScript(scripts.Script):
                         if f"pinpoint alpha {name}" in p.modelmixer_xyz:
                             alpha = p.modelmixer_xyz[f"pinpoint alpha {name}"]
                         else:
-                            raise RuntimeError(f"Pinpoint block' needs 'pinpoint alpha' in another axis")
+                            raise RuntimeError(f"Pinpoint block' needs 'pinpoint alpha {name}' in another axis")
                         # save pinpoint alpha to use later.
                         xyz_pinpoint_blocks[idx][pinpoint] = alpha
 
@@ -2467,17 +2467,25 @@ class ModelMixerScript(scripts.Script):
         del theta_0
 
         # update merged model info.
-        shared.opts.data["sd_webui_model_mixer_model"] = {
+        shared.modelmixer_config = {
             "hash": sha256,
             "models" : modelinfos,
             "hashes" : modelhashes,
+            "model_a": model_a,
+            "weights": mm_weights,
+            "alpha": mm_alpha,
+            "mode": mm_modes,
+            "calcmode": mm_calcmodes,
+            "selected": selected_blocks,
+            "adjust": mm_finetune,
+            "elemental": mm_elementals,
             "recipe": recipe_all + alphastr,
         }
         return
 
 def save_current_model(custom_name, bake_in_vae, save_settings, metadata_settings, state_dict=None, metadata=None):
     if state_dict is None:
-        current = shared.opts.data.get("sd_webui_model_mixer_model", None)
+        current = getattr(shared, "modelmixer_config", None)
         if current is None:
             return gr.update(value="No merged model found")
 
@@ -2877,7 +2885,7 @@ def on_image_save(params):
     if 'parameters' not in params.pnginfo: return
 
     # load mixed model info
-    model = shared.opts.data.get("sd_webui_model_mixer_model", None)
+    model = getattr(shared, "modelmixer_config", None)
     if model is None: return
     sha256 = model["hash"]
     if shared.sd_model is None or shared.sd_model.sd_checkpoint_info is None or shared.sd_model.sd_checkpoint_info.sha256 != sha256:
@@ -3069,7 +3077,7 @@ def make_axis_on_xyz_grid():
             "[Model Mixer] Pinpoint Adjust",
             str,
             partial(set_value, field="pinpoint adjust"),
-            choices=lambda: ["IN", "OUT", "OUT2", "CONT", "COL1", "COL2", "COL3"],
+            choices=lambda: ["IN", "OUT", "OUT2", "CONT", "BRI", "COL1", "COL2", "COL3"],
         ),
         xyz_grid.AxisOption(
             "[Model Mixer] Pinpoint alpha",
