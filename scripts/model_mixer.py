@@ -2293,7 +2293,7 @@ class ModelMixerScript(scripts.Script):
                 if model_name.find(" ") > -1: model_name = f"({model_name})"
 
                 # recipe string
-                if modes[n] == "Sum":
+                if "Sum" in modes[n]:
                     if recipe_all.find(" ") > -1: recipe_all = f"({recipe_all})"
                     recipe_all = f"({recipe_all}) * (1 - alpha_{n}) + {model_name} * alpha_{n}"
                 elif modes[n] in [ "Add-Diff" ]:
