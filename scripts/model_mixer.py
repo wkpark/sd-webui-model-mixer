@@ -329,6 +329,8 @@ def _all_blocks(isxl=False):
     blocks.append("middle_block.")
     for i in range(0, BLOCKLEN):
         blocks.append(f"output_blocks.{i}.")
+
+    blocks += [ "time_embed.", "out." ]
     return blocks
 
 def print_blocks(blocks):
@@ -347,6 +349,12 @@ def print_blocks(blocks):
             str.append(block)
         elif "cond_stage_model" in x or "conditioner." in x:
             block = f"BASE"
+            str.append(block)
+        elif "time_embed." in x:
+            block = "TIME_EMBED"
+            str.append(block)
+        elif "out." in x:
+            block = "OUT"
             str.append(block)
     return ','.join(str)
 
@@ -494,6 +502,8 @@ def get_rebasin_perms(mbws, isxl):
         axes = []
         perms = []
         for block in selected:
+            if block not in ["cond_stage_model.", "conditioner."]:
+                block = f"model.diffusion_model.{block}"
             for axe, perm in permutation_spec.axes_to_perm.items():
                 if block in axe:
                     axes.append(axe)
@@ -544,7 +554,9 @@ def _get_rebasin_blocks(mbws, isxl):
     BLOCKIDS = BLOCKID if not isxl else BLOCKIDXL
 
     all_blocks = _all_blocks(isxl)
-    for j, block in enumerate(all_blocks):
+    for j, block in enumerate(all_blocks[:MAXLEN]):
+        if block not in ["cond_stage_model.", "conditioner."]:
+            block = f"model.diffusion_model.{block}"
         if any(block in axe for axe in axes):
             selected[j] = True
 
@@ -558,6 +570,26 @@ def get_device():
     else:
         cuda_device = "cpu"
     return cuda_device
+
+
+def unet_blocks_map(diffusion_model, isxl=False):
+    block_map = {}
+    block_map['time_embed.'] = diffusion_model.time_embed
+
+    BLOCKLEN = 12 - (0 if not isxl else 3)
+    for j in range(BLOCKLEN):
+        block_name = f"input_blocks.{j}."
+        block_map[block_name] = diffusion_model.input_blocks[j]
+
+    block_map["middle_block."] = diffusion_model.middle_block
+
+    for j in range(BLOCKLEN):
+        block_name = f"output_blocks.{j}."
+        block_map[block_name] = diffusion_model.output_blocks[j]
+
+    block_map["out."] = diffusion_model.out
+
+    return block_map
 
 
 class ModelMixerScript(scripts.Script):
@@ -2070,6 +2102,8 @@ class ModelMixerScript(scripts.Script):
             for k in models['model_a'].keys():
                 keyadded = False
                 for s in selected_blocks:
+                    if s not in ["cond_stage_model.", "conditioner."]:
+                        s = f"model.diffusion_model.{s}"
                     if s in k:
                         # ignore all non block releated keys
                         if "diffusion_model." not in k and base_prefix not in k:
@@ -2083,6 +2117,7 @@ class ModelMixerScript(scripts.Script):
             # add some missing extra_elements
             last_block = "output_blocks.11." if not isxl else "output_blocks.8."
             if use_extra_elements and (last_block in selected_blocks) or ("" in all_elemental_blocks):
+                selected_blocks += [ "time_embed.", "out." ]
                 for el in [ "time_embed.0.bias", "time_embed.0.weight", "time_embed.2.bias", "time_embed.2.weight", "out.0.bias", "out.0.weight", "out.2.bias", "out.2.weight" ]:
                     k = f"model.diffusion_model.{el}"
                     keys.append(k)
@@ -2096,13 +2131,17 @@ class ModelMixerScript(scripts.Script):
             keys = list(models['model_a'].keys())
             theta_0 = models['model_a'].copy()
 
-        # save some dicts
-        checkpoint_dict_skip_on_merge = ["cond_stage_model.transformer.text_model.embeddings.position_ids", "conditioner.embedders.1.model.transformer.text_model.embeddings.position_ids" ]
-        for k in checkpoint_dict_skip_on_merge:
-            if k in keys:
-                keys.remove(k)
-                item = theta_0.pop(k)
-                keyremains.append(k)
+        # check finetune
+        if mm_finetune.rstrip(",0") != "":
+            fines = fineman(mm_finetune, isxl)
+            if fines is not None:
+                for tune_block in [ "input_blocks.0.", "out."]:
+                    if tune_block not in selected_blocks:
+                        selected_blocks += [ tune_block ]
+
+                for key in tunekeys:
+                    if key not in keys:
+                        keyremains.append(key)
 
         # prepare metadata
         metadata = { "format": "pt" }
@@ -2171,6 +2210,87 @@ class ModelMixerScript(scripts.Script):
         modelhashes = [ checkpoint_info.shorthash ]
         alphas = []
 
+        # get current model config and check difference to support partial update
+        partial_update = False
+        changed_keys = None
+
+        current = getattr(shared, "modelmixer_config", None)
+        use_unet_partial_update = shared.opts.data.get("mm_use_unet_partial_update", False)
+        if use_unet_partial_update and current is not None:
+            # check same models used
+            hashes = current["hashes"]
+            same_models = True
+            for j, m in enumerate([model_a] + [*mm_models]):
+                info = sd_models.get_closet_checkpoint_match(m)
+                if info is None:
+                    same_models = False
+                    break
+                if info.shorthash is None:
+                    info.calculate_shorthash()
+                if hashes[j] != info.shorthash:
+                    same_models = False
+                    break
+
+            if same_models:
+                print(" - check possible UNet partial update...")
+
+            if same_models and current["calcmode"] == mm_calcmodes and current["mode"] == mm_modes:
+                max_blocks = 26 - (0 if not isxl else 6)
+
+                # check changed weights
+                weights = current["weights"]
+                while len(weights) > 0:
+                    changed = [False] * len(weights[0])
+                    for j, w in enumerate(mm_weights):
+                        changed |= np.array(weights[j][:max_blocks]) != np.array(w[:max_blocks])
+
+                    all_blocks = _all_blocks(isxl)
+                    weight_changed_blocks = []
+                    for j, b in enumerate(changed):
+                        # recalculate all elemental blocks
+                        if len(elemental_selected) > 0:
+                            b |= elemental_selected[j]
+                        if b:
+                            weight_changed_blocks.append(all_blocks[j])
+
+                    #if 'cond_stage_model.' in weight_changed_blocks or 'conditioner.' in weight_changed_blocks:
+                    #    # FIXME
+                    #    # partial textencoder update not supported
+                    #    break
+
+                    # check finetune
+                    finetune_changed = current["adjust"] != mm_finetune
+
+                    if finetune_changed:
+                        # add "input_blocks.0.", "out." for finetune
+                        weight_changed_blocks.append("out.")
+                        if "input_blocks.0." not in weight_changed_blocks:
+                            weight_changed_blocks.append("input_blocks.0.")
+
+                    weight_changed = {}
+                    if len(weight_changed_blocks) > 0:
+                        # get changed keys
+                        for k in keys:
+                            for s in weight_changed_blocks:
+                                if s not in ["cond_stage_model.", "conditioner."]:
+                                    ss = f"model.diffusion_model.{s}"
+                                else:
+                                    ss = s
+                                if ss in k:
+                                    weight_changed[s] = weight_changed.get(s, [])
+                                    weight_changed[s].append(k)
+                                    break
+
+                        tmp_keys = [[*weight_changed[s]] for s in weight_changed.keys()]
+                        changed_keys = []
+                        for k in tmp_keys: changed_keys += k
+
+                        # partial updatable case
+                        partial_update = True
+                        print(" - UNet partial update mode")
+
+                    break
+
         # check Rebasin mode
         if not isxl and "Rebasin" in calcmodes:
             print("Rebasin mode")
@@ -2192,6 +2312,16 @@ class ModelMixerScript(scripts.Script):
                 shared.state.job_count += len(mm_models)
                 if not isxl and "Rebasin" in calcmodes:
                     shared.state.job_count += 1
+
+        sel_keys = changed_keys if partial_update else keys
+
+        # save some dicts
+        checkpoint_dict_skip_on_merge = ["cond_stage_model.transformer.text_model.embeddings.position_ids", "conditioner.embedders.1.model.transformer.text_model.embeddings.position_ids" ]
+        for k in checkpoint_dict_skip_on_merge:
+            if k in sel_keys:
+                sel_keys.remove(k)
+                item = theta_0.pop(k)
+                keyremains.append(k)
 
         stage = 1
         for n, file in enumerate(mm_models,start=weight_start):
@@ -2223,9 +2353,9 @@ class ModelMixerScript(scripts.Script):
                 print(f"mode = {modes[n]}, mbw mode, alpha = {mm_weights[n]}")
 
             # main routine
-            shared.state.sampling_steps = len(keys)
+            shared.state.sampling_steps = len(sel_keys)
             shared.state.sampling_step = 0
-            for key in (tqdm(keys, desc=f"Stage #{stage}/{stages}")):
+            for key in (tqdm(sel_keys, desc=f"Stage #{stage}/{stages}")):
                 shared.state.sampling_step += 1
                 if "model_" in key:
                     continue
@@ -2281,9 +2411,11 @@ class ModelMixerScript(scripts.Script):
 
             if n == weight_start:
                 stage += 1
-                for key in (tqdm(keys, desc=f"Check uninitialized #{n+2-weight_start}/{stages}")):
+                for key in (tqdm(sel_keys, desc=f"Check uninitialized #{n+2-weight_start}/{stages}")):
                     if "model" in key:
                         for s in selected_blocks:
+                            if s not in ["cond_stage_model.", "conditioner."]:
+                                s = f"model.diffusion_model.{s}"
                             if s in key and key not in theta_0 and key not in checkpoint_dict_skip_on_merge:
                                 print(f" +{k}")
                                 theta_0[key] = theta_1[key]
@@ -2330,53 +2462,27 @@ class ModelMixerScript(scripts.Script):
         for key in (tqdm(keyremains, desc=f"Save unchanged weights #{stages}/{stages}")):
             theta_0[key] = models['model_a'][key]
 
-        # fine tune (from supermerger)
-        tunekeys = [
-            "model.diffusion_model.input_blocks.0.0.weight",
-            "model.diffusion_model.input_blocks.0.0.bias",
+        # check for partial update
+        if partial_update and len(weight_changed_blocks) > 0:
+            # get empty changed blocks. it means, these keys are in the keyremains.
+            remains_blocks = []
+            for s in weight_changed_blocks:
+                weight_changed[s] = weight_changed.get(s, [])
+                if len(weight_changed[s]) == 0:
+                    remains_blocks.append(s)
 
-            "model.diffusion_model.out.0.weight",
-            "model.diffusion_model.out.0.bias",
-
-            "model.diffusion_model.out.2.weight",
-            "model.diffusion_model.out.2.bias",
-        ]
-
-        # from supermerger, CD-Tunner's method
-        COLS = [[-1, 1/3, 2/3], [1, 1, 0], [0, -1, -1], [1, 0, 1]]
-        COLSXL = [[0, 0, 1], [1, 0, 0], [-1, -1, 0], [-1, 1, 0]]
-        def colorcalc(cols, isxl):
-            old_finetune = shared.opts.data.get("mm_use_old_finetune", False)
-            if not isxl and old_finetune:
-                # old adjust method
-                return [x * 0.02 for x in cols[1:4]]
-
-            colors = COLSXL if isxl else COLS
-            outs = [[y * cols[i] * 0.02 for y in x] for i,x in enumerate(colors)]
-            return [sum(x) for x in zip(*outs)]
-
-        # parse finetune: IN,OUT1,OUT2,CONTRAST,BRI,COL1,COL2,COL3
-        def fineman(fine, isxl):
-            if fine.find(",") != -1:
-                tmp = [t.strip() for t in fine.split(",")]
-                fines = [0.0]*8
-                for i,f in enumerate(tmp[0:8]):
-                    try:
-                        f = float(f)
-                        fines[i] = f
-                    except Exception:
-                        pass
-
-                fine = [
-                    1 - fines[0] * 0.01,
-                    1 + fines[0] * 0.02,
-                    1 - fines[1] * 0.01,
-                    1 + fines[1] * 0.02,
-                    1 - fines[2] * 0.01,
-                    [fines[3] * 0.02] + colorcalc(fines[4:8], isxl)
-                ]
-                return fine
-            return None
+            # FIXME ineffective method. search all keys.
+            if len(remains_blocks) > 0:
+                for k in keyremains:
+                    for remain in remains_blocks:
+                        if remain not in ["cond_stage_model.", "conditioner."]:
+                            r = f"model.diffusion_model.{remain}"
+                        else:
+                            r = remain
+                        if r in k:
+                            weight_changed[remain] = weight_changed.get(remain, [])
+                            weight_changed[remain].append(k)
+                            break
 
         # apply finetune
         if mm_finetune.rstrip(",0") != "":
@@ -2402,16 +2508,18 @@ class ModelMixerScript(scripts.Script):
 
         # load theta_0, checkpoint_info was used for model_a
         # XXX HACK make a FAKE checkpoint_info
-        def fake_checkpoint(checkpoint_info, metadata, model_name, sha256):
+        def fake_checkpoint(checkpoint_info, metadata, model_name, sha256, fake=True):
             # XXX HACK
             # change model name (name_for_extra field used webui internally)
-            checkpoint_info = deepcopy(checkpoint_info)
+            if fake:
+                checkpoint_info = deepcopy(checkpoint_info)
             checkpoint_info.name_for_extra = model_name
 
             checkpoint_info.sha256 = sha256
             checkpoint_info.name = f"{model_name}.safetensors"
             checkpoint_info.model_name = checkpoint_info.name_for_extra.replace("/", "_").replace("\\", "_")
             checkpoint_info.title = f"{checkpoint_info.name} [{sha256[0:10]}]"
+            # without set checkpoint_info.shorthash, load_model() will call calculate_shorthash() and register()
             # simply ignore legacy hash
             checkpoint_info.hash = None
             # use new metadata
@@ -2441,20 +2549,94 @@ class ModelMixerScript(scripts.Script):
         # fix/check bad CLIP ids
         fixclip(theta_0, mm_states["save_settings"], isxl)
 
-        if "save model" in debugs:
+        if not partial_update and "save model" in debugs:
             save_settings = shared.opts.data.get("mm_save_model", ["safetensors", "fp16"])
             save_filename = shared.opts.data.get("mm_save_model_filename", "modelmixer-[hash].safetensors")
             save_filename = save_filename.replace("[hash]", f"{sha256[0:10]}").replace("[model_name]", f"{model_name}")
             save_current_model(save_filename, "None", save_settings, ["merge_recipe"], state_dict=theta_0, metadata=metadata.copy())
 
-        checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256)
-        state_dict = theta_0.copy()
-        if shared.sd_model is not None and hasattr(shared.sd_model, 'lowvram') and shared.sd_model.lowvram:
+        # partial update
+        if partial_update:
+            # in this case, use sd_model's checkpoint_info
+            checkpoint_info = shared.sd_model.sd_checkpoint_info
+            # copy old aliases ids
+            old_ids = checkpoint_info.ids.copy()
+            # change info without using deepcopy()
+            checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256, False)
+
+            # to cpu ram
+            sd_models.send_model_to_cpu(shared.sd_model)
+            sd_hijack.model_hijack.undo_hijack(shared.sd_model)
+
+            if "cond_stage_model." in weight_changed_blocks or "conditioner." in weight_changed_blocks:
+                # Textencoder(BASE)
+                if isxl:
+                    prefix = "conditioner."
+                else:
+                    prefix = "cond_stage_model."
+                base_dict = {}
+                for k in weight_changed[prefix]:
+                    # remove prefix, 'cond_stage_model.' or 'conditioner.' will be removed
+                    key = k[len(prefix):]
+                    base_dict[key] = theta_0[k]
+                if isxl:
+                    shared.sd_model.conditioner.load_state_dict(base_dict, strict=False)
+                else:
+                    shared.sd_model.cond_stage_model.load_state_dict(base_dict, strict=False)
+                print(" - \033[92mTextencoder(BASE) has been successfully updated\033[0m")
+
+            # get unet_blocks_map
+            unet_map = unet_blocks_map(shared.sd_model.model.diffusion_model, isxl)
+
+            # partial update unet blocks state_dict
+            unet_updated = 0
+            for s in weight_changed_blocks:
+                if s in ["cond_stage_model.", "conditioner."]:
+                    # Textencoder(BASE)
+                    continue
+                print(" - update UNet block", s)
+                unet_dict = unet_map[s].state_dict()
+                prefix = f"model.diffusion_model.{s}"
+                for k in weight_changed[s]:
+                    # remove block prefix, 'model.diffusion_model.input_blocks.0.' will be removed
+                    key = k[len(prefix):]
+                    unet_dict[key] = theta_0[k]
+                unet_map[s].load_state_dict(unet_dict)
+                unet_updated += 1
+            if unet_updated > 0:
+                print(" - \033[92mUNet partial blocks have been successfully updated\033[0m")
+
+            # restore to gpu
+            sd_models.send_model_to_device(shared.sd_model)
+            sd_hijack.model_hijack.hijack(shared.sd_model)
+
+            # update checkpoint_aliases, normally done in the load_model()
+            # HACK, FIXME
+            # manually remove old aliasses
+            for id in old_ids:
+                sd_models.checkpoint_aliases.pop(id, None)
+
+            # set shorthash
+            checkpoint_info.shorthash = sha256[0:10]
+            # manually add aliasses
+            checkpoint_info.ids += [checkpoint_info.title]
+            checkpoint_info.register()
+
+            # update shared.*
+            shared.sd_model.sd_checkpoint_info = checkpoint_info
+
+            shared.opts.data["sd_model_checkpoint"] = checkpoint_info.title
+            shared.opts.data["sd_checkpoint_hash"] = checkpoint_info.sha256
+            shared.sd_model.sd_model_hash = checkpoint_info.shorthash
+        else:
+          checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256)
+          state_dict = theta_0.copy()
+          if shared.sd_model is not None and hasattr(shared.sd_model, 'lowvram') and shared.sd_model.lowvram:
             print("WARN: lowvram/medvram load_model() with minor workaround")
             sd_models.unload_model_weights()
             #sd_models.model_data.__init__()
 
-        if sd_models.model_data.sd_model:
+          if sd_models.model_data.sd_model:
             sd_models.send_model_to_cpu(sd_models.model_data.sd_model)
             sd_models.model_data.sd_model = None
 
@@ -2468,15 +2650,17 @@ class ModelMixerScript(scripts.Script):
                     sd_models.send_model_to_trash(loaded_model)
             devices.torch_gc()
 
-        sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
-        del state_dict
+          sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
+          del state_dict
+
         devices.torch_gc()
 
         # XXX fix checkpoint_info.filename
         filename = os.path.join(model_path, f"{model_name}.safetensors")
         shared.sd_model.sd_model_checkpoint = checkpoint_info.filename = filename
 
-        if shared.opts.sd_checkpoint_cache > 0:
+        if not partial_update and shared.opts.sd_checkpoint_cache > 0:
+            # FIXME for partial updated case
             # check checkponts_loaded bug
             # unload cached merged model
             saved_state_dict = checkpoints_loaded[checkpoint_info]
@@ -2521,6 +2705,56 @@ def fixclip(theta_0, settings, isxl):
                 print(f"Broken clip!\n{broken}")
         else:
             print("Clip is fine")
+
+
+# fine tune (from supermerger)
+tunekeys = [
+    "model.diffusion_model.input_blocks.0.0.weight",
+    "model.diffusion_model.input_blocks.0.0.bias",
+
+    "model.diffusion_model.out.0.weight",
+    "model.diffusion_model.out.0.bias",
+
+    "model.diffusion_model.out.2.weight",
+    "model.diffusion_model.out.2.bias",
+]
+
+# from supermerger, CD-Tunner's method
+COLS = [[-1, 1/3, 2/3], [1, 1, 0], [0, -1, -1], [1, 0, 1]]
+COLSXL = [[0, 0, 1], [1, 0, 0], [-1, -1, 0], [-1, 1, 0]]
+
+def colorcalc(cols, isxl):
+    old_finetune = shared.opts.data.get("mm_use_old_finetune", False)
+    if not isxl and old_finetune:
+        # old adjust method
+        return [x * 0.02 for x in cols[1:4]]
+
+    colors = COLSXL if isxl else COLS
+    outs = [[y * cols[i] * 0.02 for y in x] for i,x in enumerate(colors)]
+    return [sum(x) for x in zip(*outs)]
+
+# parse finetune: IN,OUT1,OUT2,CONTRAST,BRI,COL1,COL2,COL3
+def fineman(fine, isxl):
+    if fine.find(",") != -1:
+        tmp = [t.strip() for t in fine.split(",")]
+        fines = [0.0]*8
+        for i,f in enumerate(tmp[0:8]):
+            try:
+                f = float(f)
+                fines[i] = f
+            except Exception:
+                pass
+
+        fine = [
+            1 - fines[0] * 0.01,
+            1 + fines[0] * 0.02,
+            1 - fines[1] * 0.01,
+            1 + fines[1] * 0.02,
+            1 - fines[2] * 0.01,
+            [fines[3] * 0.02] + colorcalc(fines[4:8], isxl)
+        ]
+        return fine
+    return None
 
 
 def save_current_model(custom_name, bake_in_vae, save_settings, metadata_settings, state_dict=None, metadata=None):
@@ -3038,6 +3272,17 @@ def on_ui_settings():
         shared.OptionInfo(
             default=False,
             label="Use old Adjust method",
+            component=gr.Checkbox,
+            component_args={"interactive": True},
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        "mm_use_unet_partial_update",
+        shared.OptionInfo(
+            default=False,
+            label="Use experimental UNet block partial update",
             component=gr.Checkbox,
             component_args={"interactive": True},
             section=section,
