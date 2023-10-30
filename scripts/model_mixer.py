@@ -2558,7 +2558,7 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
         vae_dict = sd_vae.load_vae_dict(bake_in_vae_filename, map_location='cpu')
         for key in (tqdm(vae_dict.keys(), desc=f"Bake in VAE...")):
             key_name = 'first_stage_model.' + key
-            state_dict[key_name] = copy.deepcopy(vae_dict[key])
+            state_dict[key_name] = deepcopy(vae_dict[key])
         del vae_dict
 
     print("Saving...")
