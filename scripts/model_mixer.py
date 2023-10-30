@@ -950,7 +950,7 @@ class ModelMixerScript(scripts.Script):
                 with gr.Row():
                     logging = gr.Textbox(label="Message", lines=1, value="", show_label=False, info="log message")
                 with gr.Row():
-                    save_settings = gr.CheckboxGroup(["overwrite","safetensors","prune","fp16"], value=["fp16","prune","safetensors"], label="Select settings")
+                    save_settings = gr.CheckboxGroup(["overwrite","safetensors","prune","fp16", "fix CLIP ids"], value=["fp16","prune","safetensors"], label="Select settings")
                 with gr.Row():
                     with gr.Column(min_width = 50):
                         with gr.Row():
@@ -1587,14 +1587,16 @@ class ModelMixerScript(scripts.Script):
             mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
 
-        def prepare_states(states, *calcmodes):
+        def prepare_states(states, save_settings, *calcmodes):
             states["calcmodes"] = calcmodes
+            states["save_settings"] = save_settings
+
             return states
 
         generate_button = MM.components["img2img_generate" if is_img2img else "txt2img_generate"]
         generate_button.click(
             fn=prepare_states,
-            inputs=[mm_states, *mm_calcmodes],
+            inputs=[mm_states, save_settings, *mm_calcmodes],
             outputs=[mm_states],
             show_progress=False,
             queue=False,
@@ -2421,6 +2423,9 @@ class ModelMixerScript(scripts.Script):
             checkpoint_info.ids = [checkpoint_info.model_name, checkpoint_info.name, checkpoint_info.name_for_extra]
             return checkpoint_info
 
+        # fix/check bad CLIP ids
+        fixclip(theta_0, mm_states["save_settings"], isxl)
+
         if "save model" in debugs:
             save_settings = shared.opts.data.get("mm_save_model", ["safetensors", "fp16"])
             save_filename = shared.opts.data.get("mm_save_model_filename", "modelmixer-[hash].safetensors")
@@ -2482,6 +2487,26 @@ class ModelMixerScript(scripts.Script):
             "recipe": recipe_all + alphastr,
         }
         return
+
+
+def fixclip(theta_0, settings, isxl):
+    """fix/check bad CLIP ids"""
+    base_prefix = "cond_stage_model." if not isxl else "conditioner."
+    position_id_key = f"{base_prefix}transformer.text_model.embeddings.position_ids"
+    if position_id_key in theta_0:
+        correct = torch.tensor([list(range(77))], dtype=torch.int64, device="cpu")
+        current = theta_0[position_id_key].to(torch.int64)
+        broken = correct.ne(current)
+        broken = [i for i in range(77) if broken[0][i]]
+        if len(broken) != 0:
+            if "fix CLIP ids" in settings:
+                theta_0[position_id_key] = correct
+                print(f"Fixed broken clip\n{broken}")
+            else:
+                print(f"Broken clip!\n{broken}")
+        else:
+            print("Clip is fine")
+
 
 def save_current_model(custom_name, bake_in_vae, save_settings, metadata_settings, state_dict=None, metadata=None):
     if state_dict is None:
@@ -2574,6 +2599,9 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
         state_dict = to_half(state_dict, True)
     if "prune" in save_settings:
         state_dict = prune_model(state_dict, isxl)
+
+    # fix/check bad CLIP ids
+    fixclip(state_dict, save_settings, isxl)
 
     try:
         if ext == ".safetensors":
@@ -2950,7 +2978,7 @@ def on_ui_settings():
             default=["safetensors", "fp16", "prune", "overwrite"],
             label="Auto save merged model",
             component=gr.CheckboxGroup,
-            component_args={"choices": ["overwrite", "safetensors", "fp16", "prune"]},
+            component_args={"choices": ["overwrite", "safetensors", "fp16", "prune", "fix CLIP ids"]},
             section=section,
         ),
     )
