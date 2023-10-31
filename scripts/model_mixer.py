@@ -39,6 +39,8 @@ from scripts.vxa import tokenize
 
 from scripts.weight_matching import sdunet_permutation_spec, weight_matching, apply_permutation
 
+from scripts.patches import StateDictPatches
+
 dump_cache = cache.dump_cache
 cache = cache.cache
 
@@ -1895,6 +1897,10 @@ class ModelMixerScript(scripts.Script):
             if already_loaded is not None and already_loaded.title == checkpoint_info.title:
                 # model is already loaded
                 print(f"Loading {checkpoint_info.title} from loaded model...")
+
+                # HACK patch nn.Module 'state_dict' to fix lora extension bug
+                patch = StateDictPatches()
+
                 # save to cpu
                 sd_models.send_model_to_cpu(shared.sd_model)
                 sd_hijack.model_hijack.undo_hijack(shared.sd_model)
@@ -1904,6 +1910,9 @@ class ModelMixerScript(scripts.Script):
                 # restore to gpu
                 sd_models.send_model_to_device(shared.sd_model)
                 sd_hijack.model_hijack.hijack(shared.sd_model)
+
+                patch.undo()
+                del patch
 
                 return state_dict
 
@@ -2537,11 +2546,18 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
 
     if state_dict is None and shared.sd_model is not None:
         print("Load state_dict from shared.sd_model..")
+
+        # HACK patch nn.Module 'state_dict' to fix lora extension bug
+        patch = StateDictPatches()
+
         # save to cpu
         sd_models.send_model_to_cpu(shared.sd_model)
         sd_hijack.model_hijack.undo_hijack(shared.sd_model)
 
         state_dict = shared.sd_model.state_dict().copy()
+
+        patch.undo()
+        del patch
 
         # restore to gpu
         sd_models.send_model_to_device(shared.sd_model)
