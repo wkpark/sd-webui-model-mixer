@@ -27,6 +27,7 @@ from PIL import Image
 from copy import copy, deepcopy
 from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings, ui_common
 from modules import scripts, cache, devices, lowvram, deepbooru, images
+from modules import sd_unet
 from modules.generation_parameters_copypaste import parse_generation_parameters
 from modules.sd_models import model_hash, model_path, checkpoints_loaded
 from modules.scripts import basedir
@@ -2565,6 +2566,7 @@ class ModelMixerScript(scripts.Script):
             checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256, False)
 
             # to cpu ram
+            sd_unet.apply_unet("None")
             sd_models.send_model_to_cpu(shared.sd_model)
             sd_hijack.model_hijack.undo_hijack(shared.sd_model)
 
@@ -2609,6 +2611,9 @@ class ModelMixerScript(scripts.Script):
             # restore to gpu
             sd_models.send_model_to_device(shared.sd_model)
             sd_hijack.model_hijack.hijack(shared.sd_model)
+
+            sd_models.model_data.set_sd_model(shared.sd_model)
+            sd_unet.apply_unet()
 
             # update checkpoint_aliases, normally done in the load_model()
             # HACK, FIXME
