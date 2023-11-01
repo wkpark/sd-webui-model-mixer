@@ -2254,11 +2254,6 @@ class ModelMixerScript(scripts.Script):
                         if b:
                             weight_changed_blocks.append(all_blocks[j])
 
-                    #if 'cond_stage_model.' in weight_changed_blocks or 'conditioner.' in weight_changed_blocks:
-                    #    # FIXME
-                    #    # partial textencoder update not supported
-                    #    break
-
                     # check finetune
                     finetune_changed = current["adjust"] != mm_finetune
 
@@ -2557,6 +2552,7 @@ class ModelMixerScript(scripts.Script):
             save_current_model(save_filename, "None", save_settings, ["merge_recipe"], state_dict=theta_0, metadata=metadata.copy())
 
         # partial update
+        state_dict = theta_0.copy()
         if partial_update:
             # in this case, use sd_model's checkpoint_info
             checkpoint_info = shared.sd_model.sd_checkpoint_info
@@ -2565,6 +2561,13 @@ class ModelMixerScript(scripts.Script):
             # change info without using deepcopy()
             checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256, False)
 
+            # check lora_patches
+            lora_patch = False
+            try:
+                patch = StateDictPatches()
+                lora_patch = True
+            except Exception:
+                pass
             # to cpu ram
             sd_unet.apply_unet("None")
             sd_models.send_model_to_cpu(shared.sd_model)
@@ -2608,34 +2611,47 @@ class ModelMixerScript(scripts.Script):
             if unet_updated > 0:
                 print(" - \033[92mUNet partial blocks have been successfully updated\033[0m")
 
-            # restore to gpu
-            sd_models.send_model_to_device(shared.sd_model)
-            sd_hijack.model_hijack.hijack(shared.sd_model)
+            # textencoder partial update does not work as expected. read state_dict() and set state_dict.
+            if "cond_stage_model." in weight_changed_blocks or "conditioner." in weight_changed_blocks:
+                print(" - \033[93mReload full state_dict...\033[0m")
+                state_dict = shared.sd_model.state_dict().copy()
+            else:
+                state_dict = None
 
-            sd_models.model_data.set_sd_model(shared.sd_model)
-            sd_unet.apply_unet()
+                # restore to gpu
+                sd_models.send_model_to_device(shared.sd_model)
+                sd_hijack.model_hijack.hijack(shared.sd_model)
 
-            # update checkpoint_aliases, normally done in the load_model()
-            # HACK, FIXME
-            # manually remove old aliasses
-            for id in old_ids:
-                sd_models.checkpoint_aliases.pop(id, None)
+                sd_models.model_data.set_sd_model(shared.sd_model)
+                sd_unet.apply_unet()
 
-            # set shorthash
-            checkpoint_info.shorthash = sha256[0:10]
-            # manually add aliasses
-            checkpoint_info.ids += [checkpoint_info.title]
-            checkpoint_info.register()
+            if lora_patch:
+                patch.undo()
+                del patch
 
-            # update shared.*
-            shared.sd_model.sd_checkpoint_info = checkpoint_info
+            if state_dict is None:
+                # after partial updated
+                # update checkpoint_aliases, normally done in the load_model()
+                # HACK, FIXME
+                # manually remove old aliasses
+                for id in old_ids:
+                    sd_models.checkpoint_aliases.pop(id, None)
 
-            shared.opts.data["sd_model_checkpoint"] = checkpoint_info.title
-            shared.opts.data["sd_checkpoint_hash"] = checkpoint_info.sha256
-            shared.sd_model.sd_model_hash = checkpoint_info.shorthash
-        else:
+                # set shorthash
+                checkpoint_info.shorthash = sha256[0:10]
+                # manually add aliasses
+                checkpoint_info.ids += [checkpoint_info.title]
+                checkpoint_info.register()
+
+                # update shared.*
+                shared.sd_model.sd_checkpoint_info = checkpoint_info
+
+                shared.opts.data["sd_model_checkpoint"] = checkpoint_info.title
+                shared.opts.data["sd_checkpoint_hash"] = checkpoint_info.sha256
+                shared.sd_model.sd_model_hash = checkpoint_info.shorthash
+
+        if state_dict is not None:
           checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256)
-          state_dict = theta_0.copy()
           if shared.sd_model is not None and hasattr(shared.sd_model, 'lowvram') and shared.sd_model.lowvram:
             print("WARN: lowvram/medvram load_model() with minor workaround")
             sd_models.unload_model_weights()
