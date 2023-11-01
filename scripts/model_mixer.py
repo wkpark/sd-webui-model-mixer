@@ -1899,7 +1899,12 @@ class ModelMixerScript(scripts.Script):
                 print(f"Loading {checkpoint_info.title} from loaded model...")
 
                 # HACK patch nn.Module 'state_dict' to fix lora extension bug
-                patch = StateDictPatches()
+                lora_patch = False
+                try:
+                    patch = StateDictPatches()
+                    lora_patch = True
+                except Exception:
+                    pass
 
                 # save to cpu
                 sd_models.send_model_to_cpu(shared.sd_model)
@@ -1911,8 +1916,9 @@ class ModelMixerScript(scripts.Script):
                 sd_models.send_model_to_device(shared.sd_model)
                 sd_hijack.model_hijack.hijack(shared.sd_model)
 
-                patch.undo()
-                del patch
+                if lora_patch:
+                    patch.undo()
+                    del patch
 
                 return state_dict
 
@@ -2548,7 +2554,12 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
         print("Load state_dict from shared.sd_model..")
 
         # HACK patch nn.Module 'state_dict' to fix lora extension bug
-        patch = StateDictPatches()
+        lora_patch = False
+        try:
+            patch = StateDictPatches()
+            lora_patch = True
+        except Exception:
+            pass
 
         # save to cpu
         sd_models.send_model_to_cpu(shared.sd_model)
@@ -2556,8 +2567,9 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
 
         state_dict = shared.sd_model.state_dict().copy()
 
-        patch.undo()
-        del patch
+        if lora_patch:
+            patch.undo()
+            del patch
 
         # restore to gpu
         sd_models.send_model_to_device(shared.sd_model)
