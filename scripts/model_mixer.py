@@ -316,9 +316,9 @@ def get_mbws(mbw, mbw_blocks, isxl=False):
                 j += 1
             else:
                 ret.append(gr.update())
-        return ret
+        return ret + [gr.update(open=True)]
 
-    return [gr.update(value = v) for v in mbws]
+    return [gr.update(value = v) for v in mbws] + [gr.update(open=True)]
 
 def _all_blocks(isxl=False):
     BLOCKLEN = 12 - (0 if not isxl else 3)
@@ -742,7 +742,7 @@ class ModelMixerScript(scripts.Script):
                                 mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin"], value="Normal")
                             mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n, is_sdxl)
 
-            with gr.Accordion("Merge Block Weights", open=False):
+            with gr.Accordion("Merge Block Weights", open=False) as mbw_controls:
 
                 with gr.Row():
                     advanced_range_mode = gr.Checkbox(label="Enable Advanced block range", value=False, visible=True, interactive=True)
@@ -1617,7 +1617,7 @@ class ModelMixerScript(scripts.Script):
             mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
             mm_set_elem[n].click(fn=set_elemental, inputs=[mm_elementals[n], mm_elemental_main], outputs=[mm_elementals[n]])
 
-            mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=members, show_progress=False)
+            mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=[*members, mbw_controls], show_progress=False)
             mm_models[n].change(fn=lambda modelname: [gr_show(modelname != "None"), gr.update(value="<h3>...</h3>")], inputs=[mm_models[n]], outputs=[model_options[n], recipe_all], show_progress=False)
             mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
