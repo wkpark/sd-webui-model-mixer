@@ -26,7 +26,7 @@ from PIL import Image
 
 from copy import copy, deepcopy
 from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings, ui_common
-from modules import scripts, cache, devices, lowvram, deepbooru, images
+from modules import scripts, cache, devices, lowvram, deepbooru, images, script_loading
 from modules import sd_unet
 from modules.generation_parameters_copypaste import parse_generation_parameters
 from modules.sd_models import model_hash, model_path, checkpoints_loaded
@@ -39,8 +39,6 @@ from scripts.vxa import generate_vxa, default_hidden_layer_name, get_layer_names
 from scripts.vxa import tokenize
 
 from scripts.weight_matching import sdunet_permutation_spec, weight_matching, apply_permutation
-
-from scripts.patches import StateDictPatches
 
 dump_cache = cache.dump_cache
 cache = cache.cache
@@ -2542,7 +2540,15 @@ class ModelMixerScript(scripts.Script):
             # check lora_patches
             lora_patch = False
             try:
-                patch = StateDictPatches()
+                if "scripts.patches" in sys.modules:
+                    from scripts.patches import StateDictPatches
+                else:
+                    print("loading script.patches...")
+                    patches = script_loading.load_module(os.path.join(scriptdir, "scripts/patches.py"))
+                    sys.modules["scripts.patches"] = patches
+                    StateDictPatches = getattr(patches, "StateDictPatches")
+
+                patch = patches.StateDictPatches()
                 lora_patch = True
             except Exception:
                 pass
@@ -2862,6 +2868,14 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
 
 
 def get_current_state_dict(lora=False):
+    if "scripts.patches" in sys.modules:
+        from scripts.patches import StateDictPatches
+    else:
+        print("loading script.patches...")
+        patches = script_loading.load_module(os.path.join(scriptdir, "scripts/patches.py"))
+        sys.modules["scripts.patches"] = patches
+        StateDictPatches = getattr(patches, "StateDictPatches")
+    from scripts.patches import StateDictPatches
     # HACK patch nn.Module 'state_dict' to fix lora extension bug
     lora_patch = False
     if not lora:
