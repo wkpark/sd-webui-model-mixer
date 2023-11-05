@@ -985,7 +985,7 @@ class ModelMixerScript(scripts.Script):
                 with gr.Row():
                     logging = gr.Textbox(label="Message", lines=1, value="", show_label=False, info="log message")
                 with gr.Row():
-                    save_settings = gr.CheckboxGroup(["overwrite","safetensors","prune","fp16", "fix CLIP ids"], value=["fp16","prune","safetensors"], label="Select settings")
+                    save_settings = gr.CheckboxGroup(["overwrite","safetensors","prune","fp16", "with LoRAs", "fix CLIP ids"], value=["fp16","prune","safetensors"], label="Select settings")
                 with gr.Row():
                     with gr.Column(min_width = 50):
                         with gr.Row():
@@ -1931,29 +1931,7 @@ class ModelMixerScript(scripts.Script):
                 # model is already loaded
                 print(f"Loading {checkpoint_info.title} from loaded model...")
 
-                # HACK patch nn.Module 'state_dict' to fix lora extension bug
-                lora_patch = False
-                try:
-                    patch = StateDictPatches()
-                    lora_patch = True
-                except Exception:
-                    pass
-
-                # save to cpu
-                sd_models.send_model_to_cpu(shared.sd_model)
-                sd_hijack.model_hijack.undo_hijack(shared.sd_model)
-
-                state_dict = shared.sd_model.state_dict()
-
-                # restore to gpu
-                sd_models.send_model_to_device(shared.sd_model)
-                sd_hijack.model_hijack.hijack(shared.sd_model)
-
-                if lora_patch:
-                    patch.undo()
-                    del patch
-
-                return state_dict
+                return get_current_state_dict()
 
             # get cached state_dict
             if shared.opts.sd_checkpoint_cache > 0:
@@ -2808,27 +2786,9 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
     if state_dict is None and shared.sd_model is not None:
         print("Load state_dict from shared.sd_model..")
 
-        # HACK patch nn.Module 'state_dict' to fix lora extension bug
-        lora_patch = False
-        try:
-            patch = StateDictPatches()
-            lora_patch = True
-        except Exception:
-            pass
-
-        # save to cpu
-        sd_models.send_model_to_cpu(shared.sd_model)
-        sd_hijack.model_hijack.undo_hijack(shared.sd_model)
-
-        state_dict = shared.sd_model.state_dict().copy()
-
-        if lora_patch:
-            patch.undo()
-            del patch
-
-        # restore to gpu
-        sd_models.send_model_to_device(shared.sd_model)
-        sd_hijack.model_hijack.hijack(shared.sd_model)
+        if "with LoRAs" in save_settings:
+            print(" - \033[92mwith LoRAs\033[0m, if any LoRAs have been used in the prompt...")
+        state_dict = get_current_state_dict("with LoRAs" in save_settings)
     elif state_dict is None:
         print("No loaded model found")
         return gr.update(value="No loaded model found")
@@ -2899,6 +2859,33 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
 
     data = "Merged model saved in " + fname
     return gr.update(value=data)
+
+
+def get_current_state_dict(lora=False):
+    # HACK patch nn.Module 'state_dict' to fix lora extension bug
+    lora_patch = False
+    if not lora:
+        try:
+            patch = StateDictPatches()
+            lora_patch = True
+        except Exception:
+            pass
+
+    # save to cpu
+    sd_models.send_model_to_cpu(shared.sd_model)
+    sd_hijack.model_hijack.undo_hijack(shared.sd_model)
+
+    state_dict = shared.sd_model.state_dict().copy()
+
+    # restore to gpu
+    sd_hijack.model_hijack.hijack(shared.sd_model)
+    sd_models.send_model_to_device(shared.sd_model)
+
+    if not lora and lora_patch:
+        patch.undo()
+        del patch
+
+    return state_dict
 
 
 def prepare_model(model):
