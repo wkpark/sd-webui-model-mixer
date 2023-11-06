@@ -1032,7 +1032,6 @@ class ModelMixerScript(scripts.Script):
                         def check_lora_settings(save_lora_settings):
                             last = save_lora_settings.pop()
                             if "LoRA" == last:
-                                print(save_lora_settings)
                                 if "LyCORIS" in save_lora_settings:
                                     idx = save_lora_settings.index("LyCORIS")
                                     save_lora_settings.pop(idx)
@@ -1044,7 +1043,6 @@ class ModelMixerScript(scripts.Script):
                                     save_lora_settings.pop(idx)
                                 save_lora_settings.append(last)
                                 return gr.update(value=save_lora_settings), gr.update(visible=True), gr.update(visible=False)
-                                print(save_lora_settings)
                             else:
                                 save_lora_settings.append(last)
                                 if all(s not in save_lora_settings for s in ["LoRA", "LyCORIS"]):
@@ -2873,9 +2871,7 @@ def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim
     ext = ".safetensors" if "safetensors" in save_settings else ".ckpt"
 
     if not custom_name or custom_name == "":
-        fname = shared.sd_model.sd_checkpoint_info.name_for_extra.replace(" ","").replace(",","_").replace("(","_").replace(")","_") + ext
-        if fname[0] == "_":
-            fname = fname[1:]
+        return gr.update(value="No LoRA name given!")
     else:
         fname = custom_name if ext in custom_name else custom_name + ext
 
@@ -2925,12 +2921,27 @@ def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim
         base = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict))
         lora = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_with_lora))
 
+        metadata = {
+            "ss_network_module": "lycoris.kohya",
+            "ss_output_name": custom_name,
+        }
+
         if extract_mode == 'Fixed':
             linear_mode_param = lin_dim
             conv_mode_param = lin_dim
+            metadata["ss_network_args"] = json.dumps({
+                "conv_dim": str(conv_dim),
+                "conv_alpha": str(float(conv_dim)),
+            })
         else:
             linear_mode_param = lin_slider
             conv_mode_param = conv_slider
+            mode = extract_mode.lower()
+            metadata["ss_network_args"] = json.dumps({
+                "method": extract_mode.lower(),
+                f"linear_{mode}": str(conv_slider),
+                f"conv_{mode}": str(lin_slider),
+            })
 
         lora_state_dict = extract_diff(
             base, lora,
@@ -2952,11 +2963,17 @@ def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim
             sys.modules["scripts.kohya.extract_lora_from_models"] = extract_lora
             from scripts.kohya.extract_lora_from_models import svd
         except Exception as e:
-            print(f"No scripts.kohya.model_utils module found. ERROR: {e}")
-            return gr.update(value="No scripts.kohya.model_utils module found")
+            print(f"No scripts.kohya.* modules found. ERROR: {e}")
+            return gr.update(value="No scripts.kohya.* modules found")
 
         extracted_lora = svd(dict(state_dict), dict(state_dict_with_lora), fname, lora_dim, min_diff=1e-6, clamp_quantile=1.0, device=None)
         lora_state_dict = extracted_lora.state_dict()
+        metadata = {
+            "ss_network_module": "networks.lora",
+            "ss_network_dim": str(lora_dim),
+            "ss_network_alpha": str(float(lora_dim)),
+            "ss_output_name": custom_name,
+        }
 
     try:
         if ext == ".safetensors":
