@@ -1929,7 +1929,7 @@ class ModelMixerScript(scripts.Script):
                 # model is already loaded
                 print(f"Loading {checkpoint_info.title} from loaded model...")
 
-                return get_current_state_dict()
+                return get_current_state_dict()[0]
 
             # get cached state_dict
             if shared.opts.sd_checkpoint_cache > 0:
@@ -2540,13 +2540,11 @@ class ModelMixerScript(scripts.Script):
             # check lora_patches
             lora_patch = False
             try:
-                if "scripts.patches" in sys.modules:
-                    from scripts.patches import StateDictPatches
-                else:
-                    print("loading script.patches...")
-                    patches = script_loading.load_module(os.path.join(scriptdir, "scripts/patches.py"))
+                if "scripts.patches" not in sys.modules:
+                    print(" - loading script.patches...")
+                    patches = script_loading.load_module(os.path.join(scriptdir, "scripts", "patches.py"))
                     sys.modules["scripts.patches"] = patches
-                    StateDictPatches = getattr(patches, "StateDictPatches")
+                from scripts.patches import StateDictPatches
 
                 patch = patches.StateDictPatches()
                 lora_patch = True
@@ -2794,7 +2792,7 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
 
         if "with LoRAs" in save_settings:
             print(" - \033[92mwith LoRAs\033[0m, if any LoRAs have been used in the prompt...")
-        state_dict = get_current_state_dict("with LoRAs" in save_settings)
+        state_dict = get_current_state_dict("with LoRAs" in save_settings, "with LoRAs" not in save_settings)[0]
     elif state_dict is None:
         print("No loaded model found")
         return gr.update(value="No loaded model found")
@@ -2867,39 +2865,66 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
     return gr.update(value=data)
 
 
-def get_current_state_dict(lora=False):
-    if "scripts.patches" in sys.modules:
-        from scripts.patches import StateDictPatches
-    else:
-        print("loading script.patches...")
-        patches = script_loading.load_module(os.path.join(scriptdir, "scripts/patches.py"))
+def get_current_state_dict(lora=False, base=True):
+    if "scripts.patches" not in sys.modules:
+        print(" - loading script.patches...")
+        patches = script_loading.load_module(os.path.join(scriptdir, "scripts", "patches.py"))
         sys.modules["scripts.patches"] = patches
-        StateDictPatches = getattr(patches, "StateDictPatches")
-    from scripts.patches import StateDictPatches
-    # HACK patch nn.Module 'state_dict' to fix lora extension bug
-    lora_patch = False
-    if not lora:
-        try:
-            patch = StateDictPatches()
-            lora_patch = True
-        except Exception:
-            pass
+
+    from scripts.patches import StateDictPatches, StateDictLoraPatches
 
     # save to cpu
     sd_models.send_model_to_cpu(shared.sd_model)
     sd_hijack.model_hijack.undo_hijack(shared.sd_model)
 
-    state_dict = shared.sd_model.state_dict().copy()
+    ret = []
+    # HACK patch nn.Module 'state_dict' to fix lora extension bug
+    if base:
+        lora_patch = False
+        try:
+            patch = StateDictPatches()
+            lora_patch = True
+            print(" - base lora_patch ")
+        except Exception:
+            print("Please enable extension-builtin lora")
+            pass
+
+        state_dict = shared.sd_model.state_dict()
+        ret.append(state_dict.copy())
+        del state_dict
+
+        if lora_patch:
+            patch.undo()
+            del patch
+
+    if lora:
+        lora_patch = False
+        try:
+            patch = StateDictLoraPatches()
+            lora_patch = True
+            print(" - lora patch ")
+        except Exception:
+            print("Please enable extension-builtin lora")
+            pass
+
+        if base:
+            # withot following two line patch does not work correctly
+            sd_models.send_model_to_device(shared.sd_model)
+            sd_models.send_model_to_cpu(shared.sd_model)
+
+        state_dict_with_lora = shared.sd_model.state_dict()
+        ret.insert(0, state_dict_with_lora.copy())
+        del state_dict_with_lora
+
+        if lora_patch:
+            patch.undo()
+            del patch
 
     # restore to gpu
     sd_hijack.model_hijack.hijack(shared.sd_model)
     sd_models.send_model_to_device(shared.sd_model)
 
-    if not lora and lora_patch:
-        patch.undo()
-        del patch
-
-    return state_dict
+    return ret
 
 
 def prepare_model(model):
