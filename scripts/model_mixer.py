@@ -1001,16 +1001,21 @@ class ModelMixerScript(scripts.Script):
                     with gr.Tab("Save as LoRA/LyCORIS"):
                         with gr.Row():
                             save_lora_settings = gr.CheckboxGroup(["overwrite","safetensors", "LoRA", "LyCORIS"], value=["LyCORIS","safetensors"], label="Select settings")
-                        with gr.Row():
-                            extract_mode = gr.Radio(label="Extraction Mode", info="", choices=["Fixed", "Threshold", "Ratio", "Quantile"], value="Fixed")
-                        with gr.Group() as fixed_options:
+                        with gr.Group() as lycoris_options:
                             with gr.Row():
-                                lin_dim = gr.Radio(label="Linear DIM", choices=[1, 4, 8, 16, 32, 64, 128, 256, 512, 768], value=64)
+                                extract_mode = gr.Radio(label="Extraction Mode", info="", choices=["Fixed", "Threshold", "Ratio", "Quantile"], value="Fixed")
+                            with gr.Group() as fixed_options:
+                                with gr.Row():
+                                    lin_dim = gr.Radio(label="Linear DIM", choices=[1, 4, 8, 16, 32, 64, 128, 256, 512, 768], value=64)
+                                with gr.Row():
+                                    conv_dim = gr.Radio(label="Conv DIM", choices=[1, 4, 8, 16, 32, 64, 128, 256, 512, 768], value=64)
+                            with gr.Row(visible=False) as variable_options:
+                                lin_slider = gr.Slider(label="Linear", info="Singular value for Linear layer", minimum=0., maximum=1., value=0., step=0.001)
+                                conv_slider = gr.Slider(label="Conv", info="Singular value for Conv layer", minimum=0., maximum=1., value=0., step=0.001)
+                        with gr.Group(visible=False) as lora_options:
                             with gr.Row():
-                                conv_dim = gr.Radio(label="Conv DIM", choices=[1, 4, 8, 6, 32, 64, 128, 256, 512, 768], value=64)
-                        with gr.Row(visible=False) as variable_options:
-                            lin_slider = gr.Slider(label="Linear", info="Singular value for Linear layer", minimum=0., maximum=1., value=0., step=0.001)
-                            conv_slider = gr.Slider(label="Conv", info="Singular value for Conv layer", minimum=0., maximum=1., value=0., step=0.001)
+                                lora_dim = gr.Radio(label="Lora DIM", choices=[4, 8, 16, 32, 64, 128, 256, 512, 768, 1024], value=64)
+
                         with gr.Row():
                             custom_lora_name = gr.Textbox(label="Custom LoRA Name", placeholder="Name your LoRA", elem_id="model_mixer_custom_lora_name")
 
@@ -1023,6 +1028,33 @@ class ModelMixerScript(scripts.Script):
 
                             return gr.update(visible=False), gr.update(visible=True), gr.update(value=0.0), gr.update(value=0.0)
 
+
+                        def check_lora_settings(save_lora_settings):
+                            last = save_lora_settings.pop()
+                            if "LoRA" == last:
+                                print(save_lora_settings)
+                                if "LyCORIS" in save_lora_settings:
+                                    idx = save_lora_settings.index("LyCORIS")
+                                    save_lora_settings.pop(idx)
+                                save_lora_settings.append(last)
+                                return gr.update(value=save_lora_settings), gr.update(visible=False), gr.update(visible=True)
+                            elif "LyCORIS" == last:
+                                if "LoRA" in save_lora_settings:
+                                    idx = save_lora_settings.index("LoRA")
+                                    save_lora_settings.pop(idx)
+                                save_lora_settings.append(last)
+                                return gr.update(value=save_lora_settings), gr.update(visible=True), gr.update(visible=False)
+                                print(save_lora_settings)
+                            else:
+                                save_lora_settings.append(last)
+                                if all(s not in save_lora_settings for s in ["LoRA", "LyCORIS"]):
+                                    # no LoRA type
+                                    save_lora_settings.append("LyCORIS")
+                                    return gr.update(value=save_lora_settings), gr.update(visible=True), gr.update(visible=False)
+
+                            return gr.update(), gr.update(), gr.update()
+
+
                         with gr.Row():
                             extract_lora = gr.Button("Extract LoRA from current model")
 
@@ -1030,7 +1062,16 @@ class ModelMixerScript(scripts.Script):
                             fn=check_extract_mode,
                             inputs=[extract_mode],
                             outputs=[fixed_options, variable_options, lin_slider, conv_slider],
+                            show_progress=False,
                         )
+
+                        save_lora_settings.change(
+                            fn=check_lora_settings,
+                            inputs=[save_lora_settings],
+                            outputs=[save_lora_settings, lycoris_options, lora_options],
+                            show_progress=False,
+                        )
+
                     with gr.Row():
                         metadata_settings = gr.CheckboxGroup(["merge recipe"], value=["merge recipe"], label="Metadata settings")
 
@@ -1336,7 +1377,7 @@ class ModelMixerScript(scripts.Script):
 
         extract_lora.click(
             fn=extract_lora_from_current_model,
-            inputs=[custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, save_lora_settings, metadata_settings],
+            inputs=[custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, save_lora_settings, metadata_settings],
             outputs=[logging]
         )
 
@@ -2801,7 +2842,7 @@ def fineman(fine, isxl):
     return None
 
 
-def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider,
+def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim,
         save_settings, metadata_settings, progress=gr.Progress(track_tqdm=True)):
     current = getattr(shared, "modelmixer_config", None)
     if current is None:
@@ -2881,25 +2922,41 @@ def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim
             print(f"No lycoris module found {e}")
             return gr.update(value="LyCORIS module not found")
 
-    base = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict))
-    lora = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_with_lora))
+        base = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict))
+        lora = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_with_lora))
 
-    if extract_mode == 'Fixed':
-        linear_mode_param = lin_dim
-        conv_mode_param = lin_dim
-    else:
-        linear_mode_param = lin_slider
-        conv_mode_param = conv_slider
+        if extract_mode == 'Fixed':
+            linear_mode_param = lin_dim
+            conv_mode_param = lin_dim
+        else:
+            linear_mode_param = lin_slider
+            conv_mode_param = conv_slider
 
-    lora_state_dict = extract_diff(
-        base, lora,
-        extract_mode.lower(),
-        linear_mode_param, conv_mode_param,
-        "cpu",
-        False, #args.use_sparse_bias,
-        0.98, # args.sparsity,
-        True #not args.disable_cp
-    )
+        lora_state_dict = extract_diff(
+            base, lora,
+            extract_mode.lower(),
+            linear_mode_param, conv_mode_param,
+            "cpu",
+            False, #args.use_sparse_bias,
+            0.98, # args.sparsity,
+            True #not args.disable_cp
+        )
+
+    else: # LoRA
+        try:
+            model_utils = script_loading.load_module(os.path.join(scriptdir, "scripts", "kohya", "model_utils.py"))
+            sys.modules["scripts.kohya.model_utils"] = model_utils
+            lora = script_loading.load_module(os.path.join(scriptdir, "scripts", "kohya", "lora.py"))
+            sys.modules["scripts.kohya.lora"] = lora
+            extract_lora = script_loading.load_module(os.path.join(scriptdir, "scripts", "kohya", "extract_lora_from_models.py"))
+            sys.modules["scripts.kohya.extract_lora_from_models"] = extract_lora
+            from scripts.kohya.extract_lora_from_models import svd
+        except Exception as e:
+            print(f"No scripts.kohya.model_utils module found. ERROR: {e}")
+            return gr.update(value="No scripts.kohya.model_utils module found")
+
+        extracted_lora = svd(dict(state_dict), dict(state_dict_with_lora), fname, lora_dim, min_diff=1e-6, clamp_quantile=1.0, device=None)
+        lora_state_dict = extracted_lora.state_dict()
 
     try:
         if ext == ".safetensors":
