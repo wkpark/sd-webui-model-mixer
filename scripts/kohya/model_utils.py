@@ -7,9 +7,9 @@ import os
 import torch
 import diffusers
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPTextConfig, logging
-from diffusers import AutoencoderKL, DDIMScheduler, StableDiffusionPipeline  # , UNet2DConditionModel
+from diffusers import AutoencoderKL, DDIMScheduler, StableDiffusionPipeline, UNet2DConditionModel
 from safetensors.torch import load_file, save_file
-from .original_unet import UNet2DConditionModel
+#from .original_unet import UNet2DConditionModel
 
 # DiffUsers版StableDiffusionのモデルパラメータ
 NUM_TRAIN_TIMESTEPS = 1000
@@ -984,8 +984,16 @@ def load_checkpoint_with_text_encoder_conversion(ckpt_path, device="cpu"):
 
 
 # TODO dtype指定の動作が怪しいので確認する text_encoderを指定形式で作れるか未確認
-def load_models_from_stable_diffusion_checkpoint(v2, ckpt_path, device="cpu", dtype=None, unet_use_linear_projection_in_v2=True):
-    _, state_dict = load_checkpoint_with_text_encoder_conversion(ckpt_path, device)
+def load_models_from_stable_diffusion_checkpoint(v2=None, ckpt_path=None, device="cpu", dtype=None, unet_use_linear_projection_in_v2=True):
+    if type(v2) == dict:
+        state_dict = v2
+        v2 = None
+    elif type(ckpt_path) == dict:
+        state_dict = ckpt_path
+    else:
+        _, state_dict = load_checkpoint_with_text_encoder_conversion(ckpt_path, device)
+
+    v2 = v2 or state_dict['model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight'].shape[1] == 1024
 
     # Convert the UNet2DConditionModel model.
     unet_config = create_unet_diffusers_config(v2, unet_use_linear_projection_in_v2)
