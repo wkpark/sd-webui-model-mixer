@@ -7,27 +7,14 @@ import json
 import os
 import time
 import torch
-from safetensors.torch import load_file, save_file
 from tqdm import tqdm
-from library import sai_model_spec, model_util, sdxl_model_util
-import lora
+#from library import sai_model_spec, model_util, sdxl_model_util
+from . import lora
 
 # CLAMP_QUANTILE = 1
 # MIN_DIFF = 1e-2
 
-def save_to_file(file_name, model, state_dict, dtype):
-    if dtype is not None:
-        for key in list(state_dict.keys()):
-            if type(state_dict[key]) == torch.Tensor:
-                state_dict[key] = state_dict[key].to(dtype)
-
-    if os.path.splitext(file_name)[1] == ".safetensors":
-        save_file(model, file_name)
-    else:
-        torch.save(model, file_name)
-
-
-def svd(args):
+def svd(model_base, model_tuned, save_to, param_dim, min_diff=1e-6, clamp_quantile=1.0, device=None):
     def str_to_dtype(p):
         if p == "float":
             return torch.float
@@ -37,44 +24,70 @@ def svd(args):
             return torch.bfloat16
         return None
 
-    assert args.v2 != args.sdxl or (
-        not args.v2 and not args.sdxl
-    ), "v2 and sdxl cannot be specified at the same time / v2とsdxlは同時に指定できません"
-    if args.v_parameterization is None:
-        args.v_parameterization = args.v2
+#   assert sdv2 != isxl or (
+#       not sdv2 and not isxl
+#   ), "v2 and sdxl cannot be specified at the same time / v2とsdxlは同時に指定できません"
+#   if v_parameterization is None:
+#       v_parameterization = sdv2
 
-    save_dtype = str_to_dtype(args.save_precision)
+    isxl = False
+    if type(model_base) == dict:
+        isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in model_base
+    sdv2 = None
+    model_version = None
+    conv_dim = None
+    #save_dtype = str_to_dtype(args.precision)
 
     # load models
-    if not args.sdxl:
-        print(f"loading original SD model : {args.model_org}")
-        text_encoder_o, _, unet_o = model_util.load_models_from_stable_diffusion_checkpoint(args.v2, args.model_org)
+    if not isxl:
+        from .model_utils import load_models_from_stable_diffusion_checkpoint
+
+        if type(model_base) == str:
+            print(f"loading original SD model : {model_base}")
+        else:
+            print("loading original SD model")
+
+        text_encoder_o, _, unet_o = load_models_from_stable_diffusion_checkpoint(sdv2, model_base)
         text_encoders_o = [text_encoder_o]
-        print(f"loading tuned SD model : {args.model_tuned}")
-        text_encoder_t, _, unet_t = model_util.load_models_from_stable_diffusion_checkpoint(args.v2, args.model_tuned)
+        if type(model_tuned) == str:
+            print(f"loading tuned SD model : {model_tuned}")
+        else:
+            print("loading tuned SD model")
+        text_encoder_t, _, unet_t = load_models_from_stable_diffusion_checkpoint(sdv2, model_tuned)
         text_encoders_t = [text_encoder_t]
-        model_version = model_util.get_model_version_str_for_sd1_sd2(args.v2, args.v_parameterization)
+        #model_version = model_util.get_model_version_str_for_sd1_sd2(sdv2, v_parameterization)
     else:
-        print(f"loading original SDXL model : {args.model_org}")
+        from . import sdxl_model_util
+
+        if type(model_base) == str:
+            print(f"loading original SDXL model : {model_base}")
+        else:
+            print(f"loading original SDXL model")
         text_encoder_o1, text_encoder_o2, _, unet_o, _, _ = sdxl_model_util.load_models_from_sdxl_checkpoint(
-            sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, args.model_org, "cpu"
+            sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, model_base, "cpu"
         )
         text_encoders_o = [text_encoder_o1, text_encoder_o2]
-        print(f"loading original SDXL model : {args.model_tuned}")
+        if type(model_tuned) == str:
+            print(f"loading original SDXL model : {model_tuned}")
+        else:
+            print(f"loading original SDXL model")
         text_encoder_t1, text_encoder_t2, _, unet_t, _, _ = sdxl_model_util.load_models_from_sdxl_checkpoint(
-            sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, args.model_tuned, "cpu"
+            sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, model_tuned, "cpu"
         )
         text_encoders_t = [text_encoder_t1, text_encoder_t2]
-        model_version = sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0
+        #model_version = sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0
 
     # create LoRA network to extract weights: Use dim (rank) as alpha
-    if args.conv_dim is None:
+    if conv_dim is None:
         kwargs = {}
     else:
-        kwargs = {"conv_dim": args.conv_dim, "conv_alpha": args.conv_dim}
+        kwargs = {"conv_dim": conv_dim, "conv_alpha": conv_dim}
 
-    lora_network_o = lora.create_network(1.0, args.dim, args.dim, None, text_encoders_o, unet_o, **kwargs)
-    lora_network_t = lora.create_network(1.0, args.dim, args.dim, None, text_encoders_t, unet_t, **kwargs)
+    if param_dim == 0 or param_dim is None:
+        param_dim = 64
+
+    lora_network_o = lora.create_network(1.0, param_dim, param_dim, None, text_encoders_o, unet_o, **kwargs)
+    lora_network_t = lora.create_network(1.0, param_dim, param_dim, None, text_encoders_t, unet_t, **kwargs)
     assert len(lora_network_o.text_encoder_loras) == len(
         lora_network_t.text_encoder_loras
     ), f"model version is different (SD1.x vs SD2.x) / それぞれのモデルのバージョンが違います（SD1.xベースとSD2.xベース） "
@@ -89,9 +102,9 @@ def svd(args):
         diff = module_t.weight - module_o.weight
 
         # Text Encoder might be same
-        if not text_encoder_different and torch.max(torch.abs(diff)) > args.min_diff:
+        if not text_encoder_different and torch.max(torch.abs(diff)) > min_diff:
             text_encoder_different = True
-            print(f"Text encoder is different. {torch.max(torch.abs(diff))} > {args.min_diff}")
+            print(f"Text encoder is different. {torch.max(torch.abs(diff))} > {min_diff}")
 
         diff = diff.float()
         diffs[lora_name] = diff
@@ -108,8 +121,8 @@ def svd(args):
         diff = module_t.weight - module_o.weight
         diff = diff.float()
 
-        if args.device:
-            diff = diff.to(args.device)
+        if device:
+            diff = diff.to(device)
 
         diffs[lora_name] = diff
 
@@ -118,16 +131,16 @@ def svd(args):
     lora_weights = {}
     with torch.no_grad():
         for lora_name, mat in tqdm(list(diffs.items())):
-            # if args.conv_dim is None, diffs do not include LoRAs for conv2d-3x3
+            # if conv_dim is None, diffs do not include LoRAs for conv2d-3x3
             conv2d = len(mat.size()) == 4
             kernel_size = None if not conv2d else mat.size()[2:4]
             conv2d_3x3 = conv2d and kernel_size != (1, 1)
 
-            rank = args.dim if not conv2d_3x3 or args.conv_dim is None else args.conv_dim
+            rank = param_dim if not conv2d_3x3 or conv_dim is None else conv_dim
             out_dim, in_dim = mat.size()[0:2]
 
-            if args.device:
-                mat = mat.to(args.device)
+            if device:
+                mat = mat.to(device)
 
             # print(lora_name, mat.size(), mat.device, rank, in_dim, out_dim)
             rank = min(rank, in_dim, out_dim)  # LoRA rank cannot exceed the original dim
@@ -147,7 +160,7 @@ def svd(args):
             Vh = Vh[:rank, :]
 
             dist = torch.cat([U.flatten(), Vh.flatten()])
-            hi_val = torch.quantile(dist, args.clamp_quantile)
+            hi_val = torch.quantile(dist, clamp_quantile)
             low_val = -hi_val
 
             U = U.clamp(low_val, hi_val)
@@ -176,34 +189,37 @@ def svd(args):
     info = lora_network_save.load_state_dict(lora_sd)
     print(f"Loading extracted LoRA weights: {info}")
 
-    dir_name = os.path.dirname(args.save_to)
+    dir_name = os.path.dirname(save_to)
     if dir_name and not os.path.exists(dir_name):
         os.makedirs(dir_name, exist_ok=True)
 
     # minimum metadata
     net_kwargs = {}
-    if args.conv_dim is not None:
-        net_kwargs["conv_dim"] = args.conv_dim
-        net_kwargs["conv_alpha"] = args.conv_dim
+    if conv_dim is not None:
+        net_kwargs["conv_dim"] = conv_dim
+        net_kwargs["conv_alpha"] = conv_dim
 
     metadata = {
-        "ss_v2": str(args.v2),
-        "ss_base_model_version": model_version,
         "ss_network_module": "networks.lora",
-        "ss_network_dim": str(args.dim),
-        "ss_network_alpha": str(args.dim),
+        "ss_network_dim": str(param_dim),
+        "ss_network_alpha": str(param_dim),
         "ss_network_args": json.dumps(net_kwargs),
     }
+    if model_version is not None:
+        metadata["ss_base_model_version"] = model_version
+    if sdv2 is not None:
+        metadata["ss_v2"] = str(sdv2)
 
-    if not args.no_metadata:
-        title = os.path.splitext(os.path.basename(args.save_to))[0]
-        sai_metadata = sai_model_spec.build_metadata(
-            None, args.v2, args.v_parameterization, args.sdxl, True, False, time.time(), title=title
-        )
-        metadata.update(sai_metadata)
+    #if not args.no_metadata:
+    #    title = os.path.splitext(os.path.basename(save_to))[0]
+    #    sai_metadata = sai_model_spec.build_metadata(
+    #        None, sdv2, v_parameterization, isxl, True, False, time.time(), title=title
+    #    )
+    #    metadata.update(sai_metadata)
 
-    lora_network_save.save_weights(args.save_to, save_dtype, metadata)
-    print(f"LoRA weights are saved to: {args.save_to}")
+    #lora_network_save.save_weights(save_to, save_dtype, metadata)
+    #print(f"LoRA weights are saved to: {save_to}")
+    return lora_network_save
 
 
 def setup_parser() -> argparse.ArgumentParser:
@@ -257,7 +273,7 @@ def setup_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--min_diff",
         type=float,
-        default=0.01,
+        default=1,
         help="Minimum difference between finetuned model and base to consider them different enough to extract, float, (0-1). Default = 0.01",
     )
     parser.add_argument(
