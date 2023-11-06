@@ -1000,6 +1000,18 @@ class ModelMixerScript(scripts.Script):
 
                     with gr.Tab("Save as LoRA/LyCORIS"):
                         with gr.Row():
+                            save_lora_mode = gr.Radio([("Extract merged LoRAs", "extract"), ("Difference between base and current", "diff")],
+                                value="extract", label="Save method")
+                        with gr.Group(visible=False) as model_orig_options:
+                            with gr.Row():
+                                model_orig = gr.Dropdown(["None"] + sd_models.checkpoint_tiles(), value="None", elem_id="model_mixer_model_orig", label="Base model",
+                                    info="Original base model. If not selected, current merged model will be used as the base model and perform extract mode.",
+                                    interactive=True)
+                                create_refresh_button(model_orig, mm_list_models, lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()}, "mm_refresh_model_orig")
+                            with gr.Row():
+                                diff_model_mode = gr.Radio([("without LoRAs", "None"), ("with LoRAs", "lora")],
+                                    value="lora", label="Include all LoRAs used in the prompt")
+                        with gr.Row():
                             save_lora_settings = gr.CheckboxGroup(["overwrite","safetensors", "LoRA", "LyCORIS"], value=["LyCORIS","safetensors"], label="Select settings")
                         with gr.Group() as lycoris_options:
                             with gr.Row():
@@ -1017,7 +1029,17 @@ class ModelMixerScript(scripts.Script):
                                 lora_dim = gr.Radio(label="Lora DIM", choices=[4, 8, 16, 32, 64, 128, 256, 512, 768, 1024], value=64)
 
                         with gr.Row():
+                            precision = gr.Radio(label="Save precision", choices=[("fp16", "fp16"), ("fp32 (float)", "fp32"), ("bf16", "bf16")], value="fp16")
+
+                        with gr.Row():
                             custom_lora_name = gr.Textbox(label="Custom LoRA Name", placeholder="Name your LoRA", elem_id="model_mixer_custom_lora_name")
+
+                        save_lora_mode.change(
+                            fn=lambda save_mode: gr.update(visible=save_mode != "extract"),
+                            inputs=[save_lora_mode],
+                            outputs=[model_orig_options],
+                            show_progress=True,
+                        )
 
                         def check_extract_mode(extract_mode):
                             if extract_mode == "Fixed":
@@ -1054,7 +1076,7 @@ class ModelMixerScript(scripts.Script):
 
 
                         with gr.Row():
-                            extract_lora = gr.Button("Extract LoRA from current model")
+                            extract_lora = gr.Button("Save as LoRA/LyCORIS")
 
                         extract_mode.change(
                             fn=check_extract_mode,
@@ -1375,7 +1397,8 @@ class ModelMixerScript(scripts.Script):
 
         extract_lora.click(
             fn=extract_lora_from_current_model,
-            inputs=[custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, save_lora_settings, metadata_settings],
+            inputs=[save_lora_mode, model_orig, diff_model_mode,
+                custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, precision, save_lora_settings, metadata_settings],
             outputs=[logging]
         )
 
@@ -2840,8 +2863,9 @@ def fineman(fine, isxl):
     return None
 
 
-def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim,
-        save_settings, metadata_settings, progress=gr.Progress(track_tqdm=True)):
+def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
+        custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim,
+        precision, save_settings, metadata_settings, progress=gr.Progress(track_tqdm=True)):
     current = getattr(shared, "modelmixer_config", None)
     if current is None:
         return gr.update(value="No merged model found")
@@ -2867,6 +2891,17 @@ def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim
     if "sd_merge_models" in metadata:
         metadata["sd_merge_models"] = json.dumps(metadata["sd_merge_models"])
 
+    # check save_lora_mode
+    state_dict_base = None
+    if save_lora_mode == "diff" and model_orig != "None":
+        checkpointinfo = sd_models.get_closet_checkpoint_match(model_orig)
+        if checkpointinfo:
+            print(f" - load original base model {model_orig}...")
+            state_dict_base = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu")
+    if save_lora_mode == "diff" and state_dict_base is None:
+        save_lora_mode = "extract"
+        print("No base model selected. Use extract mode to extract any LoRAs used in the prompt...")
+
     # setup file, imported from supermerger
     ext = ".safetensors" if "safetensors" in save_settings else ".ckpt"
 
@@ -2889,15 +2924,23 @@ def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim
         print(err_msg)
         return gr.update(value=err_msg)
 
-    print(" - \033[92mget the base state_dict and the state_dict with LoRAs weighted\033[0m, if any LoRAs have been used in the prompt...")
-    state_dict_with_lora, state_dict = get_current_state_dict(lora=True, base=True)
+    if save_lora_mode == "diff":
+        if diff_model_mode == "lora":
+            print(" - \033[92mget the merged model with LoRAs weighted\033[0m, if any LoRAs have been used in the prompt...")
+            state_dict_trained = get_current_state_dict(lora=True, base=False)[0]
+        else:
+            print(" - \033[92mget the merged model\033[0m...")
+            state_dict_trained = get_current_state_dict(lora=False, base=True)[0]
+    else: # extract mode
+        print(" - \033[92mget the base state_dict and the state_dict with LoRAs weighted\033[0m, if any LoRAs have been used in the prompt...")
+        state_dict_trained, state_dict_base = get_current_state_dict(lora=True, base=True)
 
     is_equal = True
-    checkbar = tqdm(state_dict.keys(), desc="check difference")
+    checkbar = tqdm(state_dict_base.keys(), desc="check difference")
     for key in checkbar:
         if "model" not in key:
             continue
-        if torch.any(torch.ne(state_dict[key], state_dict_with_lora[key])):
+        if torch.any(torch.ne(state_dict_base[key], state_dict_trained[key])):
             is_equal = False
             break
         else:
@@ -2918,8 +2961,8 @@ def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim
             print(f"No lycoris module found {e}")
             return gr.update(value="LyCORIS module not found")
 
-        base = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict))
-        lora = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_with_lora))
+        base = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_base))
+        lora = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_trained))
 
         metadata = {
             "ss_network_module": "lycoris.kohya",
@@ -2966,7 +3009,7 @@ def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim
             print(f"No scripts.kohya.* modules found. ERROR: {e}")
             return gr.update(value="No scripts.kohya.* modules found")
 
-        extracted_lora = svd(dict(state_dict), dict(state_dict_with_lora), fname, lora_dim, min_diff=1e-6, clamp_quantile=1.0, device=None)
+        extracted_lora = svd(dict(state_dict_base), dict(state_dict_trained), fname, lora_dim, min_diff=1e-6, clamp_quantile=1.0, device=None)
         lora_state_dict = extracted_lora.state_dict()
         metadata = {
             "ss_network_module": "networks.lora",
@@ -2974,6 +3017,16 @@ def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim
             "ss_network_alpha": str(float(lora_dim)),
             "ss_output_name": custom_name,
         }
+    target_dtype = torch.float16
+    if precision == "fp32":
+        target_dtype = torch.float
+    elif precision == "bf16":
+        target_dtype = torch.bfloat16
+
+    for key in lora_state_dict.keys():
+        v = lora_state_dict[key]
+        v = v.detach().to("cpu").to(target_dtype)
+        lora_state_dict[key] = v
 
     try:
         if ext == ".safetensors":
