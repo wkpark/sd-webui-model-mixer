@@ -26,7 +26,7 @@ from PIL import Image
 
 from copy import copy, deepcopy
 from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings, ui_common
-from modules import scripts, cache, devices, lowvram, deepbooru, images, script_loading
+from modules import scripts, cache, devices, lowvram, deepbooru, images, script_loading, paths
 from modules import sd_unet
 from modules.generation_parameters_copypaste import parse_generation_parameters
 from modules.sd_models import model_hash, model_path, checkpoints_loaded
@@ -982,22 +982,57 @@ class ModelMixerScript(scripts.Script):
             with gr.Accordion("Save the current merged model", open=False):
                 with gr.Row():
                     logging = gr.Textbox(label="Message", lines=1, value="", show_label=False, info="log message")
-                with gr.Row():
-                    save_settings = gr.CheckboxGroup(["overwrite","safetensors","prune","fp16", "with LoRAs", "fix CLIP ids"], value=["fp16","prune","safetensors"], label="Select settings")
-                with gr.Row():
-                    with gr.Column(min_width = 50):
+                with gr.Group(), gr.Tabs():
+                    with gr.Tab("Save current checkpoint"):
                         with gr.Row():
-                            custom_name = gr.Textbox(label="Custom Name (Optional)", elem_id="model_mixer_custom_name")
-
-                    with gr.Column():
+                            save_settings = gr.CheckboxGroup(["overwrite","safetensors","prune","fp16", "with LoRAs", "fix CLIP ids"], value=["fp16","prune","safetensors"], label="Select settings")
                         with gr.Row():
-                            bake_in_vae = gr.Dropdown(choices=["None"] + list(sd_vae.vae_dict), value="None", label="Bake in VAE", elem_id="model_mixer_bake_in_vae")
-                            create_refresh_button(bake_in_vae, sd_vae.refresh_vae_list, lambda: {"choices": ["None"] + list(sd_vae.vae_dict)}, "model_mixer_refresh_bake_in_vae")
-                with gr.Row():
-                    save_current = gr.Button("Save current model")
+                            with gr.Column(min_width = 50):
+                                with gr.Row():
+                                    custom_name = gr.Textbox(label="Custom Name (Optional)", elem_id="model_mixer_custom_name")
 
-                with gr.Row():
-                    metadata_settings = gr.CheckboxGroup(["merge recipe"], value=["merge recipe"], label="Metadata settings")
+                            with gr.Column():
+                                with gr.Row():
+                                    bake_in_vae = gr.Dropdown(choices=["None"] + list(sd_vae.vae_dict), value="None", label="Bake in VAE", elem_id="model_mixer_bake_in_vae")
+                                    create_refresh_button(bake_in_vae, sd_vae.refresh_vae_list, lambda: {"choices": ["None"] + list(sd_vae.vae_dict)}, "model_mixer_refresh_bake_in_vae")
+                        with gr.Row():
+                            save_current = gr.Button("Save current model")
+
+                    with gr.Tab("Save as LoRA/LyCORIS"):
+                        with gr.Row():
+                            save_lora_settings = gr.CheckboxGroup(["overwrite","safetensors", "LoRA", "LyCORIS"], value=["LyCORIS","safetensors"], label="Select settings")
+                        with gr.Row():
+                            extract_mode = gr.Radio(label="Extraction Mode", info="", choices=["Fixed", "Threshold", "Ratio", "Quantile"], value="Fixed")
+                        with gr.Group() as fixed_options:
+                            with gr.Row():
+                                lin_dim = gr.Radio(label="Linear DIM", choices=[1, 4, 8, 16, 32, 64, 128, 256, 512, 768], value=64)
+                            with gr.Row():
+                                conv_dim = gr.Radio(label="Conv DIM", choices=[1, 4, 8, 6, 32, 64, 128, 256, 512, 768], value=64)
+                        with gr.Row(visible=False) as variable_options:
+                            lin_slider = gr.Slider(label="Linear", info="Singular value for Linear layer", minimum=0., maximum=1., value=0., step=0.001)
+                            conv_slider = gr.Slider(label="Conv", info="Singular value for Conv layer", minimum=0., maximum=1., value=0., step=0.001)
+                        with gr.Row():
+                            custom_lora_name = gr.Textbox(label="Custom LoRA Name", placeholder="Name your LoRA", elem_id="model_mixer_custom_lora_name")
+
+                        def check_extract_mode(extract_mode):
+                            if extract_mode == "Fixed":
+                                return gr.update(visible=True), gr.update(visible=False), gr.update(), gr.update()
+
+                            if extract_mode == 'Quantile':
+                                return gr.update(visible=False), gr.update(visible=True), gr.update(value=1.0), gr.update(value=1.0)
+
+                            return gr.update(visible=False), gr.update(visible=True), gr.update(value=0.0), gr.update(value=0.0)
+
+                        with gr.Row():
+                            extract_lora = gr.Button("Extract LoRA from current model")
+
+                        extract_mode.change(
+                            fn=check_extract_mode,
+                            inputs=[extract_mode],
+                            outputs=[fixed_options, variable_options, lin_slider, conv_slider],
+                        )
+                    with gr.Row():
+                        metadata_settings = gr.CheckboxGroup(["merge recipe"], value=["merge recipe"], label="Metadata settings")
 
                 metadata_json = gr.TextArea('{}', label="Metadata in JSON format")
                 with gr.Row():
@@ -1298,6 +1333,12 @@ class ModelMixerScript(scripts.Script):
         read_model_a_metadata.click(fn=model_metadata, inputs=[model_a], outputs=[metadata_json])
         read_model_b_metadata.click(fn=model_metadata, inputs=[mm_models[0]], outputs=[metadata_json])
         save_current.click(fn=save_current_model, inputs=[custom_name, bake_in_vae, save_settings, metadata_settings], outputs=[logging])
+
+        extract_lora.click(
+            fn=extract_lora_from_current_model,
+            inputs=[custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, save_lora_settings, metadata_settings],
+            outputs=[logging]
+        )
 
         def recipe_update(num_models, *_args):
             uses = [False]*num_models
@@ -2758,6 +2799,120 @@ def fineman(fine, isxl):
         ]
         return fine
     return None
+
+
+def extract_lora_from_current_model(custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider,
+        save_settings, metadata_settings, progress=gr.Progress(track_tqdm=True)):
+    current = getattr(shared, "modelmixer_config", None)
+    if current is None:
+        return gr.update(value="No merged model found")
+
+    if shared.sd_model and shared.sd_model.sd_checkpoint_info:
+        metadata = shared.sd_model.sd_checkpoint_info.metadata.copy()
+    else:
+        return gr.update(value="Not a valid merged model")
+
+    sha256 = current["hash"]
+    if shared.sd_model.sd_checkpoint_info.sha256 != sha256:
+        err_msg = "Current checkpoint is not a merged one."
+        print(err_msg)
+        return gr.update(value=err_msg)
+
+    if "sd_merge_recipe" not in metadata or "sd_merge_models" not in metadata:
+        return gr.update(value="Not a valid merged model")
+
+    if metadata_settings is not None and "merge recipe" in metadata_settings:
+        metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"])
+    else:
+        del metadata["sd_merge_recipe"]
+    if "sd_merge_models" in metadata:
+        metadata["sd_merge_models"] = json.dumps(metadata["sd_merge_models"])
+
+    # setup file, imported from supermerger
+    ext = ".safetensors" if "safetensors" in save_settings else ".ckpt"
+
+    if not custom_name or custom_name == "":
+        fname = shared.sd_model.sd_checkpoint_info.name_for_extra.replace(" ","").replace(",","_").replace("(","_").replace(")","_") + ext
+        if fname[0] == "_":
+            fname = fname[1:]
+    else:
+        fname = custom_name if ext in custom_name else custom_name + ext
+
+    lora_dir = "Lora"
+    lora_path = os.path.abspath(os.path.join(paths.models_path, lora_dir))
+    fname = os.path.join(lora_path, fname)
+
+    if len(fname) > 255:
+       fname.replace(ext, "")
+       fname = fname[:240] + ext
+
+    # check if output file already exists
+    if os.path.isfile(fname) and not "overwrite" in save_settings:
+        err_msg = f"Output file ({fname}) exists. not saved."
+        print(err_msg)
+        return gr.update(value=err_msg)
+
+    print(" - \033[92mget the base state_dict and the state_dict with LoRAs weighted\033[0m, if any LoRAs have been used in the prompt...")
+    state_dict_with_lora, state_dict = get_current_state_dict(lora=True, base=True)
+
+    is_equal = True
+    checkbar = tqdm(state_dict.keys(), desc="check difference")
+    for key in checkbar:
+        if "model" not in key:
+            continue
+        if torch.any(torch.ne(state_dict[key], state_dict_with_lora[key])):
+            is_equal = False
+            break
+        else:
+            continue
+    checkbar.close()
+
+    if is_equal:
+        return gr.update(value="No difference found")
+
+    if "LyCORIS" in save_settings:
+        try:
+            from lycoris.utils import extract_diff
+            model_utils = script_loading.load_module(os.path.join(scriptdir, "scripts", "kohya", "model_utils.py"))
+            sys.modules["scripts.kohya.model_utils"] = model_utils
+            from scripts.kohya.model_utils import load_models_from_stable_diffusion_checkpoint
+            #from lycoris.kohya.model_utils import load_models_from_stable_diffusion_checkpoint
+        except Exception as e:
+            print(f"No lycoris module found {e}")
+            return gr.update(value="LyCORIS module not found")
+
+    base = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict))
+    lora = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_with_lora))
+
+    if extract_mode == 'Fixed':
+        linear_mode_param = lin_dim
+        conv_mode_param = lin_dim
+    else:
+        linear_mode_param = lin_slider
+        conv_mode_param = conv_slider
+
+    lora_state_dict = extract_diff(
+        base, lora,
+        extract_mode.lower(),
+        linear_mode_param, conv_mode_param,
+        "cpu",
+        False, #args.use_sparse_bias,
+        0.98, # args.sparsity,
+        True #not args.disable_cp
+    )
+
+    try:
+        if ext == ".safetensors":
+            save_file(lora_state_dict, fname, metadata=metadata)
+        else:
+            torch.save(lora_state_dict, fname)
+    except Exception as e:
+        print(f"ERROR: Couldn't saved:{fname},ERROR is {e}")
+        return gr.update(value=f"ERROR: Couldn't saved:{fname},ERROR is {e}")
+
+    info = "Extracted LoRA saved in " + fname
+    print(info)
+    return gr.update(value=info)
 
 
 def save_current_model(custom_name, bake_in_vae, save_settings, metadata_settings, state_dict=None, metadata=None):
