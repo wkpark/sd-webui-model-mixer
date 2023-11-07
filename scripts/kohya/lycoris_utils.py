@@ -153,7 +153,7 @@ def extract_diff(
         loras = {}
         temp = {}
         temp_name = {}
-        
+        skipped = 0
         for name, module in root_module.named_modules():
             if module.__class__.__name__ in target_replace_modules:
                 temp[name] = {}
@@ -175,6 +175,7 @@ def extract_diff(
                     if layer in {'Linear', 'Conv2d'}:
                         root_weight = child_module.weight
                         if torch.allclose(root_weight, weights[child_name]):
+                            skipped += 1
                             continue
                     
                     if layer == 'Linear':
@@ -241,6 +242,7 @@ def extract_diff(
                 if layer in {'Linear', 'Conv2d'}:
                     root_weight = module.weight
                     if torch.allclose(root_weight, weights):
+                        skipped += 1
                         continue
                 
                 if layer == 'Linear':
@@ -300,6 +302,9 @@ def extract_diff(
                     loras[f'{lora_name}.diff'] = weight.detach().cpu().contiguous().half()
                 else:
                     raise NotImplementedError
+
+        if skipped > 0:
+            print(f"skipped = {skipped}")
         return loras
 
     isxl = False
