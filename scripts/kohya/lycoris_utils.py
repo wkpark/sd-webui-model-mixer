@@ -54,16 +54,16 @@ def extract_conv(
     lora_rank = max(1, lora_rank)
     lora_rank = min(out_ch, in_ch, lora_rank)
     if lora_rank>=out_ch/2 and not is_cp:
-        return weight, 'full'
+        return weight.cpu(), 'full'
     
     U = U[:, :lora_rank]
     S = S[:lora_rank]
     U = U @ torch.diag(S)
     Vh = Vh[:lora_rank, :]
     
-    diff = (weight - (U @ Vh).reshape(out_ch, in_ch, kernel_size, kernel_size)).detach()
-    extract_weight_A = Vh.reshape(lora_rank, in_ch, kernel_size, kernel_size).detach()
-    extract_weight_B = U.reshape(out_ch, lora_rank, 1, 1).detach()
+    diff = (weight - (U @ Vh).reshape(out_ch, in_ch, kernel_size, kernel_size)).detach().cpu()
+    extract_weight_A = Vh.reshape(lora_rank, in_ch, kernel_size, kernel_size).detach().cpu()
+    extract_weight_B = U.reshape(out_ch, lora_rank, 1, 1).detach().cpu()
     del U, S, Vh, weight
     return (extract_weight_A, extract_weight_B, diff), 'low rank'
 
@@ -98,16 +98,16 @@ def extract_linear(
     lora_rank = max(1, lora_rank)
     lora_rank = min(out_ch, in_ch, lora_rank)
     if lora_rank>=out_ch/2:
-        return weight, 'full'
+        return weight.cpu(), 'full'
     
     U = U[:, :lora_rank]
     S = S[:lora_rank]
     U = U @ torch.diag(S)
     Vh = Vh[:lora_rank, :]
     
-    diff = (weight - U @ Vh).detach()
-    extract_weight_A = Vh.reshape(lora_rank, in_ch).detach()
-    extract_weight_B = U.reshape(out_ch, lora_rank).detach()
+    diff = (weight - U @ Vh).detach().cpu()
+    extract_weight_A = Vh.reshape(lora_rank, in_ch).detach().cpu()
+    extract_weight_B = U.reshape(out_ch, lora_rank).detach().cpu()
     del U, S, Vh, weight
     return (extract_weight_A, extract_weight_B, diff), 'low rank'
 
