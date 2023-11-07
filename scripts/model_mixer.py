@@ -5,6 +5,7 @@
 # License: AGPL
 #
 import collections
+import gc
 import os
 import sys
 import gradio as gr
@@ -2901,7 +2902,7 @@ def fineman(fine, isxl):
 
 def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
         custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim,
-        precision, save_settings, metadata_settings, progress=gr.Progress(track_tqdm=True)):
+        precision, save_settings, metadata_settings, progress=gr.Progress(track_tqdm=False)):
     current = getattr(shared, "modelmixer_config", None)
     if current is None:
         return gr.update(value="No merged model found")
@@ -2974,6 +2975,7 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
     # some possible ommitted keys
     possible_keys = [ "conditioner.embedders.1.model.transformer.text_model.embeddings.position_ids" ]
     is_equal = True
+    progress.track_tqdm=True
     checkbar = tqdm(state_dict_base.keys(), desc="check difference")
     for key in checkbar:
         if "model" not in key:
@@ -2996,6 +2998,9 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
 
     isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in state_dict_base
 
+    gc.collect()
+    devices.torch_gc()
+    progress.track_tqdm=False
     if "LyCORIS" in save_settings:
         try:
             #from lycoris.utils import extract_diff
@@ -3051,6 +3056,8 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
             0.98, # args.sparsity,
             True #not args.disable_cp
         )
+        gc.collect()
+        devices.torch_gc()
 
     else: # LoRA
         try:
@@ -3069,6 +3076,8 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
             return gr.update(value="No scripts.kohya.* modules found")
 
         extracted_lora = svd(dict(state_dict_base), dict(state_dict_trained), fname, lora_dim, min_diff=1e-6, clamp_quantile=1.0, device=None)
+        gc.collect()
+        devices.torch_gc()
         lora_state_dict = extracted_lora.state_dict()
         metadata = {
             "ss_network_module": "networks.lora",
