@@ -5,9 +5,8 @@ from safetensors.torch import load_file, save_file
 from transformers import CLIPTextModel, CLIPTextConfig, CLIPTextModelWithProjection, CLIPTokenizer
 from typing import List
 from diffusers import AutoencoderKL, EulerDiscreteScheduler, UNet2DConditionModel
-from library import model_util
-from library import sdxl_original_unet
-
+from . import model_utils as model_util
+from . import sdxl_original_unet
 
 VAE_SCALE_FACTOR = 0.13025
 MODEL_VERSION_SDXL_BASE_V1_0 = "sdxl_base_v1-0"
@@ -163,7 +162,12 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
     # dtype is used for full_fp16/bf16 integration. Text Encoder will remain fp32, because it runs on CPU when caching
 
     # Load the state dict
-    if model_util.is_safetensors(ckpt_path):
+    if type(ckpt_path) == dict:
+        state_dict = ckpt_path
+        epoch = None
+        global_step = None
+        checkpoint = None
+    elif model_util.is_safetensors(ckpt_path):
         checkpoint = None
         try:
             state_dict = load_file(ckpt_path, device=map_location)
