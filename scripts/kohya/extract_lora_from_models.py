@@ -114,10 +114,14 @@ def svd(model_base, model_tuned, save_to, param_dim, min_diff=1e-6, clamp_quanti
         lora_network_o.text_encoder_loras = []
         diffs = {}
 
+    skipped = 0
     for i, (lora_o, lora_t) in enumerate(zip(lora_network_o.unet_loras, lora_network_t.unet_loras)):
         lora_name = lora_o.lora_name
         module_o = lora_o.org_module
         module_t = lora_t.org_module
+        if torch.allclose(module_t.weight, module_o.weight):
+            skipped += 1
+            continue
         diff = module_t.weight - module_o.weight
         diff = diff.float()
 
@@ -126,11 +130,15 @@ def svd(model_base, model_tuned, save_to, param_dim, min_diff=1e-6, clamp_quanti
 
         diffs[lora_name] = diff
 
+    if skipped > 0:
+        print(f"skipped = {skipped}")
     # make LoRA with svd
     print("calculating by svd")
     lora_weights = {}
     with torch.no_grad():
-        for lora_name, mat in tqdm(list(diffs.items())):
+        for lora_name, mat in (pbar:= tqdm(list(diffs.items()), desc=f"Calculating svd")):
+            pbar.set_description(f"Calculating svd: {lora_name}")
+            pbar.refresh()
             # if conv_dim is None, diffs do not include LoRAs for conv2d-3x3
             conv2d = len(mat.size()) == 4
             kernel_size = None if not conv2d else mat.size()[2:4]
