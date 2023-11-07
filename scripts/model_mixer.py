@@ -1069,6 +1069,9 @@ class ModelMixerScript(scripts.Script):
                             precision = gr.Radio(label="Save precision", choices=[("fp16", "fp16"), ("fp32 (float)", "fp32"), ("bf16", "bf16")], value="fp16")
 
                         with gr.Row():
+                            calc_device = gr.Radio(label="Calc device", choices=[("auto", "auto"), ("cuda (faster)", "cuda"), ("cpu (high precision)", "cpu")], value="cuda")
+
+                        with gr.Row():
                             custom_lora_name = gr.Textbox(label="Custom LoRA Name", placeholder="Name your LoRA", elem_id="model_mixer_custom_lora_name")
 
                         save_lora_mode.change(
@@ -1435,7 +1438,7 @@ class ModelMixerScript(scripts.Script):
         extract_lora.click(
             fn=extract_lora_from_current_model,
             inputs=[save_lora_mode, model_orig, diff_model_mode,
-                custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, precision, save_lora_settings, metadata_settings],
+                custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, precision, calc_device, save_lora_settings, metadata_settings],
             outputs=[logging]
         )
 
@@ -2902,7 +2905,7 @@ def fineman(fine, isxl):
 
 def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
         custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim,
-        precision, save_settings, metadata_settings, progress=gr.Progress(track_tqdm=False)):
+        precision, calc_device, save_settings, metadata_settings, progress=gr.Progress(track_tqdm=False)):
     current = getattr(shared, "modelmixer_config", None)
     if current is None:
         return gr.update(value="No merged model found")
@@ -3001,6 +3004,15 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
     gc.collect()
     devices.torch_gc()
     progress.track_tqdm=False
+
+    device = None
+    if calc_device == "auto":
+        calc_device = get_device()
+    elif calc_device == "cuda":
+        pass
+    elif calc_device != "cpu":
+        calc_device = "cpu"
+    print(f" - svd calc device = {calc_device}")
     if "LyCORIS" in save_settings:
         try:
             #from lycoris.utils import extract_diff
@@ -3051,7 +3063,7 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
             base, lora,
             extract_mode.lower(),
             linear_mode_param, conv_mode_param,
-            "cpu",
+            calc_device,
             False, #args.use_sparse_bias,
             0.98, # args.sparsity,
             True #not args.disable_cp
@@ -3075,7 +3087,7 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
             print(f"No scripts.kohya.* modules found. ERROR: {e}")
             return gr.update(value="No scripts.kohya.* modules found")
 
-        extracted_lora = svd(dict(state_dict_base), dict(state_dict_trained), fname, lora_dim, min_diff=1e-6, clamp_quantile=1.0, device=None)
+        extracted_lora = svd(dict(state_dict_base), dict(state_dict_trained), fname, lora_dim, min_diff=1e-6, clamp_quantile=1.0, device=calc_device)
         gc.collect()
         devices.torch_gc()
         lora_state_dict = extracted_lora.state_dict()
