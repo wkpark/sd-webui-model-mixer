@@ -2998,7 +2998,9 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
 
     if "LyCORIS" in save_settings:
         try:
-            from lycoris.utils import extract_diff
+            #from lycoris.utils import extract_diff
+            lycoris_utils = load_module(os.path.join(scriptdir, "scripts", "kohya", "lycoris_utils.py"))
+            from scripts.kohya.lycoris_utils import extract_diff
             model_utils = load_module(os.path.join(scriptdir, "scripts", "kohya", "model_utils.py"))
             #sys.modules["scripts.kohya.model_utils"] = model_utils
             if isxl:
@@ -3010,8 +3012,13 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
             print(f"No lycoris module found {e}")
             return gr.update(value="LyCORIS module not found")
 
-        base = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_base))
-        lora = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_trained))
+        if not isxl:
+            base = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_base))
+            lora = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_trained))
+        else:
+            from scripts.kohya.sdxl_model_util import load_models_from_sdxl_checkpoint, MODEL_VERSION_SDXL_BASE_V1_0
+            base = load_models_from_sdxl_checkpoint(MODEL_VERSION_SDXL_BASE_V1_0, dict(state_dict_base), "cpu")
+            lora = load_models_from_sdxl_checkpoint(MODEL_VERSION_SDXL_BASE_V1_0, dict(state_dict_trained), "cpu")
 
         metadata = {
             "ss_network_module": "lycoris.kohya",
