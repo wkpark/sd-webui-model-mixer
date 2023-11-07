@@ -125,9 +125,6 @@ def svd(model_base, model_tuned, save_to, param_dim, min_diff=1e-6, clamp_quanti
         diff = module_t.weight - module_o.weight
         diff = diff.float()
 
-        if device:
-            diff = diff.to(device)
-
         diffs[lora_name] = diff
 
     if skipped > 0:
