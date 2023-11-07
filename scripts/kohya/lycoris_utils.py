@@ -139,6 +139,10 @@ def extract_diff(
     TEXT_ENCODER_TARGET_REPLACE_MODULE = ["CLIPAttention", "CLIPMLP"]
     LORA_PREFIX_UNET = 'lora_unet'
     LORA_PREFIX_TEXT_ENCODER = 'lora_te'
+
+    LORA_PREFIX_TEXT_ENCODER1 = 'lora_te1'
+    LORA_PREFIX_TEXT_ENCODER2 = 'lora_te2'
+
     def make_state_dict(
         prefix, 
         root_module: torch.nn.Module,
@@ -159,8 +163,9 @@ def extract_diff(
                     temp[name][child_name] = child_module.weight
             elif name in target_replace_names:
                 temp_name[name] = module.weight
-        
-        for name, module in tqdm(list(target_module.named_modules())):
+        for name, module in (pbar:= tqdm(list(target_module.named_modules()), desc=f"Calculating {prefix} svd")):
+            pbar.set_description(f"Calculating {prefix} svd: {name}")
+            pbar.refresh()
             if name in temp:
                 weights = temp[name]
                 for child_name, child_module in module.named_modules():
@@ -296,12 +301,38 @@ def extract_diff(
                 else:
                     raise NotImplementedError
         return loras
-    
+
+    isxl = False
+    if len(base_model) == 6: # SDXL case
+        isxl = True
+        base_model = [base_model[0], base_model[1], base_model[3]]
+        db_model = [db_model[0], db_model[1], db_model[3]]
+    else:
+        base_model = [base_model[0], None, base_model[2]]
+        db_model = [db_model[0], None, db_model[2]]
+
+    if isxl:
+        prefix_text_encoder = LORA_PREFIX_TEXT_ENCODER1
+    else:
+        prefix_text_encoder = LORA_PREFIX_TEXT_ENCODER
+
     text_encoder_loras = make_state_dict(
-        LORA_PREFIX_TEXT_ENCODER, 
+        prefix_text_encoder,
         base_model[0], db_model[0], 
         TEXT_ENCODER_TARGET_REPLACE_MODULE
     )
+    base_model[0] = None
+    db_model[0] = None
+
+    text_encoder_loras2 = {}
+    if isxl:
+        text_encoder_loras2 = make_state_dict(
+            LORA_PREFIX_TEXT_ENCODER2,
+            base_model[1], db_model[1],
+            TEXT_ENCODER_TARGET_REPLACE_MODULE
+        )
+        base_model[1] = None
+        db_model[1] = None
     
     unet_loras = make_state_dict(
         LORA_PREFIX_UNET,
@@ -309,8 +340,9 @@ def extract_diff(
         UNET_TARGET_REPLACE_MODULE,
         UNET_TARGET_REPLACE_NAME
     )
-    print(len(text_encoder_loras), len(unet_loras))
-    return text_encoder_loras|unet_loras
+    del base_model, db_model
+    print(f"Text Encoder: {len(text_encoder_loras) + len(text_encoder_loras2)}, U-Net: {len(unet_loras)}")
+    return text_encoder_loras|text_encoder_loras2|unet_loras
 
 
 def get_module(
