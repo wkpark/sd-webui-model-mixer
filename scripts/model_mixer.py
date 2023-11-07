@@ -9,6 +9,7 @@ import os
 import sys
 import gradio as gr
 import hashlib
+import importlib
 import json
 from pathlib import Path
 import re
@@ -26,7 +27,7 @@ from PIL import Image
 
 from copy import copy, deepcopy
 from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings, ui_common
-from modules import scripts, cache, devices, lowvram, deepbooru, images, script_loading, paths
+from modules import scripts, cache, devices, lowvram, deepbooru, images, paths
 from modules import sd_unet
 from modules.generation_parameters_copypaste import parse_generation_parameters
 from modules.sd_models import model_hash, model_path, checkpoints_loaded
@@ -589,6 +590,41 @@ def unet_blocks_map(diffusion_model, isxl=False):
     block_map["out."] = diffusion_model.out
 
     return block_map
+
+
+def load_module(path):
+    p = Path(path)
+    if "extensions" in p.parts:
+        i = p.parts.index("extensions")
+        if "scripts" in p.parts[i:]:
+            j = p.parts[i:].index("scripts")
+            name = ".".join(p.parts[i+j:])
+        else:
+            name = ".".join(p.parts[i:])
+        if name.endswith(".py"):
+            name = name[:-3]
+    else:
+        name = os.path.basename(path)
+
+    if os.path.isdir(path):
+        module_spec = importlib.util.spec_from_file_location(name, os.path.join(path, "__init__.py"))
+    else:
+        module_spec = importlib.util.spec_from_file_location(name, path)
+
+    if module_spec is None:
+        return None
+
+    module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+
+    # register sys.modules as import_module() does
+    sys.modules[name] = module
+    if name.count(".") >= 2:
+        parent =  name.rsplit(".", 1)[0]
+        if parent not in sys.modules:
+            # register parent package as import_module() does
+            load_module(os.path.dirname(path))
+    return module
 
 
 class ModelMixerScript(scripts.Script):
@@ -2645,8 +2681,8 @@ class ModelMixerScript(scripts.Script):
             try:
                 if "scripts.patches" not in sys.modules:
                     print(" - loading script.patches...")
-                    patches = script_loading.load_module(os.path.join(scriptdir, "scripts", "patches.py"))
-                    sys.modules["scripts.patches"] = patches
+                    patches = load_module(os.path.join(scriptdir, "scripts", "patches.py"))
+                    #sys.modules["scripts.patches"] = patches
                 from scripts.patches import StateDictPatches
 
                 patch = patches.StateDictPatches()
@@ -2935,10 +2971,18 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
         print(" - \033[92mget the base state_dict and the state_dict with LoRAs weighted\033[0m, if any LoRAs have been used in the prompt...")
         state_dict_trained, state_dict_base = get_current_state_dict(lora=True, base=True)
 
+    # some possible ommitted keys
+    possible_keys = [ "conditioner.embedders.1.model.transformer.text_model.embeddings.position_ids" ]
     is_equal = True
     checkbar = tqdm(state_dict_base.keys(), desc="check difference")
     for key in checkbar:
         if "model" not in key:
+            continue
+        if key not in state_dict_trained:
+            if key not in possible_keys:
+                print("key ", key, " could be ommited")
+            else:
+                print("key ", key, " not found")
             continue
         if torch.any(torch.ne(state_dict_base[key], state_dict_trained[key])):
             is_equal = False
@@ -2950,11 +2994,16 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
     if is_equal:
         return gr.update(value="No difference found")
 
+    isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in state_dict_base
+
     if "LyCORIS" in save_settings:
         try:
             from lycoris.utils import extract_diff
-            model_utils = script_loading.load_module(os.path.join(scriptdir, "scripts", "kohya", "model_utils.py"))
-            sys.modules["scripts.kohya.model_utils"] = model_utils
+            model_utils = load_module(os.path.join(scriptdir, "scripts", "kohya", "model_utils.py"))
+            #sys.modules["scripts.kohya.model_utils"] = model_utils
+            if isxl:
+                sdxl_model_util = load_module(os.path.join(scriptdir, "scripts", "kohya", "sdxl_model_util.py"))
+                #sys.modules["scripts.kohya.sdxl_model_util"] = sdxl_model_util
             from scripts.kohya.model_utils import load_models_from_stable_diffusion_checkpoint
             #from lycoris.kohya.model_utils import load_models_from_stable_diffusion_checkpoint
         except Exception as e:
@@ -2998,12 +3047,15 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
 
     else: # LoRA
         try:
-            model_utils = script_loading.load_module(os.path.join(scriptdir, "scripts", "kohya", "model_utils.py"))
-            sys.modules["scripts.kohya.model_utils"] = model_utils
-            lora = script_loading.load_module(os.path.join(scriptdir, "scripts", "kohya", "lora.py"))
-            sys.modules["scripts.kohya.lora"] = lora
-            extract_lora = script_loading.load_module(os.path.join(scriptdir, "scripts", "kohya", "extract_lora_from_models.py"))
-            sys.modules["scripts.kohya.extract_lora_from_models"] = extract_lora
+            model_utils = load_module(os.path.join(scriptdir, "scripts", "kohya", "model_utils.py"))
+            #sys.modules["scripts.kohya.model_utils"] = model_utils
+            if isxl:
+                sdxl_model_util = load_module(os.path.join(scriptdir, "scripts", "kohya", "sdxl_model_util.py"))
+                #sys.modules["scripts.kohya.sdxl_model_util"] = sdxl_model_util
+            lora = load_module(os.path.join(scriptdir, "scripts", "kohya", "lora.py"))
+            #sys.modules["scripts.kohya.lora"] = lora
+            extract_lora = load_module(os.path.join(scriptdir, "scripts", "kohya", "extract_lora_from_models.py"))
+            #sys.modules["scripts.kohya.extract_lora_from_models"] = extract_lora
             from scripts.kohya.extract_lora_from_models import svd
         except Exception as e:
             print(f"No scripts.kohya.* modules found. ERROR: {e}")
@@ -3150,8 +3202,8 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
 def get_current_state_dict(lora=False, base=True):
     if "scripts.patches" not in sys.modules:
         print(" - loading script.patches...")
-        patches = script_loading.load_module(os.path.join(scriptdir, "scripts", "patches.py"))
-        sys.modules["scripts.patches"] = patches
+        patches = load_module(os.path.join(scriptdir, "scripts", "patches.py"))
+        #sys.modules["scripts.patches"] = patches
 
     from scripts.patches import StateDictPatches, StateDictLoraPatches
 
