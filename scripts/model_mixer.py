@@ -821,43 +821,43 @@ class ModelMixerScript(scripts.Script):
                     with gr.Column(scale=1, min_width=100):
                         gr.Slider(visible=False)
                     with gr.Column(scale=2, min_width=200):
-                        base = gr.Slider(label="BASE", minimum=0, maximum=1, step=0.001, value=0.5)
+                        base = gr.Slider(label="BASE", minimum=0, maximum=1, step=0.0001, value=0.5)
                     with gr.Column(scale=1, min_width=100):
                         gr.Slider(visible=False)
 
                 with gr.Row():
                     with gr.Column(scale=2, min_width=200):
-                        in00 = gr.Slider(label="IN00", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        in01 = gr.Slider(label="IN01", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        in02 = gr.Slider(label="IN02", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        in03 = gr.Slider(label="IN03", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        in04 = gr.Slider(label="IN04", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        in05 = gr.Slider(label="IN05", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        in06 = gr.Slider(label="IN06", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        in07 = gr.Slider(label="IN07", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        in08 = gr.Slider(label="IN08", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        in09 = gr.Slider(label="IN09", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        in10 = gr.Slider(label="IN10", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        in11 = gr.Slider(label="IN11", minimum=0.0, maximum=1, step=0.001, value=0.5)
+                        in00 = gr.Slider(label="IN00", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        in01 = gr.Slider(label="IN01", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        in02 = gr.Slider(label="IN02", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        in03 = gr.Slider(label="IN03", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        in04 = gr.Slider(label="IN04", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        in05 = gr.Slider(label="IN05", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        in06 = gr.Slider(label="IN06", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        in07 = gr.Slider(label="IN07", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        in08 = gr.Slider(label="IN08", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        in09 = gr.Slider(label="IN09", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        in10 = gr.Slider(label="IN10", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        in11 = gr.Slider(label="IN11", minimum=0.0, maximum=1, step=0.0001, value=0.5)
                     with gr.Column(scale=2, min_width=200):
-                        ou11 = gr.Slider(label="OUT11", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        ou10 = gr.Slider(label="OUT10", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        ou09 = gr.Slider(label="OUT09", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        ou08 = gr.Slider(label="OUT08", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        ou07 = gr.Slider(label="OUT07", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        ou06 = gr.Slider(label="OUT06", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        ou05 = gr.Slider(label="OUT05", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        ou04 = gr.Slider(label="OUT04", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        ou03 = gr.Slider(label="OUT03", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        ou02 = gr.Slider(label="OUT02", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        ou01 = gr.Slider(label="OUT01", minimum=0.0, maximum=1, step=0.001, value=0.5)
-                        ou00 = gr.Slider(label="OUT00", minimum=0.0, maximum=1, step=0.001, value=0.5)
+                        ou11 = gr.Slider(label="OUT11", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        ou10 = gr.Slider(label="OUT10", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        ou09 = gr.Slider(label="OUT09", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        ou08 = gr.Slider(label="OUT08", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        ou07 = gr.Slider(label="OUT07", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        ou06 = gr.Slider(label="OUT06", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        ou05 = gr.Slider(label="OUT05", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        ou04 = gr.Slider(label="OUT04", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        ou03 = gr.Slider(label="OUT03", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        ou02 = gr.Slider(label="OUT02", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        ou01 = gr.Slider(label="OUT01", minimum=0.0, maximum=1, step=0.0001, value=0.5)
+                        ou00 = gr.Slider(label="OUT00", minimum=0.0, maximum=1, step=0.0001, value=0.5)
 
                 with gr.Row():
                     with gr.Column(scale=1, min_width=100):
                         gr.Slider(visible=False)
                     with gr.Column(scale=2):
-                        mi00 = gr.Slider(label="M00", minimum=0.0, maximum=1, step=0.001, value=0.5)
+                        mi00 = gr.Slider(label="M00", minimum=0.0, maximum=1, step=0.0001, value=0.5)
                     with gr.Column(scale=1, min_width=100):
                         gr.Slider(visible=False)
 
