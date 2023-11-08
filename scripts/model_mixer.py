@@ -3097,6 +3097,11 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
             "ss_network_alpha": str(float(lora_dim)),
             "ss_output_name": custom_name,
         }
+    v2 = False
+    if 'model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight' in state_dict_base:
+        v2 = state_dict_base['model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight'].shape[1] == 1024
+    metadata["ss_v2"] = str(v2)
+
     target_dtype = torch.float16
     if precision == "fp32":
         target_dtype = torch.float
