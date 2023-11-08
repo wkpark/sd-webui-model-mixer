@@ -1064,11 +1064,11 @@ class ModelMixerScript(scripts.Script):
                         with gr.Group(visible=False) as lora_options:
                             with gr.Row():
                                 lora_dim = gr.Radio(label="Lora DIM", choices=[4, 8, 16, 32, 64, 128, 256, 512, 768, 1024], value=64)
-
+                            with gr.Row():
+                                min_diff = gr.Number(label="Minimum Difference", info="Minimum difference to consider different textencoder", minimum=0., maximum=1.0, step=0.000001, value=0.0001)
+                                clamp_quantile = gr.Slider(label="Clamp Quantile", info="Quantile clamping value", minimum=0., maximum=1.0, step=0.001, value=0.99)
                         with gr.Row():
                             precision = gr.Radio(label="Save precision", choices=[("fp16", "fp16"), ("fp32 (float)", "fp32"), ("bf16", "bf16")], value="fp16")
-
-                        with gr.Row():
                             calc_device = gr.Radio(label="Calc device", choices=[("auto", "auto"), ("cuda (faster)", "cuda"), ("cpu (high precision)", "cpu")], value="cuda")
 
                         with gr.Row():
@@ -1438,7 +1438,8 @@ class ModelMixerScript(scripts.Script):
         extract_lora.click(
             fn=extract_lora_from_current_model,
             inputs=[save_lora_mode, model_orig, diff_model_mode,
-                custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, precision, calc_device, save_lora_settings, metadata_settings],
+                custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, min_diff, clamp_quantile,
+                precision, calc_device, save_lora_settings, metadata_settings],
             outputs=[logging]
         )
 
@@ -2904,7 +2905,7 @@ def fineman(fine, isxl):
 
 
 def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
-        custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim,
+        custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, min_diff, clamp_quantile,
         precision, calc_device, save_settings, metadata_settings, progress=gr.Progress(track_tqdm=False)):
     current = getattr(shared, "modelmixer_config", None)
     if current is None:
@@ -3087,7 +3088,15 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
             print(f"No scripts.kohya.* modules found. ERROR: {e}")
             return gr.update(value="No scripts.kohya.* modules found")
 
-        extracted_lora = svd(dict(state_dict_base), dict(state_dict_trained), fname, lora_dim, min_diff=1e-6, clamp_quantile=1.0, device=calc_device)
+        # sanitiy check
+        if min_diff < 0.:
+            min_diff = 1e-6
+        if clamp_quantile < 0. or clamp_quantile > 1.0:
+            min_diff = 1.0
+        if lora_dim <= 0:
+            return gr.update(value="Invalid LoRA DIM")
+
+        extracted_lora = svd(dict(state_dict_base), dict(state_dict_trained), fname, lora_dim, min_diff=min_diff, clamp_quantile=clamp_quantile, device=calc_device)
         gc.collect()
         devices.torch_gc()
         lora_state_dict = extracted_lora.state_dict()
