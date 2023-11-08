@@ -3217,6 +3217,13 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
     # fix/check bad CLIP ids
     fixclip(state_dict, save_settings, isxl)
 
+    # for safetensors contiguous error
+    print(" - check contiguous...")
+    for key in state_dict.keys():
+        v = state_dict[key]
+        v = v.detach().cpu().contiguous()
+        state_dict[key] = v
+
     try:
         if ext == ".safetensors":
             save_file(state_dict, fname, metadata=metadata)
