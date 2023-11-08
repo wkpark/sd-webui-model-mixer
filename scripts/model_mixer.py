@@ -3102,6 +3102,10 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
         v2 = state_dict_base['model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight'].shape[1] == 1024
     metadata["ss_v2"] = str(v2)
 
+    if isxl:
+        # fix for SDXL LoRA
+        metadata["ss_base_model_version"] = "sdxl_base_v1-0"
+
     target_dtype = torch.float16
     if precision == "fp32":
         target_dtype = torch.float
