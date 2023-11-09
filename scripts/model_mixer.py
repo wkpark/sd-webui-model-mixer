@@ -3198,10 +3198,29 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
     if 'model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight' in state_dict_base:
         v2 = state_dict_base['model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight'].shape[1] == 1024
     metadata["ss_v2"] = str(v2)
+    v_parameterization = v2
+    try:
+        from scripts.kohya.sai_model_spec import build_metadata
+
+        sai_metadata = build_metadata(
+            None, v2, v_parameterization, isxl, True, False, time.time(), title=custom_name
+        )
+        metadata.update(sai_metadata)
+    except Exception as e:
+        pass
 
     if isxl:
         # fix for SDXL LoRA
         metadata["ss_base_model_version"] = "sdxl_base_v1-0"
+    else:
+        version_str = "sd"
+        if v2:
+            version_str += "_v2"
+        else:
+            version_str += "_v1"
+        if v_parameterization:
+            version_str += "_v"
+        metadata["ss_base_model_version"] = version_str
 
     target_dtype = torch.float16
     if precision == "fp32":
