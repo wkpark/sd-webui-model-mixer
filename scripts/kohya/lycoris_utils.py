@@ -121,7 +121,8 @@ def extract_diff(
     extract_device = 'cpu',
     use_bias = False,
     sparsity = 0.98,
-    small_conv = True
+    small_conv = True,
+    min_diff = 0.0,
 ):
     UNET_TARGET_REPLACE_MODULE = [
         "Transformer2DModel", 
@@ -148,7 +149,8 @@ def extract_diff(
         root_module: torch.nn.Module,
         target_module: torch.nn.Module,
         target_replace_modules,
-        target_replace_names = []
+        target_replace_names = [],
+        min_diff = 0.0,
     ):
         loras = {}
         temp = {}
@@ -177,10 +179,16 @@ def extract_diff(
                         if torch.allclose(root_weight, weights[child_name]):
                             skipped += 1
                             continue
-                    
+                        diff = child_module.weight - weights[child_name]
+                        if min_diff > 0.0 and min_diff > torch.max(torch.abs(diff)):
+                            skipped += 1
+                            continue
+                    else:
+                        continue
+
                     if layer == 'Linear':
                         weight, decompose_mode = extract_linear(
-                            (child_module.weight - weights[child_name]),
+                            diff,
                             mode,
                             linear_mode_param,
                             device = extract_device,
@@ -191,7 +199,7 @@ def extract_diff(
                         is_linear = (child_module.weight.shape[2] == 1
                                      and child_module.weight.shape[3] == 1)
                         weight, decompose_mode = extract_conv(
-                            (child_module.weight - weights[child_name]), 
+                            diff,
                             mode,
                             linear_mode_param if is_linear else conv_mode_param,
                             device = extract_device,
@@ -213,8 +221,7 @@ def extract_diff(
                                 extract_c, extract_a.flatten(1, -1), extract_b.flatten(1, -1)
                             ).detach().cpu().contiguous()
                             del extract_c
-                    else:
-                        continue
+
                     if decompose_mode == 'low rank':
                         loras[f'{lora_name}.lora_down.weight'] = extract_a.detach().cpu().contiguous().half()
                         loras[f'{lora_name}.lora_up.weight'] = extract_b.detach().cpu().contiguous().half()
@@ -244,10 +251,17 @@ def extract_diff(
                     if torch.allclose(root_weight, weights):
                         skipped += 1
                         continue
-                
+
+                    diff = root_weight - weights
+                    if min_diff > 0.0 and min_diff > torch.max(torch.abs(diff)):
+                        skipped += 1
+                        continue
+                else:
+                    continue
+
                 if layer == 'Linear':
                     weight, decompose_mode = extract_linear(
-                        (root_weight - weights),
+                        diff,
                         mode,
                         linear_mode_param,
                         device = extract_device,
@@ -260,7 +274,7 @@ def extract_diff(
                         and root_weight.shape[3] == 1
                     )
                     weight, decompose_mode = extract_conv(
-                        (root_weight - weights), 
+                        diff,
                         mode,
                         linear_mode_param if is_linear else conv_mode_param,
                         device = extract_device,
@@ -282,8 +296,7 @@ def extract_diff(
                             extract_c, extract_a.flatten(1, -1), extract_b.flatten(1, -1)
                         ).detach().cpu().contiguous()
                         del extract_c
-                else:
-                    continue
+
                 if decompose_mode == 'low rank':
                     loras[f'{lora_name}.lora_down.weight'] = extract_a.detach().cpu().contiguous().half()
                     loras[f'{lora_name}.lora_up.weight'] = extract_b.detach().cpu().contiguous().half()
@@ -324,7 +337,8 @@ def extract_diff(
     text_encoder_loras = make_state_dict(
         prefix_text_encoder,
         base_model[0], db_model[0], 
-        TEXT_ENCODER_TARGET_REPLACE_MODULE
+        TEXT_ENCODER_TARGET_REPLACE_MODULE,
+        min_diff = min_diff,
     )
     base_model[0] = None
     db_model[0] = None
@@ -334,7 +348,8 @@ def extract_diff(
         text_encoder_loras2 = make_state_dict(
             LORA_PREFIX_TEXT_ENCODER2,
             base_model[1], db_model[1],
-            TEXT_ENCODER_TARGET_REPLACE_MODULE
+            TEXT_ENCODER_TARGET_REPLACE_MODULE,
+            min_diff = min_diff,
         )
         base_model[1] = None
         db_model[1] = None
