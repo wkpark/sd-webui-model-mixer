@@ -1207,11 +1207,12 @@ class ModelMixerScript(scripts.Script):
                     with gr.Row():
                         metadata_settings = gr.CheckboxGroup(["merge recipe"], value=["merge recipe"], label="Metadata settings")
 
-                metadata_json = gr.TextArea('{}', label="Metadata in JSON format")
-                with gr.Row():
-                    read_metadata = gr.Button("Read current metadata")
-                    read_model_a_metadata = gr.Button("model A metadata")
-                    read_model_b_metadata = gr.Button("model B metadata")
+                with gr.Accordion("Metadata Viewer", open=False):
+                    metadata_json = gr.TextArea('{}', label="Metadata in JSON format", lines=4)
+                    with gr.Row():
+                        read_metadata = gr.Button("Read current metadata")
+                        read_model_a_metadata = gr.Button("model A metadata")
+                        read_model_b_metadata = gr.Button("model B metadata")
 
             with gr.Row(variant="compact"):
                 unload_sd_model = gr.Button("Unload model to free VRAM")
