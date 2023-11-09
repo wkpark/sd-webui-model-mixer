@@ -3098,16 +3098,14 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
     print(f" - svd calc device = {calc_device}")
     if "LyCORIS" in save_settings:
         try:
-            #from lycoris.utils import extract_diff
-            lycoris_utils = load_module(os.path.join(scriptdir, "scripts", "kohya", "lycoris_utils.py"))
+            load_module(os.path.join(scriptdir, "scripts", "kohya"))
+            # for dev purpose
+            load_module(os.path.join(scriptdir, "scripts", "kohya", "lycoris_utils.py"))
+            load_module(os.path.join(scriptdir, "scripts", "kohya", "model_utils.py"))
             from scripts.kohya.lycoris_utils import extract_diff
-            model_utils = load_module(os.path.join(scriptdir, "scripts", "kohya", "model_utils.py"))
-            #sys.modules["scripts.kohya.model_utils"] = model_utils
             if isxl:
                 sdxl_model_util = load_module(os.path.join(scriptdir, "scripts", "kohya", "sdxl_model_util.py"))
-                #sys.modules["scripts.kohya.sdxl_model_util"] = sdxl_model_util
             from scripts.kohya.model_utils import load_models_from_stable_diffusion_checkpoint
-            #from lycoris.kohya.model_utils import load_models_from_stable_diffusion_checkpoint
         except Exception as e:
             print(f"No lycoris module found {e}")
             return gr.update(value="LyCORIS module not found")
@@ -3165,15 +3163,12 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
 
     else: # LoRA
         try:
-            model_utils = load_module(os.path.join(scriptdir, "scripts", "kohya", "model_utils.py"))
-            #sys.modules["scripts.kohya.model_utils"] = model_utils
+            load_module(os.path.join(scriptdir, "scripts", "kohya"))
+            load_module(os.path.join(scriptdir, "scripts", "kohya", "lora.py"))
+            load_module(os.path.join(scriptdir, "scripts", "kohya", "model_utils.py"))
             if isxl:
-                sdxl_model_util = load_module(os.path.join(scriptdir, "scripts", "kohya", "sdxl_model_util.py"))
-                #sys.modules["scripts.kohya.sdxl_model_util"] = sdxl_model_util
-            lora = load_module(os.path.join(scriptdir, "scripts", "kohya", "lora.py"))
-            #sys.modules["scripts.kohya.lora"] = lora
-            extract_lora = load_module(os.path.join(scriptdir, "scripts", "kohya", "extract_lora_from_models.py"))
-            #sys.modules["scripts.kohya.extract_lora_from_models"] = extract_lora
+                load_module(os.path.join(scriptdir, "scripts", "kohya", "sdxl_model_util.py"))
+            load_module(os.path.join(scriptdir, "scripts", "kohya", "extract_lora_from_models.py"))
             from scripts.kohya.extract_lora_from_models import svd
         except Exception as e:
             print(f"No scripts.kohya.* modules found. ERROR: {e}")
