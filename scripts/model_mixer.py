@@ -1037,44 +1037,108 @@ class ModelMixerScript(scripts.Script):
 
                     with gr.Tab("Save as LoRA/LyCORIS"):
                         with gr.Row():
+                            save_lora_settings = gr.CheckboxGroup(["LoRA", "LyCORIS", "overwrite", "safetensors"], value=["LyCORIS", "safetensors"], label="Extract settings")
+                        with gr.Row():
                             save_lora_mode = gr.Radio([("Extract merged LoRAs", "extract"), ("Difference between base and current", "diff")],
-                                value="extract", label="Save method")
+                                value="extract", label="Extract method")
                         with gr.Group(visible=False) as model_orig_options:
                             tabname = "img2img" if is_img2img else "txt2img"
                             with gr.Row():
                                 model_orig = gr.Dropdown(sd_models.checkpoint_tiles(), value="", elem_id=f"model_mixer_model_orig_{tabname}", label="Base model",
-                                    info="Original base model. If not selected, current merged model will be used as the base model and perform extract mode.",
+                                    info="If selected, 'Tuned model' - 'current model' will be performed to extract LoRA.",
                                     interactive=True)
-                                create_refresh_button(model_orig, mm_list_models, lambda: {"choices": ["Current model"]+sd_models.checkpoint_tiles()}, "mm_refresh_model_orig")
-                                model_tuned = gr.Dropdown(["Current model"] + sd_models.checkpoint_tiles(), value="Current model", elem_id=f"model_mixer_model_tuned_{tabname}", label="Tuned model",
-                                    info="Tuned model. LoRA will be extracted from 'Tuned model' - 'base model'.",
-                                    interactive=True)
+                                create_refresh_button(model_orig, mm_list_models, lambda: {"choices": sd_models.checkpoint_tiles()}, "mm_refresh_model_orig")
+                                model_tuned = gr.Dropdown(["Current model"], value="Current model", elem_id=f"model_mixer_model_tuned_{tabname}", label="Tuned model",
+                                    info="If selected, LoRA will be extracted from 'Tuned model' - 'base model'.",
+                                    interactive=False)
                                 create_refresh_button(model_tuned, mm_list_models, lambda: {"choices": ["Current model"]+sd_models.checkpoint_tiles()}, "mm_refresh_model_tuned")
+
+                            model_orig.select(
+                                fn=lambda model: gr.update(interactive=True, choices=["Current model"]+sd_models.checkpoint_tiles()) if model != "" else gr.update(),
+                                inputs=[model_orig],
+                                outputs=[model_tuned],
+                                show_progress=False,
+                            )
+
                             with gr.Row():
                                 diff_model_mode = gr.Radio([("without LoRAs", "None"), ("with LoRAs", "lora")],
-                                    value="lora", label="Current model options", info="If any LoRAs used in the prompot, current merge model has LoRAs.")
-                        with gr.Row():
-                            save_lora_settings = gr.CheckboxGroup(["overwrite","safetensors", "LoRA", "LyCORIS"], value=["LyCORIS","safetensors"], label="Select settings")
+                                    value="lora", label="Current model options", info="If any LoRAs used in the prompt, the current model includes LoRA weights.")
                         with gr.Group() as lycoris_options:
+                            extract_info = {
+                                "Fixed": "Fixed Layer Dimension mode",
+                                "Threshold": "DIM = sum(S>threshold)",
+                                "Ratio": "DIM = sum(S>max(S)*ratio)",
+                                "Quantile": "DIM = sum(cumsum(S) < sum(S)*quantile)",
+                            }
                             with gr.Row():
-                                extract_mode = gr.Radio(label="Extraction Mode", info="", choices=["Fixed", "Threshold", "Ratio", "Quantile"], value="Fixed")
+                                extract_mode = gr.Radio(label="Extraction Mode", info=extract_info["Fixed"], choices=["Fixed", "Threshold", "Ratio", "Quantile"], value="Fixed")
+
+                            extract_mode.change(
+                                fn=lambda mode: gr.update(info=extract_info[mode]),
+                                inputs=[extract_mode],
+                                outputs=[extract_mode],
+                                show_progress=False,
+                            )
+
                             with gr.Group() as fixed_options:
                                 with gr.Row():
-                                    lin_dim = gr.Radio(label="Linear DIM", choices=[1, 4, 8, 16, 32, 64, 128, 256, 512, 768], value=64)
+                                    lin_dim = gr.Radio(label="Linear Layer Dimension", choices=[1, 4, 8, 16, 32, 64, 128, 256, 512, 768], value=64)
                                 with gr.Row():
-                                    conv_dim = gr.Radio(label="Conv DIM", choices=[1, 4, 8, 16, 32, 64, 128, 256, 512, 768], value=64)
-                            with gr.Row(visible=False) as variable_options:
-                                lin_slider = gr.Slider(label="Linear", info="Singular value for Linear layer", minimum=0., maximum=1., value=0., step=0.001)
-                                conv_slider = gr.Slider(label="Conv", info="Singular value for Conv layer", minimum=0., maximum=1., value=0., step=0.001)
+                                    conv_dim = gr.Radio(label="Conv2D Layer Dimension", choices=[1, 4, 8, 16, 32, 64, 128, 256, 512, 768], value=64)
+                            with gr.Column(visible=False) as variable_options:
+                                with gr.Accordion("Variable Layer Dimension Options", open=False):
+                                    with gr.Row():
+                                        lin_slider = gr.Slider(label="Linear Layer", info="Singular value", minimum=0., maximum=1., value=0., step=0.001)
+                                        conv_slider = gr.Slider(label="Conv2D Layer", info="Singular value", minimum=0., maximum=1., value=0., step=0.001)
+                                rank_info = {
+                                    "Threshold": "Threshold to determine rank dim",
+                                    "Ratio": "Ratio value to determine rank dim",
+                                    "Quantile": "Quantile value to determine rank dim",
+                                }
+                            extract_mode.change(
+                                fn=lambda mode: [
+                                    gr.update(info=f"{rank_info[mode]}") if mode != "Fixed" else gr.update(),
+                                    gr.update(info=f"{rank_info[mode]}") if mode != "Fixed" else gr.update(),
+                                ],
+                                inputs=[extract_mode],
+                                outputs=[lin_slider, conv_slider],
+                                show_progress=False,
+                            )
                         with gr.Group(visible=False) as lora_options:
                             with gr.Row():
-                                lora_dim = gr.Radio(label="Lora DIM", choices=[4, 8, 16, 32, 64, 128, 256, 512, 768, 1024], value=64)
-                            with gr.Row():
-                                min_diff = gr.Number(label="Minimum Difference", info="Minimum difference to consider different textencoder", minimum=0., maximum=1.0, step=0.000001, value=0.0001)
-                                clamp_quantile = gr.Slider(label="Clamp Quantile", info="Quantile clamping value", minimum=0., maximum=1.0, step=0.001, value=0.99)
+                                lora_dim = gr.Radio(label="Conv Dimension", choices=[4, 8, 16, 32, 64, 128, 256, 512, 768, 1024], value=64)
+
+                            with gr.Accordion("LoRA Extraction Options", open=False):
+                                with gr.Row():
+                                    min_diff = gr.Number(label="Textencoder Minimum Diff", info="Minimum difference to consider different Textencoder", minimum=0., maximum=1.0, step=0.000001, value=0.0001)
+                                    clamp_quantile = gr.Slider(label="Clamp Quantile", info="Quantile clamping value", minimum=0., maximum=1.0, step=0.001, value=0.99)
                         with gr.Row():
-                            precision = gr.Radio(label="Save precision", choices=[("fp16", "fp16"), ("fp32 (float)", "fp32"), ("bf16", "bf16")], value="fp16")
-                            calc_device = gr.Radio(label="Calc device", choices=[("auto", "auto"), ("cuda (faster)", "cuda"), ("cpu (high precision)", "cpu")], value="cuda")
+                            precision = gr.Radio(label="Save precision", info="Select weight type", choices=[("fp16", "fp16"), ("fp32 (32bit)", "fp32"), ("bf16", "bf16")], value="fp16")
+                            calc_device = gr.Radio(label="Calculation device", choices=[("auto", "auto"), ("GPU", "cuda"), ("CPU", "cpu")], value="cuda",
+                                info="SVD calculation will be performed on this device.")
+
+                            prec_info = {
+                                'fp16': 'float16 type (half precision. default)',
+                                'fp32': 'float32 type (single precision)',
+                                'bf16': 'bfloat16 type (less memory but 32bit range)',
+                            }
+                            precision.change(
+                                fn=lambda t: gr.update(info=prec_info[t]),
+                                inputs=[precision],
+                                outputs=[precision],
+                                show_progress=False,
+                            )
+                            device_info = {
+                                'auto': 'Device will be selected by system',
+                                'cpu': 'SVD calc using CPU (higher precision but slow)',
+                                'cuda': 'SVD calc using GPU (high speed)',
+                            }
+                            calc_device.change(
+                                fn=lambda d: gr.update(info=device_info[d]),
+                                inputs=[calc_device],
+                                outputs=[calc_device],
+                                show_progress=False,
+                            )
 
                         with gr.Row():
                             custom_lora_name = gr.Textbox(label="Custom LoRA Name", placeholder="Name your LoRA", elem_id="model_mixer_custom_lora_name")
