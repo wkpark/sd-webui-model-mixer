@@ -1040,14 +1040,19 @@ class ModelMixerScript(scripts.Script):
                             save_lora_mode = gr.Radio([("Extract merged LoRAs", "extract"), ("Difference between base and current", "diff")],
                                 value="extract", label="Save method")
                         with gr.Group(visible=False) as model_orig_options:
+                            tabname = "img2img" if is_img2img else "txt2img"
                             with gr.Row():
-                                model_orig = gr.Dropdown(["None"] + sd_models.checkpoint_tiles(), value="None", elem_id="model_mixer_model_orig", label="Base model",
+                                model_orig = gr.Dropdown(sd_models.checkpoint_tiles(), value="", elem_id=f"model_mixer_model_orig_{tabname}", label="Base model",
                                     info="Original base model. If not selected, current merged model will be used as the base model and perform extract mode.",
                                     interactive=True)
-                                create_refresh_button(model_orig, mm_list_models, lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()}, "mm_refresh_model_orig")
+                                create_refresh_button(model_orig, mm_list_models, lambda: {"choices": ["Current model"]+sd_models.checkpoint_tiles()}, "mm_refresh_model_orig")
+                                model_tuned = gr.Dropdown(["Current model"] + sd_models.checkpoint_tiles(), value="Current model", elem_id=f"model_mixer_model_tuned_{tabname}", label="Tuned model",
+                                    info="Tuned model. LoRA will be extracted from 'Tuned model' - 'base model'.",
+                                    interactive=True)
+                                create_refresh_button(model_tuned, mm_list_models, lambda: {"choices": ["Current model"]+sd_models.checkpoint_tiles()}, "mm_refresh_model_tuned")
                             with gr.Row():
                                 diff_model_mode = gr.Radio([("without LoRAs", "None"), ("with LoRAs", "lora")],
-                                    value="lora", label="Include all LoRAs used in the prompt")
+                                    value="lora", label="Current model options", info="If any LoRAs used in the prompot, current merge model has LoRAs.")
                         with gr.Row():
                             save_lora_settings = gr.CheckboxGroup(["overwrite","safetensors", "LoRA", "LyCORIS"], value=["LyCORIS","safetensors"], label="Select settings")
                         with gr.Group() as lycoris_options:
@@ -1437,7 +1442,7 @@ class ModelMixerScript(scripts.Script):
 
         extract_lora.click(
             fn=extract_lora_from_current_model,
-            inputs=[save_lora_mode, model_orig, diff_model_mode,
+            inputs=[save_lora_mode, model_orig, model_tuned, diff_model_mode,
                 custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, min_diff, clamp_quantile,
                 precision, calc_device, save_lora_settings, metadata_settings],
             outputs=[logging]
@@ -2904,28 +2909,29 @@ def fineman(fine, isxl):
     return None
 
 
-def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
+def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, diff_model_mode,
         custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, min_diff, clamp_quantile,
         precision, calc_device, save_settings, metadata_settings, progress=gr.Progress(track_tqdm=False)):
-    current = getattr(shared, "modelmixer_config", None)
-    if current is None:
-        return gr.update(value="No merged model found")
 
     if shared.sd_model and shared.sd_model.sd_checkpoint_info:
         metadata = shared.sd_model.sd_checkpoint_info.metadata.copy()
     else:
-        return gr.update(value="Not a valid merged model")
+        return gr.update(value="Have no valid current model")
 
-    sha256 = current["hash"]
-    if shared.sd_model.sd_checkpoint_info.sha256 != sha256:
-        err_msg = "Current checkpoint is not a merged one."
-        print(err_msg)
-        return gr.update(value=err_msg)
+    current = getattr(shared, "modelmixer_config", None)
+    if current is None:
+        print(" - Current model is not a merged model. ignored...")
+
+    else:
+        sha256 = current["hash"]
+        if shared.sd_model.sd_checkpoint_info.sha256 != sha256:
+            err_msg = " - Current model is not a merged model. ignored..."
+            print(err_msg)
 
     if "sd_merge_recipe" not in metadata or "sd_merge_models" not in metadata:
-        return gr.update(value="Not a valid merged model")
+        print(" - No merged recipe found")
 
-    if metadata_settings is not None and "merge recipe" in metadata_settings:
+    elif metadata_settings is not None and "merge recipe" in metadata_settings:
         metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"])
     else:
         del metadata["sd_merge_recipe"]
@@ -2934,11 +2940,17 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
 
     # check save_lora_mode
     state_dict_base = None
+    state_dict_trained = None
     if save_lora_mode == "diff" and model_orig != "None":
         checkpointinfo = sd_models.get_closet_checkpoint_match(model_orig)
         if checkpointinfo:
             print(f" - load original base model {model_orig}...")
             state_dict_base = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu")
+        if state_dict_base is not None and model_tuned != "Current model":
+            checkpointinfo = sd_models.get_closet_checkpoint_match(model_tuned)
+            if checkpointinfo:
+                print(f" - load tuned model {model_tuned}...")
+                state_dict_trained = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu")
     if save_lora_mode == "diff" and state_dict_base is None:
         save_lora_mode = "extract"
         print("No base model selected. Use extract mode to extract any LoRAs used in the prompt...")
@@ -2966,7 +2978,9 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, diff_model_mode,
         return gr.update(value=err_msg)
 
     if save_lora_mode == "diff":
-        if diff_model_mode == "lora":
+        if state_dict_trained is not None:
+            pass
+        elif diff_model_mode == "lora":
             print(" - \033[92mget the merged model with LoRAs weighted\033[0m, if any LoRAs have been used in the prompt...")
             state_dict_trained = get_current_state_dict(lora=True, base=False)[0]
         else:
