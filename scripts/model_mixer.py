@@ -1037,7 +1037,7 @@ class ModelMixerScript(scripts.Script):
 
                     with gr.Tab("Save as LoRA/LyCORIS"):
                         with gr.Row():
-                            save_lora_settings = gr.CheckboxGroup(["LoRA", "LyCORIS", "overwrite", "safetensors"], value=["LyCORIS", "safetensors"], label="Extract settings")
+                            save_lora_settings = gr.CheckboxGroup(["LoRA", "LyCORIS"], value=["LyCORIS"], label="Extract settings")
                         with gr.Row():
                             save_lora_mode = gr.Radio([("Extract merged LoRAs", "extract"), ("Difference between base and current", "diff")],
                                 value="extract", label="Extract method")
@@ -1117,7 +1117,8 @@ class ModelMixerScript(scripts.Script):
                             calc_device = gr.Radio(label="Calculation device", choices=[("auto", "auto"), ("GPU", "cuda"), ("CPU", "cpu")], value="cuda",
                                 info="SVD calculation will be performed on this device.")
                         with gr.Row():
-                            extra_settings = gr.CheckboxGroup([("No half (more RAM needed)", "nohalf")], value=[], label="Misc settings")
+                            extra_settings = gr.CheckboxGroup([("overwrite", "overwrite"), ("safetensors", "safetensors"), ("No half (more RAM needed)", "nohalf")],
+                                value=["safetensors"], label="Additional settings")
 
                             prec_info = {
                                 'fp16': 'float16 type (half precision. default)',
@@ -3022,7 +3023,7 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
         print("No base model selected. Use extract mode to extract any LoRAs used in the prompt...")
 
     # setup file, imported from supermerger
-    ext = ".safetensors" if "safetensors" in save_settings else ".ckpt"
+    ext = ".safetensors" if "safetensors" in extra_settings else ".ckpt"
 
     if not custom_name or custom_name == "":
         return gr.update(value="No LoRA name given!")
@@ -3038,7 +3039,7 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
        fname = fname[:240] + ext
 
     # check if output file already exists
-    if os.path.isfile(fname) and not "overwrite" in save_settings:
+    if os.path.isfile(fname) and not "overwrite" in extra_settings:
         err_msg = f"Output file ({fname}) exists. not saved."
         print(err_msg)
         return gr.update(value=err_msg)
