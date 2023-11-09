@@ -30,7 +30,7 @@ def extract_conv(
     device = 'cpu',
     is_cp = False,
 ) -> Tuple[nn.Parameter, nn.Parameter]:
-    weight = weight.to(device)
+    weight = weight.float().to(device)
     out_ch, in_ch, kernel_size, _ = weight.shape
     
     U, S, Vh = linalg.svd(weight.reshape(out_ch, -1))
@@ -61,9 +61,9 @@ def extract_conv(
     U = U @ torch.diag(S)
     Vh = Vh[:lora_rank, :]
     
-    diff = (weight - (U @ Vh).reshape(out_ch, in_ch, kernel_size, kernel_size)).detach().cpu()
-    extract_weight_A = Vh.reshape(lora_rank, in_ch, kernel_size, kernel_size).detach().cpu()
-    extract_weight_B = U.reshape(out_ch, lora_rank, 1, 1).detach().cpu()
+    diff = (weight - (U @ Vh).reshape(out_ch, in_ch, kernel_size, kernel_size)).detach().to(dtype=weight.dtype).cpu()
+    extract_weight_A = Vh.reshape(lora_rank, in_ch, kernel_size, kernel_size).detach().to(dtype=weight.dtype).cpu()
+    extract_weight_B = U.reshape(out_ch, lora_rank, 1, 1).detach().to(dtype=weight.dtype).cpu()
     del U, S, Vh, weight
     return (extract_weight_A, extract_weight_B, diff), 'low rank'
 
@@ -74,7 +74,7 @@ def extract_linear(
     mode_param = 0,
     device = 'cpu',
 ) -> Tuple[nn.Parameter, nn.Parameter]:
-    weight = weight.to(device)
+    weight = weight.float().to(device)
     out_ch, in_ch = weight.shape
     
     U, S, Vh = linalg.svd(weight)
@@ -105,9 +105,9 @@ def extract_linear(
     U = U @ torch.diag(S)
     Vh = Vh[:lora_rank, :]
     
-    diff = (weight - U @ Vh).detach().cpu()
-    extract_weight_A = Vh.reshape(lora_rank, in_ch).detach().cpu()
-    extract_weight_B = U.reshape(out_ch, lora_rank).detach().cpu()
+    diff = (weight - U @ Vh).detach().to(dtype=weight.dtype).cpu()
+    extract_weight_A = Vh.reshape(lora_rank, in_ch).detach().to(dtype=weight.dtype).cpu()
+    extract_weight_B = U.reshape(out_ch, lora_rank).detach().to(dtype=weight.dtype).cpu()
     del U, S, Vh, weight
     return (extract_weight_A, extract_weight_B, diff), 'low rank'
 
