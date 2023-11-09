@@ -3187,7 +3187,7 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
         if lora_dim <= 0:
             return gr.update(value="Invalid LoRA DIM")
 
-        extracted_lora = svd(dict(state_dict_base), dict(state_dict_trained), fname, lora_dim, min_diff=min_diff, clamp_quantile=clamp_quantile, device=calc_device,
+        extracted_lora = svd(dict(state_dict_base), dict(state_dict_trained), None, lora_dim, min_diff=min_diff, clamp_quantile=clamp_quantile, device=calc_device,
             no_half="nohalf" in extra_settings,
         )
         gc.collect()
