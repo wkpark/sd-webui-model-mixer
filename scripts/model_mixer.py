@@ -1116,6 +1116,8 @@ class ModelMixerScript(scripts.Script):
                             precision = gr.Radio(label="Save precision", info="Select weight type", choices=[("fp16", "fp16"), ("fp32 (32bit)", "fp32"), ("bf16", "bf16")], value="fp16")
                             calc_device = gr.Radio(label="Calculation device", choices=[("auto", "auto"), ("GPU", "cuda"), ("CPU", "cpu")], value="cuda",
                                 info="SVD calculation will be performed on this device.")
+                        with gr.Row():
+                            extra_settings = gr.CheckboxGroup([("No half (more RAM needed)", "nohalf")], value=[], label="Misc settings")
 
                             prec_info = {
                                 'fp16': 'float16 type (half precision. default)',
@@ -1508,7 +1510,7 @@ class ModelMixerScript(scripts.Script):
             fn=extract_lora_from_current_model,
             inputs=[save_lora_mode, model_orig, model_tuned, diff_model_mode,
                 custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, min_diff, clamp_quantile,
-                precision, calc_device, save_lora_settings, metadata_settings],
+                precision, calc_device, save_lora_settings, metadata_settings, extra_settings],
             outputs=[logging]
         )
 
@@ -2975,7 +2977,7 @@ def fineman(fine, isxl):
 
 def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, diff_model_mode,
         custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, min_diff, clamp_quantile,
-        precision, calc_device, save_settings, metadata_settings, progress=gr.Progress(track_tqdm=False)):
+        precision, calc_device, save_settings, metadata_settings, extra_settings, progress=gr.Progress(track_tqdm=False)):
 
     if shared.sd_model and shared.sd_model.sd_checkpoint_info:
         metadata = shared.sd_model.sd_checkpoint_info.metadata.copy()
@@ -3114,7 +3116,16 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
         else:
             from scripts.kohya.sdxl_model_util import load_models_from_sdxl_checkpoint, MODEL_VERSION_SDXL_BASE_V1_0
             base = load_models_from_sdxl_checkpoint(MODEL_VERSION_SDXL_BASE_V1_0, dict(state_dict_base), "cpu")
+            no_half = "nohalf" in extra_settings
+            if not no_half:
+                base[0].half()
+                base[1].half()
+                base[3].half()
             lora = load_models_from_sdxl_checkpoint(MODEL_VERSION_SDXL_BASE_V1_0, dict(state_dict_trained), "cpu")
+            if not no_half:
+                lora[0].half()
+                lora[1].half()
+                lora[3].half()
 
         metadata = {
             "ss_network_module": "lycoris.kohya",
@@ -3174,7 +3185,9 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
         if lora_dim <= 0:
             return gr.update(value="Invalid LoRA DIM")
 
-        extracted_lora = svd(dict(state_dict_base), dict(state_dict_trained), fname, lora_dim, min_diff=min_diff, clamp_quantile=clamp_quantile, device=calc_device)
+        extracted_lora = svd(dict(state_dict_base), dict(state_dict_trained), fname, lora_dim, min_diff=min_diff, clamp_quantile=clamp_quantile, device=calc_device,
+            no_half="nohalf" in extra_settings,
+        )
         gc.collect()
         devices.torch_gc()
         lora_state_dict = extracted_lora.state_dict()
