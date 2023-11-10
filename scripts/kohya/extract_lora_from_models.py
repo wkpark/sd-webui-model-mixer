@@ -18,6 +18,7 @@ from . import lora
 
 def calc_up_down(mat, dim, conv_dim, device="cpu", clamp_quantile=0.99):
     # if conv_dim is None, diffs do not include LoRAs for conv2d-3x3
+    mat = mat.float()
     conv2d = len(mat.size()) == 4
     kernel_size = None if not conv2d else mat.size()[2:4]
     conv2d_3x3 = conv2d and kernel_size != (1, 1)
@@ -25,7 +26,6 @@ def calc_up_down(mat, dim, conv_dim, device="cpu", clamp_quantile=0.99):
     rank = dim if not conv2d_3x3 or conv_dim is None else conv_dim
     out_dim, in_dim = mat.size()[0:2]
 
-    mat = mat.float()
     if device:
         mat = mat.to(device)
 
@@ -57,8 +57,8 @@ def calc_up_down(mat, dim, conv_dim, device="cpu", clamp_quantile=0.99):
         U = U.reshape(out_dim, rank, 1, 1)
         Vh = Vh.reshape(rank, in_dim, kernel_size[0], kernel_size[1])
 
-    U = U.to("cpu").contiguous()
-    Vh = Vh.to("cpu").contiguous()
+    U = U.cpu().contiguous()
+    Vh = Vh.cpu().contiguous()
 
     return U, Vh
 
@@ -151,6 +151,9 @@ def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=Non
         module_o = lora_o.org_module
         module_t = lora_t.org_module
         diff = module_t.weight - module_o.weight
+        diff = diff.float()
+        if device:
+            diff.to(device)
 
         # Text Encoder might be same
         if not text_encoder_different and torch.max(torch.abs(diff)) > min_diff:
@@ -185,6 +188,9 @@ def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=Non
             continue
 
         diff = module_t.weight - module_o.weight
+        diff = diff.float()
+        if device:
+            diff.to(device)
 
         with torch.no_grad():
             up_weight, down_weight = calc_up_down(diff, dim, conv_dim, device=device, clamp_quantile=clamp_quantile)
