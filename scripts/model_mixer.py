@@ -3096,6 +3096,7 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
     elif calc_device != "cpu":
         calc_device = "cpu"
     print(f" - svd calc device = {calc_device}")
+    no_half = "nohalf" in extra_settings
     if "LyCORIS" in save_settings:
         try:
             load_module(os.path.join(scriptdir, "scripts", "kohya"))
@@ -3111,21 +3112,12 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
             return gr.update(value="LyCORIS module not found")
 
         if not isxl:
-            base = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_base))
-            lora = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_trained))
+            base = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_base), no_half=no_half)
+            lora = load_models_from_stable_diffusion_checkpoint(None, dict(state_dict_trained), no_half=no_half)
         else:
             from scripts.kohya.sdxl_model_util import load_models_from_sdxl_checkpoint, MODEL_VERSION_SDXL_BASE_V1_0
-            base = load_models_from_sdxl_checkpoint(MODEL_VERSION_SDXL_BASE_V1_0, dict(state_dict_base), "cpu")
-            no_half = "nohalf" in extra_settings
-            if not no_half:
-                base[0].half()
-                base[1].half()
-                base[3].half()
-            lora = load_models_from_sdxl_checkpoint(MODEL_VERSION_SDXL_BASE_V1_0, dict(state_dict_trained), "cpu")
-            if not no_half:
-                lora[0].half()
-                lora[1].half()
-                lora[3].half()
+            base = load_models_from_sdxl_checkpoint(MODEL_VERSION_SDXL_BASE_V1_0, dict(state_dict_base), "cpu", no_half=no_half)
+            lora = load_models_from_sdxl_checkpoint(MODEL_VERSION_SDXL_BASE_V1_0, dict(state_dict_trained), "cpu", no_half=no_half)
 
         metadata = {
             "ss_network_module": "lycoris.kohya",
@@ -3183,7 +3175,7 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
             return gr.update(value="Invalid LoRA DIM")
 
         extracted_lora = svd(dict(state_dict_base), dict(state_dict_trained), None, lora_dim, min_diff=min_diff, clamp_quantile=clamp_quantile, device=calc_device,
-            no_half="nohalf" in extra_settings,
+            no_half=no_half
         )
         gc.collect()
         devices.torch_gc()
