@@ -157,9 +157,9 @@ def _load_state_dict_on_device(model, state_dict, device, dtype=None):
     raise RuntimeError("Error(s) in loading state_dict for {}:\n\t{}".format(model.__class__.__name__, "\n\t".join(error_msgs)))
 
 
-def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dtype=None, no_vae=True):
+def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dtype=None, no_vae=True, no_half=False):
     # model_version is reserved for future use
-    # dtype is used for full_fp16/bf16 integration. Text Encoder will remain fp32, because it runs on CPU when caching
+    # dtype is used for full_fp16/bf16 integration.
 
     # Load the state dict
     if type(ckpt_path) == dict:
@@ -196,16 +196,18 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
         with init_empty_weights():
             unet = sdxl_original_unet.SdxlUNet2DConditionModel()
 
-    no_half = False
     if no_half:
         weight_dtype_conversion = None
+        dtype = torch.float
     else:
         weight_dtype_conversion = {
             'first_stage_model': None,
             '': torch.float16,
         }
+        dtype = torch.float16
+    print("no_half =", no_half)
 
-    print("loading U-Net from checkpoint")
+    print("loading U-Net...")
     unet_sd = {}
     for k in list(state_dict.keys()):
         if k.startswith("model.diffusion_model."):
@@ -271,7 +273,7 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
         with init_empty_weights():
             text_model2 = CLIPTextModelWithProjection(text_model2_cfg)
 
-    print("loading text encoders from checkpoint")
+    print("loading text encoders...")
     te1_sd = {}
     te2_sd = {}
     for k in list(state_dict.keys()):
@@ -285,12 +287,12 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
         te1_sd["text_model.embeddings.position_ids"] = torch.arange(77).unsqueeze(0)
 
     with sd_disable_initialization.LoadStateDictOnMeta(te1_sd, device=map_location, weight_dtype_conversion=weight_dtype_conversion):
-        info1 = _load_state_dict_on_device(text_model1, te1_sd, device=map_location)  # remain fp32
+        info1 = _load_state_dict_on_device(text_model1, te1_sd, device=map_location, dtype=dtype)
     print("text encoder 1:", info1)
 
     converted_sd, logit_scale = convert_sdxl_text_encoder_2_checkpoint(te2_sd, max_length=77)
     with sd_disable_initialization.LoadStateDictOnMeta(converted_sd, device=map_location, weight_dtype_conversion=weight_dtype_conversion):
-        info2 = _load_state_dict_on_device(text_model2, converted_sd, device=map_location)  # remain fp32
+        info2 = _load_state_dict_on_device(text_model2, converted_sd, device=map_location, dtype=dtype)
     print("text encoder 2:", info2)
 
     # prepare vae
@@ -301,7 +303,7 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
         with init_empty_weights():
             vae = AutoencoderKL(**vae_config)
 
-        print("loading VAE from checkpoint")
+        print("loading VAE...")
         converted_vae_checkpoint = model_util.convert_ldm_vae_checkpoint(state_dict, vae_config)
         info = _load_state_dict_on_device(vae, converted_vae_checkpoint, device=map_location, dtype=dtype)
         print("VAE:", info)
