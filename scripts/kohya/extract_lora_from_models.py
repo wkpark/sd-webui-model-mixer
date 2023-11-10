@@ -118,7 +118,6 @@ def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=Non
             text_encoder_different = True
             print(f"Text encoder is different. {torch.max(torch.abs(diff))} > {min_diff}")
 
-        diff = diff.float()
         diffs[lora_name] = diff
 
     if not text_encoder_different:
@@ -135,7 +134,6 @@ def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=Non
             skipped += 1
             continue
         diff = module_t.weight - module_o.weight
-        diff = diff.float()
 
         diffs[lora_name] = diff
 
@@ -156,6 +154,7 @@ def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=Non
             rank = dim if not conv2d_3x3 or conv_dim is None else conv_dim
             out_dim, in_dim = mat.size()[0:2]
 
+            mat = mat.float()
             if device:
                 mat = mat.to(device)
 
