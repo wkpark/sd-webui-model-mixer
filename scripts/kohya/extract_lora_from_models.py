@@ -47,19 +47,13 @@ def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=Non
         else:
             print("loading original SD model")
 
-        text_encoder_o, _, unet_o = model_util.load_models_from_stable_diffusion_checkpoint(v2, model_org)
-        if not no_half:
-            text_encoder_o.half()
-            unet_o.half()
+        text_encoder_o, _, unet_o = model_util.load_models_from_stable_diffusion_checkpoint(v2, model_org, no_half=no_half)
         text_encoders_o = [text_encoder_o]
         if type(model_tuned) == str:
             print(f"loading tuned SD model : {model_tuned}")
         else:
             print("loading tuned SD model")
-        text_encoder_t, _, unet_t = model_util.load_models_from_stable_diffusion_checkpoint(v2, model_tuned)
-        if not no_half:
-            text_encoder_t.half()
-            unet_t.half()
+        text_encoder_t, _, unet_t = model_util.load_models_from_stable_diffusion_checkpoint(v2, model_tuned, no_half=no_half)
         text_encoders_t = [text_encoder_t]
         model_version = model_util.get_model_version_str_for_sd1_sd2(v2, v_parameterization)
     else:
@@ -68,24 +62,16 @@ def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=Non
         else:
             print(f"loading original SDXL model")
         text_encoder_o1, text_encoder_o2, _, unet_o, _, _ = sdxl_model_util.load_models_from_sdxl_checkpoint(
-            sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, model_org, "cpu"
+            sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, model_org, "cpu", no_half=no_half
         )
-        if not no_half:
-            text_encoder_o1.half()
-            text_encoder_o2.half()
-            unet_o.half()
         text_encoders_o = [text_encoder_o1, text_encoder_o2]
         if type(model_tuned) == str:
             print(f"loading original SDXL model : {model_tuned}")
         else:
             print(f"loading original SDXL model")
         text_encoder_t1, text_encoder_t2, _, unet_t, _, _ = sdxl_model_util.load_models_from_sdxl_checkpoint(
-            sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, model_tuned, "cpu"
+            sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0, model_tuned, "cpu", no_half=no_half
         )
-        if not no_half:
-            text_encoder_t1.half()
-            text_encoder_t2.half()
-            unet_t.half()
         text_encoders_t = [text_encoder_t1, text_encoder_t2]
         model_version = sdxl_model_util.MODEL_VERSION_SDXL_BASE_V1_0
 
