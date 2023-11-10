@@ -157,7 +157,7 @@ def _load_state_dict_on_device(model, state_dict, device, dtype=None):
     raise RuntimeError("Error(s) in loading state_dict for {}:\n\t{}".format(model.__class__.__name__, "\n\t".join(error_msgs)))
 
 
-def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dtype=None):
+def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dtype=None, no_vae=True):
     # model_version is reserved for future use
     # dtype is used for full_fp16/bf16 integration. Text Encoder will remain fp32, because it runs on CPU when caching
 
@@ -275,15 +275,17 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
     print("text encoder 2:", info2)
 
     # prepare vae
-    print("building VAE")
-    vae_config = model_util.create_vae_diffusers_config()
-    with init_empty_weights():
-        vae = AutoencoderKL(**vae_config)
+    vae = None
+    if not no_vae:
+        print("building VAE")
+        vae_config = model_util.create_vae_diffusers_config()
+        with init_empty_weights():
+            vae = AutoencoderKL(**vae_config)
 
-    print("loading VAE from checkpoint")
-    converted_vae_checkpoint = model_util.convert_ldm_vae_checkpoint(state_dict, vae_config)
-    info = _load_state_dict_on_device(vae, converted_vae_checkpoint, device=map_location, dtype=dtype)
-    print("VAE:", info)
+        print("loading VAE from checkpoint")
+        converted_vae_checkpoint = model_util.convert_ldm_vae_checkpoint(state_dict, vae_config)
+        info = _load_state_dict_on_device(vae, converted_vae_checkpoint, device=map_location, dtype=dtype)
+        print("VAE:", info)
 
     ckpt_info = (epoch, global_step) if epoch is not None else None
     return text_model1, text_model2, vae, unet, logit_scale, ckpt_info

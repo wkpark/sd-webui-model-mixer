@@ -984,7 +984,7 @@ def load_checkpoint_with_text_encoder_conversion(ckpt_path, device="cpu"):
 
 
 # TODO dtype指定の動作が怪しいので確認する text_encoderを指定形式で作れるか未確認
-def load_models_from_stable_diffusion_checkpoint(v2=None, ckpt_path=None, device="cpu", dtype=None, unet_use_linear_projection_in_v2=True):
+def load_models_from_stable_diffusion_checkpoint(v2=None, ckpt_path=None, device="cpu", dtype=None, unet_use_linear_projection_in_v2=True, no_vae=True):
     if type(v2) == dict:
         state_dict = v2
         v2 = None
@@ -1004,12 +1004,14 @@ def load_models_from_stable_diffusion_checkpoint(v2=None, ckpt_path=None, device
     print("loading u-net:", info)
 
     # Convert the VAE model.
-    vae_config = create_vae_diffusers_config()
-    converted_vae_checkpoint = convert_ldm_vae_checkpoint(state_dict, vae_config)
+    vae = None
+    if not no_vae:
+        vae_config = create_vae_diffusers_config()
+        converted_vae_checkpoint = convert_ldm_vae_checkpoint(state_dict, vae_config)
 
-    vae = AutoencoderKL(**vae_config).to(device)
-    info = vae.load_state_dict(converted_vae_checkpoint)
-    print("loading vae:", info)
+        vae = AutoencoderKL(**vae_config).to(device)
+        info = vae.load_state_dict(converted_vae_checkpoint)
+        print("loading vae:", info)
 
     # convert text_model
     if v2:
