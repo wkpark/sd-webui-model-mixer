@@ -16,6 +16,7 @@ from . import lora
 # CLAMP_QUANTILE = 1
 # MIN_DIFF = 1e-2
 
+@torch.no_grad()
 def calc_up_down(mat, dim, conv_dim, device="cpu", clamp_quantile=0.99):
     # if conv_dim is None, diffs do not include LoRAs for conv2d-3x3
     mat = mat.float()
@@ -57,8 +58,8 @@ def calc_up_down(mat, dim, conv_dim, device="cpu", clamp_quantile=0.99):
         U = U.reshape(out_dim, rank, 1, 1)
         Vh = Vh.reshape(rank, in_dim, kernel_size[0], kernel_size[1])
 
-    U = U.cpu().contiguous()
-    Vh = Vh.cpu().contiguous()
+    U = U.detach().cpu().contiguous()
+    Vh = Vh.detach().cpu().contiguous()
 
     return U, Vh
 
@@ -162,8 +163,7 @@ def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=Non
         else:
             skipped += 1
 
-        with torch.no_grad():
-            up_weight, down_weight = calc_up_down(diff, dim, conv_dim, device=device, clamp_quantile=clamp_quantile)
+        up_weight, down_weight = calc_up_down(diff, dim, conv_dim, device=device, clamp_quantile=clamp_quantile)
 
         # make state dict for LoRA
         lora_sd[lora_name + ".lora_up.weight"] = up_weight
@@ -192,8 +192,7 @@ def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=Non
         if device:
             diff.to(device)
 
-        with torch.no_grad():
-            up_weight, down_weight = calc_up_down(diff, dim, conv_dim, device=device, clamp_quantile=clamp_quantile)
+        up_weight, down_weight = calc_up_down(diff, dim, conv_dim, device=device, clamp_quantile=clamp_quantile)
 
         # make state dict for LoRA
         lora_sd[lora_name + ".lora_up.weight"] = up_weight
