@@ -162,24 +162,24 @@ def extract_diff(
                 for child_name, child_module in module.named_modules():
                     if child_module.__class__.__name__ not in {'Linear', 'Conv2d'}:
                         continue
-                    temp[name][child_name] = child_module.weight
+                    temp[name][child_name] = child_module
             elif name in target_replace_names:
-                temp_name[name] = module.weight
+                temp_name[name] = module
         for name, module in (pbar:= tqdm(list(target_module.named_modules()), desc=f"Calculating {prefix} svd")):
             pbar.set_description(f"Calculating {prefix} svd: {name}")
             pbar.refresh()
             if name in temp:
-                weights = temp[name]
+                childs = temp[name]
                 for child_name, child_module in module.named_modules():
                     lora_name = prefix + '.' + name + '.' + child_name
                     lora_name = lora_name.replace('.', '_')
                     layer = child_module.__class__.__name__
                     if layer in {'Linear', 'Conv2d'}:
                         root_weight = child_module.weight
-                        if torch.allclose(root_weight, weights[child_name]):
+                        if torch.allclose(root_weight, childs[child_name].weight):
                             skipped += 1
                             continue
-                        diff = child_module.weight - weights[child_name]
+                        diff = child_module.weight - childs[child_name].weight
                         if min_diff > 0.0 and min_diff > torch.max(torch.abs(diff)):
                             skipped += 1
                             continue
@@ -241,18 +241,18 @@ def extract_diff(
                     else:
                         raise NotImplementedError
             elif name in temp_name:
-                weights = temp_name[name]
+                child_module = temp_name[name]
                 lora_name = prefix + '.' + name
                 lora_name = lora_name.replace('.', '_')
                 layer = module.__class__.__name__
                 
                 if layer in {'Linear', 'Conv2d'}:
                     root_weight = module.weight
-                    if torch.allclose(root_weight, weights):
+                    if torch.allclose(root_weight, child_module.weight):
                         skipped += 1
                         continue
 
-                    diff = root_weight - weights
+                    diff = root_weight - child_module.weight
                     if min_diff > 0.0 and min_diff > torch.max(torch.abs(diff)):
                         skipped += 1
                         continue
