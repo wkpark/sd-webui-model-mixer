@@ -16,6 +16,52 @@ from . import lora
 # CLAMP_QUANTILE = 1
 # MIN_DIFF = 1e-2
 
+def calc_up_down(mat, dim, conv_dim, device="cpu", clamp_quantile=0.99):
+    # if conv_dim is None, diffs do not include LoRAs for conv2d-3x3
+    conv2d = len(mat.size()) == 4
+    kernel_size = None if not conv2d else mat.size()[2:4]
+    conv2d_3x3 = conv2d and kernel_size != (1, 1)
+
+    rank = dim if not conv2d_3x3 or conv_dim is None else conv_dim
+    out_dim, in_dim = mat.size()[0:2]
+
+    mat = mat.float()
+    if device:
+        mat = mat.to(device)
+
+    # print(lora_name, mat.size(), mat.device, rank, in_dim, out_dim)
+    rank = min(rank, in_dim, out_dim)  # LoRA rank cannot exceed the original dim
+
+    if conv2d:
+        if conv2d_3x3:
+            mat = mat.flatten(start_dim=1)
+        else:
+            mat = mat.squeeze()
+
+    U, S, Vh = torch.linalg.svd(mat)
+
+    U = U[:, :rank]
+    S = S[:rank]
+    U = U @ torch.diag(S)
+
+    Vh = Vh[:rank, :]
+
+    dist = torch.cat([U.flatten(), Vh.flatten()])
+    hi_val = torch.quantile(dist, clamp_quantile)
+    low_val = -hi_val
+
+    U = U.clamp(low_val, hi_val)
+    Vh = Vh.clamp(low_val, hi_val)
+
+    if conv2d:
+        U = U.reshape(out_dim, rank, 1, 1)
+        Vh = Vh.reshape(rank, in_dim, kernel_size[0], kernel_size[1])
+
+    U = U.to("cpu").contiguous()
+    Vh = Vh.to("cpu").contiguous()
+
+    return U, Vh
+
 def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=None, conv_dim=None, v_parameterization=None, device=None, save_precision=None, clamp_quantile=0.99, min_diff=0.01, no_metadata=False, title=None, no_half=False):
     def str_to_dtype(p):
         if p == "float":
@@ -90,10 +136,17 @@ def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=Non
         lora_network_t.text_encoder_loras
     ), f"model version is different (SD1.x vs SD2.x) / それぞれのモデルのバージョンが違います（SD1.xベースとSD2.xベース） "
 
-    # get diffs
-    diffs = {}
+    # make LoRA with svd
+    skipped = 0
+    lora_sd = {}
     text_encoder_different = False
-    for i, (lora_o, lora_t) in enumerate(zip(lora_network_o.text_encoder_loras, lora_network_t.text_encoder_loras)):
+    desc = tqdm(total=len(lora_network_o.text_encoder_loras) + len(lora_network_o.unet_loras), desc="Calculate svd")
+    bar_format = "{n_fmt}/{total_fmt} {percentage:>3.0f}%: {desc}"
+    for i, (lora_o, lora_t) in enumerate(zip((pbar:= tqdm(lora_network_o.text_encoder_loras, bar_format=bar_format)), lora_network_t.text_encoder_loras)):
+        pbar.set_description_str(f"{lora_o.lora_name}")
+        pbar.refresh()
+        desc.update(1)
+
         lora_name = lora_o.lora_name
         module_o = lora_o.org_module
         module_t = lora_t.org_module
@@ -103,86 +156,47 @@ def svd(model_org=None, model_tuned=None, save_to=None, dim=4, v2=None, sdxl=Non
         if not text_encoder_different and torch.max(torch.abs(diff)) > min_diff:
             text_encoder_different = True
             print(f"Text encoder is different. {torch.max(torch.abs(diff))} > {min_diff}")
+        else:
+            skipped += 1
 
-        diffs[lora_name] = diff
+        with torch.no_grad():
+            up_weight, down_weight = calc_up_down(diff, dim, conv_dim, device=device, clamp_quantile=clamp_quantile)
+
+        # make state dict for LoRA
+        lora_sd[lora_name + ".lora_up.weight"] = up_weight
+        lora_sd[lora_name + ".lora_down.weight"] = down_weight
+        lora_sd[lora_name + ".alpha"] = torch.tensor(down_weight.size()[0])
 
     if not text_encoder_different:
         print("Text encoder is same. Extract U-Net only.")
         lora_network_o.text_encoder_loras = []
-        diffs = {}
+        lora_sd = {}
 
-    skipped = 0
-    for i, (lora_o, lora_t) in enumerate(zip(lora_network_o.unet_loras, lora_network_t.unet_loras)):
+    for i, (lora_o, lora_t) in enumerate(zip((pbar:= tqdm(lora_network_o.unet_loras, bar_format=bar_format)), lora_network_t.unet_loras)):
+        pbar.set_description_str(f"{lora_o.lora_name}")
+        pbar.refresh()
+        desc.update(1)
+
         lora_name = lora_o.lora_name
         module_o = lora_o.org_module
         module_t = lora_t.org_module
         if torch.allclose(module_t.weight, module_o.weight):
             skipped += 1
             continue
+
         diff = module_t.weight - module_o.weight
 
-        diffs[lora_name] = diff
+        with torch.no_grad():
+            up_weight, down_weight = calc_up_down(diff, dim, conv_dim, device=device, clamp_quantile=clamp_quantile)
 
-    if skipped > 0:
-        print(f"skipped = {skipped}")
-    # make LoRA with svd
-    print("calculating by svd")
-    lora_weights = {}
-    with torch.no_grad():
-        for lora_name, mat in (pbar:= tqdm(list(diffs.items()), desc=f"Calculating svd")):
-            pbar.set_description(f"Calculating svd: {lora_name}")
-            pbar.refresh()
-            # if conv_dim is None, diffs do not include LoRAs for conv2d-3x3
-            conv2d = len(mat.size()) == 4
-            kernel_size = None if not conv2d else mat.size()[2:4]
-            conv2d_3x3 = conv2d and kernel_size != (1, 1)
-
-            rank = dim if not conv2d_3x3 or conv_dim is None else conv_dim
-            out_dim, in_dim = mat.size()[0:2]
-
-            mat = mat.float()
-            if device:
-                mat = mat.to(device)
-
-            # print(lora_name, mat.size(), mat.device, rank, in_dim, out_dim)
-            rank = min(rank, in_dim, out_dim)  # LoRA rank cannot exceed the original dim
-
-            if conv2d:
-                if conv2d_3x3:
-                    mat = mat.flatten(start_dim=1)
-                else:
-                    mat = mat.squeeze()
-
-            U, S, Vh = torch.linalg.svd(mat)
-
-            U = U[:, :rank]
-            S = S[:rank]
-            U = U @ torch.diag(S)
-
-            Vh = Vh[:rank, :]
-
-            dist = torch.cat([U.flatten(), Vh.flatten()])
-            hi_val = torch.quantile(dist, clamp_quantile)
-            low_val = -hi_val
-
-            U = U.clamp(low_val, hi_val)
-            Vh = Vh.clamp(low_val, hi_val)
-
-            if conv2d:
-                U = U.reshape(out_dim, rank, 1, 1)
-                Vh = Vh.reshape(rank, in_dim, kernel_size[0], kernel_size[1])
-
-            U = U.to("cpu").contiguous()
-            Vh = Vh.to("cpu").contiguous()
-
-            lora_weights[lora_name] = (U, Vh)
-
-    # make state dict for LoRA
-    lora_sd = {}
-    for lora_name, (up_weight, down_weight) in lora_weights.items():
+        # make state dict for LoRA
         lora_sd[lora_name + ".lora_up.weight"] = up_weight
         lora_sd[lora_name + ".lora_down.weight"] = down_weight
         lora_sd[lora_name + ".alpha"] = torch.tensor(down_weight.size()[0])
+    desc.close()
+
+    if skipped > 0:
+        print(f"skipped = {skipped}")
 
     # load state dict to LoRA and save it
     lora_network_save, lora_sd = lora.create_network_from_weights(1.0, None, None, text_encoders_o, unet_o, weights_sd=lora_sd)
