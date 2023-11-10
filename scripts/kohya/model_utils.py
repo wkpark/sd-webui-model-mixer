@@ -984,7 +984,7 @@ def load_checkpoint_with_text_encoder_conversion(ckpt_path, device="cpu"):
 
 
 # TODO dtype指定の動作が怪しいので確認する text_encoderを指定形式で作れるか未確認
-def load_models_from_stable_diffusion_checkpoint(v2=None, ckpt_path=None, device="cpu", dtype=None, unet_use_linear_projection_in_v2=True, no_vae=True):
+def load_models_from_stable_diffusion_checkpoint(v2=None, ckpt_path=None, device="cpu", dtype=None, unet_use_linear_projection_in_v2=True, no_vae=True, no_half=False):
     if type(v2) == dict:
         state_dict = v2
         v2 = None
@@ -1005,7 +1005,7 @@ def load_models_from_stable_diffusion_checkpoint(v2=None, ckpt_path=None, device
     with sd_disable_initialization.InitializeOnMeta():
         unet = UNet2DConditionModel(**unet_config)
 
-    no_half = False
+    print("no half =", no_half)
     if no_half:
         weight_dtype_conversion = None
     else:
