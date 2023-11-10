@@ -190,7 +190,7 @@ def extract_diff(
                 )
                 extract_a = extract_a.transpose(0, 1)
                 extract_c = extract_c.transpose(0, 1)
-                loras[f'{lora_name}.lora_mid.weight'] = extract_c.detach().cpu().contiguous().half()
+                loras[f'{lora_name}.lora_mid.weight'] = extract_c.detach().cpu().contiguous()
                 diff = root_weight - torch.einsum(
                     'i j k l, j r, p i -> p r k l',
                     extract_c, extract_a.flatten(1, -1), extract_b.flatten(1, -1)
@@ -198,21 +198,21 @@ def extract_diff(
                 del extract_c
 
         if decompose_mode == 'low rank':
-            loras[f'{lora_name}.lora_down.weight'] = extract_a.detach().cpu().contiguous().half()
-            loras[f'{lora_name}.lora_up.weight'] = extract_b.detach().cpu().contiguous().half()
-            loras[f'{lora_name}.alpha'] = torch.Tensor([extract_a.shape[0]]).half()
+            loras[f'{lora_name}.lora_down.weight'] = extract_a.detach().cpu().contiguous()
+            loras[f'{lora_name}.lora_up.weight'] = extract_b.detach().cpu().contiguous()
+            loras[f'{lora_name}.alpha'] = torch.Tensor([extract_a.shape[0]])
             if use_bias:
                 diff = diff.detach().cpu().reshape(extract_b.size(0), -1)
                 sparse_diff = make_sparse(diff, sparsity).to_sparse().coalesce()
 
                 indices = sparse_diff.indices().to(torch.int16)
-                values = sparse_diff.values().half()
+                values = sparse_diff.values()
                 loras[f'{lora_name}.bias_indices'] = indices
                 loras[f'{lora_name}.bias_values'] = values
                 loras[f'{lora_name}.bias_size'] = torch.tensor(diff.shape).to(torch.int16)
             del extract_a, extract_b, diff
         elif decompose_mode == 'full':
-            loras[f'{lora_name}.diff'] = weight.detach().cpu().contiguous().half()
+            loras[f'{lora_name}.diff'] = weight.detach().cpu().contiguous()
         else:
             raise NotImplementedError
 
