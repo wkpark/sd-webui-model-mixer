@@ -187,17 +187,32 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
             global_step = 0
         checkpoint = None
 
+    # use disable initialization to speed up
+    from modules import sd_disable_initialization
+
     # U-Net
     print("building U-Net")
-    with init_empty_weights():
-        unet = sdxl_original_unet.SdxlUNet2DConditionModel()
+    with sd_disable_initialization.InitializeOnMeta():
+        with init_empty_weights():
+            unet = sdxl_original_unet.SdxlUNet2DConditionModel()
+
+    no_half = False
+    if no_half:
+        weight_dtype_conversion = None
+    else:
+        weight_dtype_conversion = {
+            'first_stage_model': None,
+            '': torch.float16,
+        }
 
     print("loading U-Net from checkpoint")
     unet_sd = {}
     for k in list(state_dict.keys()):
         if k.startswith("model.diffusion_model."):
             unet_sd[k.replace("model.diffusion_model.", "")] = state_dict.pop(k)
-    info = _load_state_dict_on_device(unet, unet_sd, device=map_location, dtype=dtype)
+
+    with sd_disable_initialization.LoadStateDictOnMeta(unet_sd, device=map_location, weight_dtype_conversion=weight_dtype_conversion):
+        info = _load_state_dict_on_device(unet, unet_sd, device=map_location, dtype=dtype)
     print("U-Net: ", info)
 
     # Text Encoders
@@ -225,8 +240,9 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
         # torch_dtype="float32",
         # transformers_version="4.25.0.dev0",
     )
-    with init_empty_weights():
-        text_model1 = CLIPTextModel._from_config(text_model1_cfg)
+    with sd_disable_initialization.InitializeOnMeta():
+        with init_empty_weights():
+            text_model1 = CLIPTextModel._from_config(text_model1_cfg)
 
     # Text Encoder 2 is different from Stability AI's SDXL. SDXL uses open clip, but we use the model from HuggingFace.
     # Note: Tokenizer from HuggingFace is different from SDXL. We must use open clip's tokenizer.
@@ -251,8 +267,9 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
         # torch_dtype="float32",
         # transformers_version="4.25.0.dev0",
     )
-    with init_empty_weights():
-        text_model2 = CLIPTextModelWithProjection(text_model2_cfg)
+    with sd_disable_initialization.InitializeOnMeta():
+        with init_empty_weights():
+            text_model2 = CLIPTextModelWithProjection(text_model2_cfg)
 
     print("loading text encoders from checkpoint")
     te1_sd = {}
@@ -267,11 +284,13 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
     if "text_model.embeddings.position_ids" not in te1_sd:
         te1_sd["text_model.embeddings.position_ids"] = torch.arange(77).unsqueeze(0)
 
-    info1 = _load_state_dict_on_device(text_model1, te1_sd, device=map_location)  # remain fp32
+    with sd_disable_initialization.LoadStateDictOnMeta(te1_sd, device=map_location, weight_dtype_conversion=weight_dtype_conversion):
+        info1 = _load_state_dict_on_device(text_model1, te1_sd, device=map_location)  # remain fp32
     print("text encoder 1:", info1)
 
     converted_sd, logit_scale = convert_sdxl_text_encoder_2_checkpoint(te2_sd, max_length=77)
-    info2 = _load_state_dict_on_device(text_model2, converted_sd, device=map_location)  # remain fp32
+    with sd_disable_initialization.LoadStateDictOnMeta(converted_sd, device=map_location, weight_dtype_conversion=weight_dtype_conversion):
+        info2 = _load_state_dict_on_device(text_model2, converted_sd, device=map_location)  # remain fp32
     print("text encoder 2:", info2)
 
     # prepare vae

@@ -999,8 +999,23 @@ def load_models_from_stable_diffusion_checkpoint(v2=None, ckpt_path=None, device
     unet_config = create_unet_diffusers_config(v2, unet_use_linear_projection_in_v2)
     converted_unet_checkpoint = convert_ldm_unet_checkpoint(v2, state_dict, unet_config)
 
-    unet = UNet2DConditionModel(**unet_config).to(device)
-    info = unet.load_state_dict(converted_unet_checkpoint)
+    # use disable initialization to speed up
+    from modules import sd_disable_initialization
+
+    with sd_disable_initialization.InitializeOnMeta():
+        unet = UNet2DConditionModel(**unet_config)
+
+    no_half = False
+    if no_half:
+        weight_dtype_conversion = None
+    else:
+        weight_dtype_conversion = {
+            'first_stage_model': None,
+            '': torch.float16,
+        }
+    with sd_disable_initialization.LoadStateDictOnMeta(converted_unet_checkpoint, device=device, weight_dtype_conversion=weight_dtype_conversion):
+        info = unet.load_state_dict(converted_unet_checkpoint)
+
     print("loading u-net:", info)
 
     # Convert the VAE model.
@@ -1037,8 +1052,10 @@ def load_models_from_stable_diffusion_checkpoint(v2=None, ckpt_path=None, device
             torch_dtype="float32",
             transformers_version="4.25.0.dev0",
         )
-        text_model = CLIPTextModel._from_config(cfg)
-        info = text_model.load_state_dict(converted_text_encoder_checkpoint)
+        with sd_disable_initialization.InitializeOnMeta():
+            text_model = CLIPTextModel._from_config(cfg)
+        with sd_disable_initialization.LoadStateDictOnMeta(converted_text_encoder_checkpoint, device=device, weight_dtype_conversion=weight_dtype_conversion):
+            info = text_model.load_state_dict(converted_text_encoder_checkpoint)
     else:
         converted_text_encoder_checkpoint = convert_ldm_clip_checkpoint_v1(state_dict)
 
@@ -1066,8 +1083,10 @@ def load_models_from_stable_diffusion_checkpoint(v2=None, ckpt_path=None, device
             projection_dim=768,
             torch_dtype="float32",
         )
-        text_model = CLIPTextModel._from_config(cfg)
-        info = text_model.load_state_dict(converted_text_encoder_checkpoint)
+        with sd_disable_initialization.InitializeOnMeta():
+            text_model = CLIPTextModel._from_config(cfg)
+        with sd_disable_initialization.LoadStateDictOnMeta(converted_text_encoder_checkpoint, device=device, weight_dtype_conversion=weight_dtype_conversion):
+            info = text_model.load_state_dict(converted_text_encoder_checkpoint)
     print("loading text encoder:", info)
 
     return text_model, vae, unet
