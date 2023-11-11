@@ -2757,15 +2757,15 @@ class ModelMixerScript(scripts.Script):
             # check lora_patches
             lora_patch = False
             try:
-                if "scripts.patches" not in sys.modules:
-                    print(" - loading script.patches...")
-                    patches = load_module(os.path.join(scriptdir, "scripts", "patches.py"))
-                    #sys.modules["scripts.patches"] = patches
+                print(" - loading scripts.patches...")
+                load_module(os.path.join(scriptdir, "scripts", "patches.py"))
                 from scripts.patches import StateDictPatches
 
-                patch = patches.StateDictPatches()
+                patch = StateDictPatches()
+                print(" - lora patch")
                 lora_patch = True
             except Exception:
+                print(" - Fail to patch lora")
                 pass
             # to cpu ram
             sd_unet.apply_unet("None")
