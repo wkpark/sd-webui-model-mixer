@@ -6,7 +6,6 @@ from transformers import CLIPTextModel, CLIPTextConfig, CLIPTextModelWithProject
 from typing import List
 from diffusers import AutoencoderKL, EulerDiscreteScheduler, UNet2DConditionModel
 from . import model_utils as model_util
-from . import sdxl_original_unet
 
 VAE_SCALE_FACTOR = 0.13025
 MODEL_VERSION_SDXL_BASE_V1_0 = "sdxl_base_v1-0"
@@ -192,9 +191,21 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
 
     # U-Net
     print("building U-Net")
+    sdxl_capable = True
     with sd_disable_initialization.InitializeOnMeta():
         with init_empty_weights():
-            unet = sdxl_original_unet.SdxlUNet2DConditionModel()
+            try:
+                unet = UNet2DConditionModel(**DIFFUSERS_SDXL_UNET_CONFIG)
+            except Exception as e:
+                print(f"Error: {e}")
+                print("old version of diffusers installed...")
+                print("Recommanded diffusers is 0.21.1 or above")
+                sdxl_capable = False
+        if not sdxl_capable:
+            from . import sdxl_original_unet
+            print("Retry to load SDXL using sdxl_original_unets...")
+            with init_empty_weights():
+                unet = sdxl_original_unet.SdxlUNet2DConditionModel()
 
     if no_half:
         weight_dtype_conversion = None
@@ -213,8 +224,13 @@ def load_models_from_sdxl_checkpoint(model_version, ckpt_path, map_location, dty
         if k.startswith("model.diffusion_model."):
             unet_sd[k.replace("model.diffusion_model.", "")] = state_dict.pop(k)
 
-    with sd_disable_initialization.LoadStateDictOnMeta(unet_sd, device=map_location, weight_dtype_conversion=weight_dtype_conversion):
-        info = _load_state_dict_on_device(unet, unet_sd, device=map_location, dtype=dtype)
+    if sdxl_capable:
+        converted_unet_checkpoint = convert_sdxl_unet_state_dict_to_diffusers(unet_sd)
+        with sd_disable_initialization.LoadStateDictOnMeta(converted_unet_checkpoint, device=map_location, weight_dtype_conversion=weight_dtype_conversion):
+            info = unet.load_state_dict(converted_unet_checkpoint)
+    else:
+        with sd_disable_initialization.LoadStateDictOnMeta(unet_sd, device=map_location, weight_dtype_conversion=weight_dtype_conversion):
+            info = _load_state_dict_on_device(unet, unet_sd, device=map_location, dtype=dtype)
     print("U-Net: ", info)
 
     # Text Encoders
