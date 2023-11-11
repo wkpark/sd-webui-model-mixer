@@ -237,9 +237,13 @@ def extract_diff(
                     temp[name][child_name] = child_module
             elif name in target_replace_names:
                 temp_name[name] = module
-        for name, module in (pbar:= tqdm(list(target_module.named_modules()), desc=f"Calculating {prefix} svd")):
-            pbar.set_description(f"Calculating {prefix} svd: {name}")
+        desc = tqdm(total=len(list(target_module.named_modules())), desc=f"Calculating svd {prefix}")
+        bar_format = " {desc}"
+        for name, module in (pbar:= tqdm(list(target_module.named_modules()), bar_format=bar_format)):
+            pbar.set_description_str(f"{name}")
             pbar.refresh()
+            desc.update(1)
+            desc.refresh()
             if name in temp:
                 child_modules = temp[name]
                 for child_name, child_module in module.named_modules():
@@ -251,6 +255,8 @@ def extract_diff(
                 layer = module.__class__.__name__
                 if layer in ['Linear', 'Conv2d', 'LoRACompatibleLinear', 'LoRACompatibleConv']:
                     extract_lora(prefix, module, child_module, name, '', loras, min_diff)
+
+        desc.close()
 
         return loras
 
