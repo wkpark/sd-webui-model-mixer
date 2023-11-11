@@ -2421,7 +2421,7 @@ class ModelMixerScript(scripts.Script):
                     break
                 if info.shorthash is None:
                     info.calculate_shorthash()
-                if hashes[j] != info.shorthash:
+                if j not in hashes or hashes[j] != info.shorthash:
                     same_models = False
                     break
 
