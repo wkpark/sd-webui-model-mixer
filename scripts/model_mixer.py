@@ -2414,8 +2414,8 @@ class ModelMixerScript(scripts.Script):
             # check same models used
             hashes = current["hashes"]
             same_models = True
-            if len(hases) != len(mm_models) + 1:
-                same_model = False
+            if len(hashes) != len(mm_models) + 1:
+                same_models = False
             for j, m in enumerate([model_a] + [*mm_models]):
                 info = sd_models.get_closet_checkpoint_match(m)
                 if info is None:
