@@ -159,7 +159,7 @@ def extract_diff(
         if min_diff > 0.0 and min_diff > torch.max(torch.abs(diff)):
             return
 
-        if layer == 'Linear':
+        if layer in ['Linear', 'LoRACompatibleLinear']:
             weight, decompose_mode = extract_linear(
                 diff,
                 mode,
@@ -168,7 +168,7 @@ def extract_diff(
             )
             if decompose_mode == 'low rank':
                 extract_a, extract_b, diff = weight
-        elif layer == 'Conv2d':
+        elif layer in ['Conv2d', 'LoRACompatibleConv']:
             is_linear = (
                 root_weight.shape[2] == 1
                 and root_weight.shape[3] == 1
@@ -232,7 +232,7 @@ def extract_diff(
             if module.__class__.__name__ in target_replace_modules:
                 temp[name] = {}
                 for child_name, child_module in module.named_modules():
-                    if child_module.__class__.__name__ not in {'Linear', 'Conv2d'}:
+                    if child_module.__class__.__name__ not in ['Linear', 'Conv2d', 'LoRACompatibleLinear', 'LoRACompatibleConv']:
                         continue
                     temp[name][child_name] = child_module
             elif name in target_replace_names:
@@ -244,12 +244,12 @@ def extract_diff(
                 child_modules = temp[name]
                 for child_name, child_module in module.named_modules():
                     layer = child_module.__class__.__name__
-                    if layer in ['Linear', 'Conv2d']:
+                    if layer in ['Linear', 'Conv2d', 'LoRACompatibleLinear', 'LoRACompatibleConv']:
                         extract_lora(prefix, child_module, child_modules[child_name], name, child_name, loras, min_diff)
             elif name in temp_name:
                 child_module = temp_name[name]
                 layer = module.__class__.__name__
-                if layer in ['Linear', 'Conv2d']:
+                if layer in ['Linear', 'Conv2d', 'LoRACompatibleLinear', 'LoRACompatibleConv']:
                     extract_lora(prefix, module, child_module, name, '', loras, min_diff)
 
         return loras

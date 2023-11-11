@@ -36,7 +36,7 @@ class LoRAModule(torch.nn.Module):
         super().__init__()
         self.lora_name = lora_name
 
-        if org_module.__class__.__name__ == "Conv2d":
+        if org_module.__class__.__name__ in ["Conv2d", "LoRACompatibleConv"]:
             in_dim = org_module.in_channels
             out_dim = org_module.out_channels
         else:
@@ -50,7 +50,7 @@ class LoRAModule(torch.nn.Module):
         # else:
         self.lora_dim = lora_dim
 
-        if org_module.__class__.__name__ == "Conv2d":
+        if org_module.__class__.__name__ in ["Conv2d", "LoRACompatibleConv"]:
             kernel_size = org_module.kernel_size
             stride = org_module.stride
             padding = org_module.padding
@@ -822,8 +822,8 @@ class LoRANetwork(torch.nn.Module):
             for name, module in root_module.named_modules():
                 if module.__class__.__name__ in target_replace_modules:
                     for child_name, child_module in module.named_modules():
-                        is_linear = child_module.__class__.__name__ == "Linear"
-                        is_conv2d = child_module.__class__.__name__ == "Conv2d"
+                        is_linear = child_module.__class__.__name__ in ["Linear", "LoRACompatibleLinear"]
+                        is_conv2d = child_module.__class__.__name__ in ["Conv2d", "LoRACompatibleConv"]
                         is_conv2d_1x1 = is_conv2d and child_module.kernel_size == (1, 1)
 
                         if is_linear or is_conv2d:
