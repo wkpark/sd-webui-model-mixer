@@ -1214,6 +1214,93 @@ class ModelMixerScript(scripts.Script):
                         read_model_a_metadata = gr.Button("model A metadata")
                         read_model_b_metadata = gr.Button("model B metadata")
 
+            use_model_dl = shared.opts.data.get("mm_use_model_dl", False)
+            with gr.Accordion("Download Model Helper", open=False, visible=False) as download_helper:
+                with gr.Row():
+                    download_status = gr.Textbox(visible=True, label="message")
+
+                def downloader(fileinfo, progress=gr.Progress(track_tqdm=False)):
+                    import asyncio
+                    use_model_dl = shared.opts.data.get("mm_use_model_dl", False)
+
+                    try:
+                        fileinfo = json.loads(fileinfo)
+                    except Exception as e:
+                        print("Error:", e)
+                        return gr.update(), ""
+
+                    destdir = os.path.join(paths.models_path, 'Stable-diffusion')
+                    fname = os.path.join(destdir, fileinfo['filename'])
+
+                    if use_model_dl:
+                        import requests
+
+                        resp = requests.get(fileinfo['downloadUrl'], stream=True)
+                        total = int(resp.headers.get('content-length', 0))
+                        try:
+                            with open(fname, 'wb') as file:
+                                bar = tqdm(desc=fileinfo['filename'], total=total, unit='iB', unit_scale=True, unit_divisor=1024)
+                                bar.update(0)
+                                for data in resp.iter_content(chunk_size=10 * 1024 * 1024):
+                                    size = file.write(data)
+                                    bar.update(size)
+                                bar.close()
+                        except:
+                            pass
+
+                    if os.path.exists(fname):
+                        downloaded = True
+                        # update model list
+                        mm_list_models()
+                    else:
+                        downloaded = False
+
+                    return gr.update(value=downloaded, visible=True), fileinfo['filename'] + " downloaded!"
+
+
+                def download_ui(i):
+                    with gr.Row(visible=False) as wrapper:
+                        downloadfile = gr.Textbox(visible=False, label=f"Download Info {i}", show_label=False)
+                        with gr.Column(scale=1, min_width=10):
+                            checkbox = gr.Checkbox(label=f"", show_label=False, value=False, visible=use_model_dl, elem_classes=["downloaded"], interactive=False, container=False)
+                        with gr.Column(scale=10, min_width=160):
+                            downfile = gr.HTML(label=f"Download File {i}", show_label=False, value="<p></p>")
+                        with gr.Column(scale=1, label="Download Button", visible=use_model_dl, show_label=False, min_width=10):
+                            downbtn = gr.Button(' ', elem_classes=["download"])
+
+                    downbtn.click(fn=downloader, inputs=[downloadfile], outputs=[checkbox, download_status], show_progress=False)
+                    return wrapper, checkbox, downloadfile, downfile, downbtn
+
+                def setup_download_ui(fileinfo):
+                    use_model_dl = shared.opts.data.get("mm_use_model_dl", False)
+
+                    try:
+                        s = json.loads(fileinfo)
+                    except Exception as e:
+                        print("Error:", e)
+                        return gr.update(visible=False), gr.update(visible=False), gr.update(), gr.update(), gr.update()
+
+                    return [gr.update(visible=True), gr.update(visible=True),
+                        gr.update(value=False, visible=use_model_dl), gr.update(visible=use_model_dl), gr.update(value=f"""<p>Link: <a target="_blank" href="{s['url']}">{s["name"]}</a><br>
+Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{s["hash"]}]</a></p>""")]
+
+                with gr.Column(variant="compact"):
+                    downloadfiles = [[]]*5
+                    checkboxes = [[]]*5
+                    downfiles = [[]]*5
+                    downbtns = [[]]*5
+                    wrappers = [[]]*5
+
+                    for i in range(5):
+                        wrappers[i], checkboxes[i], downloadfiles[i], downfiles[i], downbtns[i] = download_ui(i)
+
+                        downloadfiles[i].change(
+                            fn=setup_download_ui,
+                            inputs=[downloadfiles[i]],
+                            outputs=[download_helper, wrappers[i], checkboxes[i], downbtns[i], downfiles[i]],
+                            show_progress=False,
+                        )
+
             with gr.Row(variant="compact"):
                 unload_sd_model = gr.Button("Unload model to free VRAM")
                 reload_sd_model = gr.Button("Reload model back to VRAM")
@@ -1500,6 +1587,12 @@ class ModelMixerScript(scripts.Script):
                 (mm_weights[n], f"ModelMixer mbw weights {name}"),
                 (mm_use_elemental[n], f"ModelMixer use elemental {name}"),
                 (mm_elementals[n], f"ModelMixer elemental {name}"),
+            )
+
+        # download helper
+        for n in range(5):
+            self.infotext_fields += (
+                (downloadfiles[n], f"Download Model {n+1}"),
             )
 
         # load settings
@@ -3824,11 +3917,63 @@ def on_ui_settings():
         ),
     )
 
+    shared.opts.add_option(
+        "mm_use_model_dl",
+        shared.OptionInfo(
+            default=False,
+            label="Use Model downloader",
+            component=gr.Checkbox,
+            component_args={"interactive": True},
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        "mm_civitai_api_key",
+        shared.OptionInfo(
+            default="",
+            label="Civitai API Key",
+            section=section,
+        ),
+    )
+
+
 def on_infotext_pasted(infotext, results):
     updates = {}
+
+    models = {}
+    modelnames = {}
+    modelhashes = {}
+    hashes = set()
     for k, v in results.items():
-        if not k.startswith("ModelMixer"):
+        # check all "Model a:...,  Model hash a:,... Model b:..."
+        if k.find("Model ") == 0:
+            name = k.rsplit(" ", 1)[-1]
+            if len(k) not in [7, 12]: # valid keys are 'Model a', 'Model hash a'
+                continue
+            if k.find(" hash ") > 0:
+                h = v.strip().upper()[0:10] # AutoV2
+                modelhashes[name] = h
+            else:
+                modelnames[name] = v + (".safetensors" if not v.endswith(".safetensors") and not v.endswith(".ckpt") else "")
+
+            if modelnames.get(name, None) is not None and modelhashes.get(name, None) is not None:
+                h = modelhashes[name]
+                models[h] = modelnames[name] + " [" + h + "]"
+                hashes.add(h)
+                continue
+            else:
+                continue
+
+        elif not k.startswith("ModelMixer"):
             continue
+
+        if k.find(" model ") > 0:
+            # ModelMixer Model a:... params
+            if (j:= v.rfind("[")) > 0 and v.find("]", j) > 0:
+                h = v[j+1:-1].upper() # AutoV2
+                models[h] = v[:j].strip()
+                hashes.add(h)
 
         if k.find(" elemental ") > 0:
             if v in [ "True", "False"]:
@@ -3858,7 +4003,97 @@ def on_infotext_pasted(infotext, results):
                 v = ",".join(tmp)
                 updates[k] = v
 
+    if len(hashes) > 0:
+        notfound = []
+        for h in hashes:
+            info = sd_models.get_closet_checkpoint_match(models[h])
+            if info is not None:
+                print(info.title, "found")
+            else:
+                print(models[h], "not found")
+                notfound.append(h)
+
+        if len(notfound) > 0:
+            count = 1
+            for h in notfound:
+                model = get_civitai_model_by_hash(h, models[h])
+                if model is not None and len(model) > 0:
+                    updates[f"Download Model {count}"] = model
+                    count += 1
+        else:
+            for j in range(5):
+                # reset Download Model form
+                updates[f"Download Model {j+1}"] = ''
+
     results.update(updates)
+
+
+# civitai utils
+def get_civitai_model_version_by_hash(hash: str):
+    response = civitai_req(f"/model-versions/by-hash/{hash}")
+    return response
+
+def civitai_req(endpoint, method='GET', data=None, params=None, headers=None):
+    import requests
+
+    base_url = 'https://civitai.com/api/v1'
+    user_agent = 'CivitaiLink:Automatic1111'
+
+    """Make a request to the Civitai API."""
+    if headers is None:
+        headers = {}
+    headers['User-Agent'] = user_agent
+    api_key = shared.opts.data.get("civitai_api_key", None)
+    if api_key is None:
+        api_key = shared.opts.data.get("mm_civitai_api_key", None)
+    if api_key is not None:
+        headers['Authorization'] = f'Bearer {api_key}'
+    if data is not None:
+        headers['Content-Type'] = 'application/json'
+        data = json.dumps(data)
+    if not endpoint.startswith('/'):
+        endpoint = '/' + endpoint
+    if params is None:
+        params = {}
+    response = requests.request(method, base_url+endpoint, data=data, params=params, headers=headers)
+    if response.status_code != 200:
+        raise Exception(f'Error: {response.status_code} {response.text}')
+    return response.json()
+
+
+def get_civitai_model_by_hash(h, filename=None):
+    """get model info as json"""
+
+    r = {'files': []}
+    ret = None
+    try:
+        r = get_civitai_model_version_by_hash(h)
+    except Exception as e:
+        print(e)
+    else:
+        if r is None:
+            return None
+
+    for file in r['files']:
+        if not 'hashes' in file or not 'SHA256' in file['hashes']:
+            continue
+
+        autov2 = file['hashes']['AutoV2']
+        if autov2.upper() == h.upper():
+            downloadUrl = file['downloadUrl']
+            print(downloadUrl)
+            modelurl = f"https://civitai.com/models/{r['modelId']}"
+            ret = json.dumps({
+                'filename': filename if filename else file['name'],
+                'type': file['type'], # Model
+                'hash': autov2,
+                'name': r['model'].get('name', r['name']),
+                'url': modelurl,
+                'downloadUrl': downloadUrl,
+            }, ensure_ascii=False)
+            break
+    return ret
+
 
 # xyz support
 def make_axis_on_xyz_grid():
