@@ -6,6 +6,11 @@ button.reset {
     margin: 0.75em 0 0 0.3em;
 }
 
+.block.gradio-checkbox.not-button label > span {
+    visibility: hidden;
+    height: 0px;
+}
+
 .mm-vxa-token{ cursor: pointer; }
 .mm-vxa-punct {background: rgba(136, 136, 136, 0.55); padding:0; margin:0;}
 .mm-vxa-token-0 {background: rgba(209, 17, 65, 0.85); border-radius:3px;}

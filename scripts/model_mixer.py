@@ -900,11 +900,11 @@ class ModelMixerScript(scripts.Script):
                 with gr.Row():
                     with gr.Column(variant="compact"):
                         with gr.Row():
-                            not_elemblks = gr.Checkbox(value=False, label="", info="NOT", scale=1, min_width=30, elem_classes=["not-button"])
+                            not_elemblks = gr.Checkbox(value=False, label="Not Blocks", show_label=False, info="NOT", scale=1, min_width=30, elem_classes=["not-button"])
                             elemblks = gr.Dropdown(BLOCKID, value=[], label="Blocks", show_label=False, multiselect=True, info="Select Blocks", scale=7)
                     with gr.Column(variant="compact"):
                         with gr.Row():
-                            not_elements = gr.Checkbox(value=False, label="", info="NOT", scale=1, min_width=30, elem_classes=["not-button"])
+                            not_elements = gr.Checkbox(value=False, label="Not Elements", show_label=False, info="NOT", scale=1, min_width=30, elem_classes=["not-button"])
                             elements = gr.Dropdown(["time_embed", "time_embed.0", "time_embed.2", "out", "out.0", "out.2"], values=[], label="Elements", show_label=False, multiselect=True, info="Select Elements", elem_id="mm_elemental_elements", scale=7)
                     with gr.Column(variant="compact"):
                         with gr.Row():
