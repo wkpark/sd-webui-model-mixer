@@ -2212,7 +2212,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 mm_elementals.append(elemental)
                 mm_calcmodes.append(calcmode)
 
-        calc_settings = mm_states.get("calc_settings", {})
+        calc_settings = mm_states.pop("calc_settings", {})
+        # exclude calc_settings from fake hash
 
         # extra_params
         extra_params = self.modelmixer_extra_params(model_a, base_model, mm_max_models, mm_finetune, mm_states, *args_)
