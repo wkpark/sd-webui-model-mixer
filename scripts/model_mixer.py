@@ -751,6 +751,39 @@ class ModelMixerScript(scripts.Script):
             with gr.Row():
                 enable_sync = gr.Checkbox(label="Sync with Default SD checkpoint", value=False, visible=True)
                 is_sdxl = gr.Checkbox(label="is SDXL", value=False, visible=True)
+            with gr.Row():
+                calc_settings = gr.CheckboxGroup(label=f"Calculation options", info="Optional paramters for calculation if needed. e.g.) Rebasin",
+                    choices=[("Use GPU", "GPU"), ("Use CPU", "CPU")], value=["GPU"])
+
+            def check_calc_settings(calc_settings):
+                last = calc_settings.pop()
+                if "CPU" == last:
+                    if "GPU" in calc_settings:
+                        idx = calc_settings.index("GPU")
+                        calc_settings.pop(idx)
+                    calc_settings.append(last)
+                    return gr.update(value=calc_settings)
+                elif "GPU" == last:
+                    if "CPU" in calc_settings:
+                        idx = calc_settings.index("CPU")
+                        calc_settings.pop(idx)
+                    calc_settings.append(last)
+                    return gr.update(value=calc_settings)
+                else:
+                    calc_settings.append(last)
+                    if all(s not in calc_settings for s in ["CPU", "GPU"]):
+                        # no calc device
+                        calc_settings.append("GPU")
+                        return gr.update(value=calc_settings)
+
+                return gr.update()
+
+            calc_settings.change(
+                fn=check_calc_settings,
+                inputs=[calc_settings],
+                outputs=[calc_settings],
+                show_progress=False,
+            )
 
             mm_max_models = gr.Number(value=num_models, precision=0, visible=False)
             merge_method_info = [{}] * num_models
@@ -1930,16 +1963,17 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
 
-        def prepare_states(states, save_settings, *calcmodes):
+        def prepare_states(states, save_settings, calc_settings, *calcmodes):
             states["calcmodes"] = calcmodes
             states["save_settings"] = save_settings
+            states["calc_settings"] = calc_settings
 
             return states
 
         generate_button = MM.components["img2img_generate" if is_img2img else "txt2img_generate"]
         generate_button.click(
             fn=prepare_states,
-            inputs=[mm_states, save_settings, *mm_calcmodes],
+            inputs=[mm_states, save_settings, calc_settings, *mm_calcmodes],
             outputs=[mm_states],
             show_progress=False,
             queue=False,
@@ -2157,6 +2191,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 mm_use_elemental.append(use_elemental)
                 mm_elementals.append(elemental)
                 mm_calcmodes.append(calcmode)
+
+        calc_settings = mm_states.get("calc_settings", {})
 
         # extra_params
         extra_params = self.modelmixer_extra_params(model_a, base_model, mm_max_models, mm_finetune, mm_states, *args_)
@@ -2596,11 +2632,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
             device = get_device()
             usefp16 = True
-            if device == "cpu":
-                print("force cuda")
+            if "CPU" in calc_settings:
+                device = "cpu"
+            elif "GPU" in calc_settings:
                 device = "cuda"
-            else:
-                print("device = ", device)
+
+            print(" - Calulation device for Rebasin is ", device)
 
         # set job_count
         save_jobcount = None
