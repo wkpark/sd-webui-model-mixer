@@ -1237,6 +1237,12 @@ class ModelMixerScript(scripts.Script):
                             show_progress=False,
                         )
 
+                    with gr.Tab("Save model to Diffusers"):
+                        with gr.Row():
+                            custom_diffusers_name = gr.Textbox(label="Custom Diffusers Path", placeholder="Name of Diffusers dump path", elem_id="model_mixer_custom_diffusers_path")
+                        with gr.Row():
+                            convert_diffusers = gr.Button("Save as Diffusers")
+
                     with gr.Row():
                         metadata_settings = gr.CheckboxGroup(["merge recipe"], value=["merge recipe"], label="Metadata settings")
 
@@ -1640,6 +1646,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 custom_lora_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, min_diff, clamp_quantile,
                 precision, calc_device, save_lora_settings, metadata_settings, extra_settings],
             outputs=[logging]
+        )
+
+        convert_diffusers.click(
+            fn=save_as_diffusers,
+            inputs=[custom_diffusers_name, save_settings, metadata_settings],
+            outputs=[logging],
         )
 
         def recipe_update(num_models, *_args):
@@ -3384,6 +3396,110 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
     info = "Extracted LoRA saved in " + fname
     print(info)
     return gr.update(value=info)
+
+
+def save_as_diffusers(custom_name, save_settings, metadata_settings, state_dict=None, metadata=None):
+    from modules import sd_models_config
+
+    try:
+        from diffusers.pipelines.stable_diffusion.convert_from_ckpt import download_from_original_stable_diffusion_ckpt
+    except Exception as e:
+        return f"{e}"
+
+    if state_dict is None:
+        current = getattr(shared, "modelmixer_config", None)
+        if current is None:
+            print(" - Current model is not a merged model. ignored...")
+
+        if shared.sd_model and shared.sd_model.sd_checkpoint_info:
+            metadata = shared.sd_model.sd_checkpoint_info.metadata.copy()
+        else:
+            return gr.update(value="No model loaded")
+
+        if current and shared.sd_model.sd_checkpoint_info.sha256 == current["hash"]:
+            print("use current merged checkpoint.")
+
+        print(" - \033[92mget the merged model\033[0m...")
+        state_dict = get_current_state_dict(lora=False, base=True)[0]
+
+    v2 = False
+    if 'model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight' in state_dict:
+        v2 = state_dict['model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight'].shape[1] == 1024
+    print(" v2 = ", v2)
+
+    isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in state_dict
+    print(" isxl = ", isxl)
+
+    pipeline_type = None
+    scheduler_type = "pndm"
+    image_size = 512
+    prediction_type = "epsilon"
+    upcast_attention = False
+    extract_ema = False
+    device = "cuda"
+    stable_unclip_prior = False
+    clip_stats_path = None
+    controlnet = None
+    pipeline_class = None
+    stable_unclip = None
+    stable_unclip_prior = None
+    clip_stats_path = None
+    if v2:
+        image_size = 768
+        prediction_type = "v_prediction"
+        upcast_attention = True
+
+    if not custom_name or custom_name == "":
+        dump_path = shared.sd_model.sd_checkpoint_info.name_for_extra.replace(" ","").replace(",","_").replace("(","_").replace(")","_")
+        if dump_path[0] == "_":
+            dump_path = dump_path[1:]
+    else:
+        dump_path = custom_name
+
+    dump_path = os.path.join(model_path, dump_path)
+
+    if len(dump_path) > 255:
+       dump_path = dump_path[:240]
+
+
+    # fix/check bad CLIP ids
+    fixclip(state_dict, save_settings, isxl)
+
+    # for safetensors contiguous error
+    print(" - check contiguous...")
+    for key in state_dict.keys():
+        v = state_dict[key]
+        v = v.detach().cpu().contiguous()
+        state_dict[key] = v
+
+    original_config_file = sd_models_config.find_checkpoint_config(state_dict, None)
+
+    pipe = download_from_original_stable_diffusion_ckpt(
+        checkpoint_path_or_dict=state_dict,
+        original_config_file=original_config_file,
+        config_files=None,
+        image_size=image_size,
+        prediction_type=prediction_type,
+        model_type=pipeline_type if pipeline_type else None,
+        extract_ema=extract_ema,
+        scheduler_type=scheduler_type,
+        num_in_channels=None,
+        upcast_attention=upcast_attention,
+        from_safetensors=None,
+        device=device,
+        stable_unclip=stable_unclip,
+        stable_unclip_prior=stable_unclip_prior,
+        clip_stats_path=clip_stats_path,
+        controlnet=controlnet,
+        vae_path=None,
+        pipeline_class=pipeline_class,
+    )
+
+    pipe.save_pretrained(dump_path, safe_serialization=True)
+    log = f"Done! diffusers saved at {dump_path}"
+    print(log)
+
+    return log
 
 
 def save_current_model(custom_name, bake_in_vae, save_settings, metadata_settings, state_dict=None, metadata=None):
