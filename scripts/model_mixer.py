@@ -40,8 +40,6 @@ from ldm.modules.attention import CrossAttention
 from scripts.vxa import generate_vxa, default_hidden_layer_name, get_layer_names
 from scripts.vxa import tokenize
 
-from scripts.weight_matching import sdunet_permutation_spec, weight_matching, apply_permutation
-
 dump_cache = cache.dump_cache
 cache = cache.cache
 
@@ -485,9 +483,19 @@ def mm_list_models():
         checkpoint_info.register()
 
 
-permutation_spec = sdunet_permutation_spec()
+permutation_spec = None
 def get_rebasin_perms(mbws, isxl):
     """all blocks permutations of selected blocks"""
+    global permutation_spec
+
+    if "scripts.rebasin.weight_matching" not in sys.modules:
+        print(" - Dynamic loading rebasin module...")
+        load_module(os.path.join(scriptdir, "scripts", "rebasin", "weight_matching.py"))
+    from scripts.rebasin.weight_matching import sdunet_permutation_spec
+
+    if permutation_spec is None:
+        # one time initializer
+        permutation_spec = sdunet_permutation_spec()
 
     if True in mbws or False in mbws: # already have selected
         _selected = mbws
@@ -2640,6 +2648,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         # check Rebasin mode
         if not isxl and "Rebasin" in calcmodes:
+            print(" - Dynamic loading rebasin module...")
+            load_module(os.path.join(scriptdir, "scripts", "rebasin", "weight_matching.py"))
+            from scripts.rebasin.weight_matching import weight_matching, apply_permutation
+
             print("Rebasin mode")
 
             device = get_device()
