@@ -510,7 +510,7 @@ def get_rebasin_perms(mbws, isxl):
                     axes.append(axe)
                     perms += list(perm)
 
-        perms = sorted(list(set(perms)))
+        perms = sorted(list(set(perms) - set([None])))
 
         return perms
     return None
