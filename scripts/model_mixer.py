@@ -2582,18 +2582,29 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     weights = current["weights"]
                     changed = [False] * max_blocks
 
-                    for j, m in enumerate(mm_models):
-                        info = sd_models.get_closet_checkpoint_match(m)
-                        if info is None:
-                            if info.shorthash is None:
-                                info.calculate_shorthash()
+                    for j in range(max(len(mm_models), len(hashes[1:]))):
+                        if len(hashes[1:]) > j and len(mm_models) > j:
+                            model = mm_models[j]
+                        else: # some models are changed
+                            model = None
 
                         same_model = True
-                        # is it different model?
-                        if j + 1 >= len(hashes) or hashes[j + 1] != info.shorthash:
+                        if model is None:
                             same_model = False
+                        else:
+                            info = sd_models.get_closet_checkpoint_match(model)
+                            if info is not None:
+                                if info.shorthash is None:
+                                    info.calculate_shorthash()
+
+                                # is it different model?
+                                if hashes[j + 1] != info.shorthash:
+                                    same_model = False
+                            else:
+                                same_model = False
 
                         if same_model and (current["calcmode"][j] != mm_calcmodes[j] or current["mode"][j] != mm_modes[j]):
+                            # calc method or calc mode changed
                             same_model = False
 
                         if same_model:
@@ -2603,7 +2614,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             # check all non zero blocks
                             if len(weights) > j:
                                 changed |= np.array(weights[j][:max_blocks]) != np.array([0.0]*max_blocks)
-                            changed |= np.array(mm_weights[j][:max_blocks]) != np.array([0.0]*max_blocks)
+                            if len(mm_weights) > j:
+                                changed |= np.array(mm_weights[j][:max_blocks]) != np.array([0.0]*max_blocks)
 
                     BLOCKIDS = BLOCKID if not isxl else BLOCKIDXL
                     print(" - partial changed blocks = ", [BLOCKIDS[k] for k, b in enumerate(changed) if b])
@@ -2646,6 +2658,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         # partial updatable case
                         partial_update = True
                         print(" - UNet partial update mode")
+                    else:
+                        print(" - No change blocks detected.")
 
         # check Rebasin mode
         if not isxl and "Rebasin" in calcmodes:
