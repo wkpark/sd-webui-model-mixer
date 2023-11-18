@@ -6,6 +6,7 @@
 #
 import collections
 import gc
+import io
 import os
 import sys
 import gradio as gr
@@ -2224,13 +2225,17 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         if hasattr(p, "modelmixer_xyz"):
             xyz = p.modelmixer_xyz
         # make a hash to cache results
-        sha256 = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_states, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
-        print("config hash = ", sha256)
+        confighash = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_states, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
+        print("config hash = ", confighash)
+        current = getattr(shared, "modelmixer_config", None)
 
         if shared.sd_model is not None and shared.sd_model.sd_checkpoint_info is not None:
-            if shared.sd_model.sd_checkpoint_info.sha256 == sha256 and sd_models.get_closet_checkpoint_match(shared.sd_model.sd_checkpoint_info.title) is not None:
+            if shared.sd_model.sd_checkpoint_info.sha256 == confighash and sd_models.get_closet_checkpoint_match(shared.sd_model.sd_checkpoint_info.title) is not None:
                 # already mixed
-                print(f"  - use current mixed model {sha256}")
+                print(f"  - use current mixed model {confighash}")
+                return
+            elif current and current.get("confighash", None) == confighash:
+                print(f"  - use current mixed model {confighash}")
                 return
 
         print("  - mm_use", mm_use)
@@ -2558,7 +2563,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         partial_update = False
         changed_keys = None
 
-        current = getattr(shared, "modelmixer_config", None)
         use_unet_partial_update = shared.opts.data.get("mm_use_unet_partial_update", False)
         if use_unet_partial_update and current is not None:
             # check same models used
@@ -2924,11 +2928,21 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         # fix/check bad CLIP ids
         fixclip(theta_0, mm_states["save_settings"], isxl)
 
+        sha256 = None
+        t = Timer()
+        if not partial_update and shared.opts.data.get("mm_use_precalculate_hash", False):
+            sha256 = precalculate_safetensors_hashes(theta_0, metadata.copy(), mm_states["save_settings"], isxl)
+            print(" - precalculated hash = ", sha256)
+            t.record("precalculate hash")
+
         if not partial_update and "save model" in debugs:
             save_settings = shared.opts.data.get("mm_save_model", ["safetensors", "fp16"])
             save_filename = shared.opts.data.get("mm_save_model_filename", "modelmixer-[hash].safetensors")
-            save_filename = save_filename.replace("[hash]", f"{sha256[0:10]}").replace("[model_name]", f"{model_name}")
-            save_current_model(save_filename, "None", save_settings, ["merge_recipe"], state_dict=theta_0, metadata=metadata.copy())
+            save_filename = save_filename.replace("[hash]", f"{sha256[0:10] if sha256 else confighash[0:10]}").replace("[model_name]", f"{model_name}")
+            save_current_model(save_filename, "None", save_settings, ["merge recipe"], state_dict=theta_0, metadata=metadata.copy())
+            t.record("save model")
+        if t.total > 0:
+            print(f' - post process in {t.summary()}.')
 
         # partial update
         state_dict = theta_0.copy()
@@ -2938,7 +2952,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             # copy old aliases ids
             old_ids = checkpoint_info.ids.copy()
             # change info without using deepcopy()
-            checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256, False)
+            checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256 if sha256 else confighash, False)
 
             # check lora_patches
             lora_patch = False
@@ -3023,7 +3037,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     sd_models.checkpoint_aliases.pop(id, None)
 
                 # set shorthash
-                checkpoint_info.shorthash = sha256[0:10]
+                checkpoint_info.shorthash = sha256[0:10] if sha256 else confighash[0:10]
                 # manually add aliasses
                 checkpoint_info.ids += [checkpoint_info.title]
                 checkpoint_info.register()
@@ -3036,7 +3050,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 shared.sd_model.sd_model_hash = checkpoint_info.shorthash
 
         if state_dict is not None:
-          checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256)
+          checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256 if sha256 else confighash)
           if shared.sd_model is not None and hasattr(shared.sd_model, 'lowvram') and shared.sd_model.lowvram:
             print("WARN: lowvram/medvram load_model() with minor workaround")
             sd_models.unload_model_weights()
@@ -3078,7 +3092,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         # update merged model info.
         shared.modelmixer_config = {
-            "hash": sha256,
+            "hash": sha256 if sha256 else confighash,
+            "confighash": confighash,
             "models" : modelinfos,
             "hashes" : modelhashes,
             "model_a": model_a,
@@ -3092,6 +3107,77 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             "recipe": recipe_all + alphastr,
         }
         return
+
+def precalculate_safetensors_hashes(state_dict, metadata, save_settings, isxl, fixheader=True):
+    import safetensors
+
+    if "sd_merge_models" in metadata:
+        metadata["sd_merge_models"] = json.dumps(metadata["sd_merge_models"], separators=(',', ':'))
+    if "sd_merge_recipe" in metadata:
+        metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"], separators=(',', ':'))
+
+    if "fp16" in save_settings:
+        state_dict = to_half(state_dict, True)
+    if "prune" in save_settings:
+        state_dict = prune_model(state_dict, isxl)
+
+    hash_sha256 = hashlib.sha256()
+    bytes = safetensors.torch.save(state_dict, metadata)
+    b = io.BytesIO(bytes)
+
+    b.seek(0)
+    header = b.read(8)
+    n = int.from_bytes(header, "little")
+
+    if n > 2 and fixheader:
+        # fix header for old safetensors
+        start = b.read(2)
+        if start in (b'{"', b"{'"):
+            l = 0
+            meta = start
+            metatag = b.read(12)
+            if metatag == b"__metadata__":
+                l += 2 + 12
+                meta += metatag
+                tag = 0;
+
+                while True:
+                    c = b.read(1)
+                    l += 1
+                    meta += c
+                    if c == b"{":
+                        tag += 1
+                    elif c == b"}":
+                        tag -= 1
+                        c = b.read(1)
+                        l += 1
+                        if tag == 0 and c == b",":
+                            break
+                        elif c == b"}":
+                            tag -= 1
+                        meta += c
+
+                readlen = l - 2 - 12 - 2 - 1
+                parsed = json.loads(meta + b"}")
+                assert(metadata == parsed["__metadata__"])
+                # fix metadata
+                b.seek(8 + 2 + 12 + 2)
+                s = json.dumps(metadata, separators=(',', ':'))
+                b.write(s.encode("utf-8"))
+                if readlen > len(s):
+                    print("fill remains")
+                    # fill possible remains with spaces
+                    fill = b" " * (readlen - len(s))
+                    b.write(fill)
+
+    # calculate sha256 hash
+    b.seek(0)
+    blksize = 1024 * 1024
+
+    for chunk in iter(lambda: b.read(blksize), b""):
+        hash_sha256.update(chunk)
+
+    return hash_sha256.hexdigest()
 
 
 def fixclip(theta_0, settings, isxl):
@@ -3186,11 +3272,11 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
         print(" - No merged recipe found")
 
     elif metadata_settings is not None and "merge recipe" in metadata_settings:
-        metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"])
+        metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"], separators=(',', ':'))
     else:
         del metadata["sd_merge_recipe"]
     if "sd_merge_models" in metadata:
-        metadata["sd_merge_models"] = json.dumps(metadata["sd_merge_models"])
+        metadata["sd_merge_models"] = json.dumps(metadata["sd_merge_models"], separators=(',', ':'))
 
     # check save_lora_mode
     state_dict_base = None
@@ -3550,11 +3636,11 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
         return gr.update(value="Not a valid merged model")
 
     if metadata_settings is not None and "merge recipe" in metadata_settings:
-        metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"])
+        metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"], separators=(',', ':'))
     else:
         del metadata["sd_merge_recipe"]
     if "sd_merge_models" in metadata:
-        metadata["sd_merge_models"] = json.dumps(metadata["sd_merge_models"])
+        metadata["sd_merge_models"] = json.dumps(metadata["sd_merge_models"], separators=(',', ':'))
 
     if state_dict is None and shared.sd_model is not None:
         print("Load state_dict from shared.sd_model..")
@@ -4106,6 +4192,17 @@ def on_ui_settings():
         shared.OptionInfo(
             default=False,
             label="Use experimental UNet block partial update",
+            component=gr.Checkbox,
+            component_args={"interactive": True},
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        "mm_use_precalculate_hash",
+        shared.OptionInfo(
+            default=False,
+            label="Use precalculating model hash",
             component=gr.Checkbox,
             component_args={"interactive": True},
             section=section,
