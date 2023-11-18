@@ -2234,7 +2234,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 # already mixed
                 print(f"  - use current mixed model {confighash}")
                 return
-            elif current and current.get("confighash", None) == confighash:
+            elif getattr(shared.sd_model.sd_checkpoint_info, "fake", False) and current and current.get("confighash", None) == confighash:
                 print(f"  - use current mixed model {confighash}")
                 return
 
@@ -2903,6 +2903,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             checkpoint_info.hash = None
             # use new metadata
             checkpoint_info.metadata = metadata
+
+            # add new attribute
+            checkpoint_info.fake = True
 
             # XXX HACK use any valid filename to trick checkpoint_info.calculate_shorthash()
             if not os.path.exists(checkpoint_info.filename):
