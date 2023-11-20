@@ -4408,7 +4408,13 @@ def on_before_ui():
             file=sys.stderr,
         )
 
+
+def on_model_loaded(model):
+    shared.modelmixer_config = None
+
+
 script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_before_image_saved(on_image_save)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
 script_callbacks.on_before_ui(on_before_ui)
+script_callbacks.on_model_loaded(on_model_loaded)
