@@ -749,6 +749,8 @@ class ModelMixerScript(scripts.Script):
             with gr.Row():
                 enabled = gr.Checkbox(label="Enable Model Mixer", value=False, visible=True, elem_classes=["mm-enabled"])
             with gr.Row():
+                basic_settings = gr.CheckboxGroup(label="Basic Settings", show_label=False, choices=[("Lock current settings", "lock")], value=[], visible=True)
+            with gr.Row():
                 recipe_all = gr.HTML("<h3></h3>")
 
             with gr.Row():
@@ -763,6 +765,17 @@ class ModelMixerScript(scripts.Script):
             with gr.Row():
                 calc_settings = gr.CheckboxGroup(label=f"Calculation options", info="Optional paramters for calculation if needed. e.g.) Rebasin",
                     choices=[("Use GPU", "GPU"), ("Use CPU", "CPU")], value=["GPU"])
+
+
+            def update_basic_settings(basic_settings):
+                shared.opts.data["mm_config_lock"] = "lock" in basic_settings
+
+
+            basic_settings.change(
+                fn=update_basic_settings,
+                inputs=[basic_settings],
+                outputs=[],
+            )
 
             def check_calc_settings(calc_settings):
                 last = calc_settings.pop()
@@ -4236,6 +4249,9 @@ def on_ui_settings():
 def on_infotext_pasted(infotext, results):
     updates = {}
 
+    config_lock = shared.opts.data.get("mm_config_lock", False)
+    excludes = []
+
     models = {}
     modelnames = {}
     modelhashes = {}
@@ -4261,6 +4277,10 @@ def on_infotext_pasted(infotext, results):
                 continue
 
         elif not k.startswith("ModelMixer"):
+            continue
+
+        if config_lock:
+            excludes.append(k)
             continue
 
         if k.find(" model ") > 0:
@@ -4319,6 +4339,10 @@ def on_infotext_pasted(infotext, results):
             for j in range(5):
                 # reset Download Model form
                 updates[f"Download Model {j+1}"] = ''
+
+    if config_lock and len(excludes) > 0:
+        for k in excludes:
+            results.pop(k, None)
 
     results.update(updates)
 
