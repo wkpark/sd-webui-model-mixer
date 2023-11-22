@@ -13,6 +13,7 @@ import gradio as gr
 import hashlib
 import importlib
 import json
+import pickle
 from pathlib import Path
 import re
 import shutil
@@ -21,8 +22,10 @@ import tqdm
 from tqdm import tqdm
 import torch
 import traceback
-from functools import partial
+from functools import partial, lru_cache
 from safetensors.torch import save_file
+from typing import Dict, Union
+from zipfile import ZipFile, is_zipfile
 import numpy as np
 
 from PIL import Image
@@ -429,6 +432,117 @@ def read_metadata_from_safetensors(filename):
 
         return res
 
+
+def get_ckpt_header(file):
+    """Load ckpt state_dict with keys and sizes only"""
+
+    # modified vesion of _dtype_to_storage_type_map() from torch/storage.py
+    def _dtype_to_storage_type_map():
+        return {
+            "double": 'DoubleStorage',
+            "float": 'FloatStorage',
+            "half": 'HalfStorage',
+            "long": 'LongStorage',
+            "int": 'IntStorage',
+            "int16": 'ShortStorage',
+            "int8": 'CharStorage',
+            "uint8": 'ByteStorage',
+            "bool": 'BoolStorage',
+            "bfloat16": 'BFloat16Storage',
+            "cdouble": 'ComplexDoubleStorage',
+            "cfloat": 'ComplexFloatStorage',
+            "qint8": 'QInt8Storage',
+            "qint32": 'QInt32Storage',
+            "quint8": 'QUInt8Storage',
+            "quint4x2": 'QUInt4x2Storage',
+            "quint2x4": 'QUInt2x4Storage',
+        }
+
+    @lru_cache(maxsize=None)
+    def _storage_type_to_dtype_map():
+        dtype_map = {
+            val: key for key, val in _dtype_to_storage_type_map().items()}
+        return dtype_map
+
+    def _get_dtype_from_pickle_storage_type(pickle_storage_type: str):
+        try:
+            return _storage_type_to_dtype_map()[pickle_storage_type]
+        except KeyError as e:
+            raise KeyError(
+                f'pickle storage type "{pickle_storage_type}" is not recognized') from e
+
+    class StorageType():
+        def __init__(self, name):
+            self.dtype = _get_dtype_from_pickle_storage_type(name)
+
+        def __str__(self):
+            return f'StorageType(dtype={self.dtype})'
+
+    # from torch/serialization.py
+    def dummy_persistent_load(saved_id):
+        assert isinstance(saved_id, tuple)
+        typename = _maybe_decode_ascii(saved_id[0])
+        assert typename == 'storage', \
+            f"Unknown typename for persistent_load, expected 'storage' but got '{typename}'"
+        data = saved_id[1:]
+
+        storage_type, key, location, numel = data
+        dtype = storage_type.dtype
+        # return dtype only
+        return dtype
+
+    load_module_mapping: Dict[str, str] = {
+        # See https://github.com/pytorch/pytorch/pull/51633
+        'torch.tensor': 'torch._tensor',
+    }
+
+    def _maybe_decode_ascii(bytes_str: Union[bytes, str]) -> str:
+        if isinstance(bytes_str, bytes):
+            return bytes_str.decode('ascii')
+        return bytes_str
+
+    def _rebuild_hook_tensor(storage, storage_offset, size, stride, *_args):
+        # storage is returned by dummy_persistent_load()
+        # in this case, storage == dtype
+        return {"shape": list(size), "type": str(storage)}
+
+    class UnpicklerWrapper(pickle.Unpickler):  # type: ignore[name-defined]
+        # from https://stackoverflow.com/questions/13398462/unpickling-python-objects-with-a-changed-module-path/13405732
+        # Lets us override the imports that pickle uses when unpickling an object.
+        # This is useful for maintaining BC if we change a module path that tensor instantiation relies on.
+        def find_class(self, mod_name, name):
+            if type(name) is str and 'Storage' in name:
+                try:
+                    return StorageType(name)
+                except KeyError:
+                    pass
+            mod_name = load_module_mapping.get(mod_name, mod_name)
+            if mod_name == "torch._utils" and name in ["_rebuild_tensor_v2", "_rebuild_tensor"]:
+                return _rebuild_hook_tensor
+
+            return super().find_class(mod_name, name)
+
+    with open(file, 'rb') as opened_file:
+        if is_zipfile(opened_file):
+            with ZipFile(opened_file) as opened_zipfile:
+                x = opened_zipfile.namelist()
+                for n in x:
+                    if "data.pkl" in n:
+                        with opened_zipfile.open(n, 'r') as datazip:
+                            byte = datazip.read()
+                            byteio = io.BytesIO(byte)
+
+                            unpickler = UnpicklerWrapper(byteio, encoding="utf-8")
+                            unpickler.persistent_load = dummy_persistent_load
+                            result = unpickler.load()
+                            if "state_dict" in result:
+                                result = result["state_dict"]
+                            return result
+
+                        break
+    return None
+
+
 def get_safetensors_header(filename):
     if not os.path.exists(filename):
         return None
@@ -450,12 +564,42 @@ def is_xl(modelname):
     if checkpointinfo is None:
         return None
 
-    header = get_safetensors_header(checkpointinfo.filename)
+    if checkpointinfo.is_safetensors:
+        header = get_safetensors_header(checkpointinfo.filename)
+    elif checkpointinfo.filename.endswith(".ckpt"):
+        header = get_ckpt_header(checkpointinfo.filename)
+    else:
+        return None
+
     if header is not None:
         if "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in header:
             return True
         return False
     return None
+
+
+def sdversion(modelname):
+    checkpointinfo = sd_models.get_closet_checkpoint_match(modelname)
+    if checkpointinfo is None:
+        return None
+
+    if checkpointinfo.is_safetensors:
+        header = get_safetensors_header(checkpointinfo.filename)
+    elif checkpointinfo.filename.endswith(".ckpt"):
+        header = get_ckpt_header(checkpointinfo.filename)
+    else:
+        return None
+
+    if header is not None:
+        if "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in header:
+            return 'XL'
+
+        v2 = False
+        if 'model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight' in header:
+            v2 = header['model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight']["shape"][1] == 1024
+        return 'v1' if not v2 else 'v2'
+    return None
+
 
 def get_valid_checkpoint_title():
     checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
@@ -1988,12 +2132,21 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         preset_edit_save.click(fn=save_preset_weight, inputs=[preset_edit_select, preset_edit_weight, preset_edit_overwrite], outputs=[preset_edit_select])
         preset_edit_delete.click(fn=delete_preset_weight, inputs=[preset_edit_select, preset_edit_weight], outputs=[preset_edit_select])
 
+        def check_model_b(model_a, model_b):
+            sdv = sdversion(model_a)
+            sdv_b = sdversion(model_b)
+            if sdv != sdv_b and sdv_b is not "None":
+                gr.Warning(f"model_a is SD{sdv} but model_b is SD{sdv_b}")
+                return gr_show(False), gr.update(value="None"), gr.update(value="<h3>...</h3>")
+
+            return gr_show(model_b != "None"), gr.update(), gr.update(value="<h3>...</h3>")
+
         for n in range(num_models):
             mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
             mm_set_elem[n].click(fn=set_elemental, inputs=[mm_elementals[n], mm_elemental_main], outputs=[mm_elementals[n]])
 
             mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=[*members, mbw_controls], show_progress=False)
-            mm_models[n].change(fn=lambda modelname: [gr_show(modelname != "None"), gr.update(value="<h3>...</h3>")], inputs=[mm_models[n]], outputs=[model_options[n], recipe_all], show_progress=False)
+            mm_models[n].select(fn=check_model_b, inputs=[model_a, mm_models[n]], outputs=[model_options[n], mm_models[n], recipe_all], show_progress=False)
             mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
 
