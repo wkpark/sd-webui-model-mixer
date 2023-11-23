@@ -2140,7 +2140,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         def check_model_b(model_a, model_b):
             sdv = sdversion(model_a)
             sdv_b = sdversion(model_b)
-            if sdv != sdv_b and sdv_b is not "None":
+            if sdv != sdv_b and sdv_b != "None":
                 gr.Warning(f"model_a is SD{sdv} but model_b is SD{sdv_b}")
                 return gr_show(False), gr.update(value="None"), gr.update(value="<h3>...</h3>")
 
