@@ -893,7 +893,12 @@ class ModelMixerScript(scripts.Script):
             with gr.Row():
                 enabled = gr.Checkbox(label="Enable Model Mixer", value=False, visible=True, elem_classes=["mm-enabled"])
             with gr.Row():
-                basic_settings = gr.CheckboxGroup(label="Basic Settings", show_label=False, choices=[("Lock current settings", "lock")], value=[], visible=True)
+                default_vals = []
+                config_lock = shared.opts.data.get("mm_default_config_lock", False)
+                shared.config_lock = config_lock
+                if config_lock:
+                    default_vals.append("lock")
+                basic_settings = gr.CheckboxGroup(label="Basic Settings", show_label=False, choices=[("Lock current settings", "lock")], value=default_vals, visible=True)
             with gr.Row():
                 recipe_all = gr.HTML("<h3></h3>")
 
@@ -912,7 +917,7 @@ class ModelMixerScript(scripts.Script):
 
 
             def update_basic_settings(basic_settings):
-                shared.opts.data["mm_config_lock"] = "lock" in basic_settings
+                shared.config_lock = "lock" in basic_settings
 
 
             basic_settings.change(
@@ -4390,6 +4395,17 @@ def on_ui_settings():
     )
 
     shared.opts.add_option(
+        "mm_default_config_lock",
+        shared.OptionInfo(
+            default=False,
+            label="Default Config Lock to keep current config",
+            component=gr.Checkbox,
+            component_args={"interactive": True},
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
         "mm_civitai_api_key",
         shared.OptionInfo(
             default="",
@@ -4402,7 +4418,7 @@ def on_ui_settings():
 def on_infotext_pasted(infotext, results):
     updates = {}
 
-    config_lock = shared.opts.data.get("mm_config_lock", False)
+    config_lock = getattr(shared, "config_lock", False)
     excludes = []
 
     models = {}
@@ -4529,7 +4545,8 @@ def civitai_req(endpoint, method='GET', data=None, params=None, headers=None):
         params = {}
     response = requests.request(method, base_url+endpoint, data=data, params=params, headers=headers)
     if response.status_code != 200:
-        raise Exception(f'Error: {response.status_code} {response.text}')
+        print(f'Error: {response.status_code} {response.text}')
+        return None
     return response.json()
 
 
