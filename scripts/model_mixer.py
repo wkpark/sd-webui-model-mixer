@@ -2735,6 +2735,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         partial_update = False
         changed_keys = None
 
+        if current is None and shared.sd_model is not None:
+            # no current mixed model but model_a == shared.sd_model case.
+            info = shared.sd_model.sd_checkpoint_info
+            if info == checkpoint_info:
+                current = { "hashes": [ checkpoint_info.shorthash ], "weights": [], "adjust": "" }
+
         use_unet_partial_update = shared.opts.data.get("mm_use_unet_partial_update", False)
         if use_unet_partial_update and current is not None:
             # check same models used
@@ -3126,8 +3132,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             checkpoint_info = shared.sd_model.sd_checkpoint_info
             # copy old aliases ids
             old_ids = checkpoint_info.ids.copy()
-            # change info without using deepcopy()
-            checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256 if sha256 else confighash, False)
+            # change info without using deepcopy() if checkpoint.filename already exists
+            if os.path.exists(checkpoint_info.filename):
+                make_fake = True
+            else:
+                make_fake = False
+            checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256 if sha256 else confighash, make_fake)
 
             # check lora_patches
             lora_patch = False
