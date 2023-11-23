@@ -2142,16 +2142,17 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             sdv_b = sdversion(model_b)
             if sdv != sdv_b and sdv_b != "None":
                 gr.Warning(f"model_a is SD{sdv} but model_b is SD{sdv_b}")
-                return gr_show(False), gr.update(value="None"), gr.update(value="<h3>...</h3>")
+                return gr_show(False), gr.update(value="None")
 
-            return gr_show(model_b != "None"), gr.update(), gr.update(value="<h3>...</h3>")
+            return gr_show(model_b != "None"), gr.update()
 
         for n in range(num_models):
             mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
             mm_set_elem[n].click(fn=set_elemental, inputs=[mm_elementals[n], mm_elemental_main], outputs=[mm_elementals[n]])
 
             mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=[*members, mbw_controls], show_progress=False)
-            mm_models[n].select(fn=check_model_b, inputs=[model_a, mm_models[n]], outputs=[model_options[n], mm_models[n], recipe_all], show_progress=False)
+            mm_models[n].change(fn=lambda modelname: [gr_show(modelname != "None"), gr.update(value="<h3>...</h3>")], inputs=[mm_models[n]], outputs=[model_options[n], recipe_all], show_progress=False)
+            mm_models[n].select(fn=check_model_b, inputs=[model_a, mm_models[n]], outputs=[model_options[n], mm_models[n]], show_progress=False)
             mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
 
