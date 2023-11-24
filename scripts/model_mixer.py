@@ -2810,6 +2810,11 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         if b:
                             weight_changed_blocks.append(all_blocks[j])
 
+                    # check ".out.", ".time_embed." elemental blocks
+                    if "" in all_elemental_blocks:
+                        # always update elemental blocks
+                        weight_changed_blocks += ["time_embed.", "out."]
+
                     # check finetune
                     finetune_changed = current["adjust"] != mm_finetune
 
@@ -2943,10 +2948,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                                     elem = w["elements"]
                                     if flag and any(item in key for item in w["elements"]):
                                         new_alpha = w['ratio']
-                                        if "elemental merge" in debugs: print(f' - Elemental: merge wiehts[{j}] - {key} -', key, w["elements"], new_alpha)
+                                        if "elemental merge" in debugs: print(f' - Elemental: merge weights[{j}] - {key} -', key, w["elements"], new_alpha)
                                     elif not flag and all(item not in key for item in w["elements"]):
                                         new_alpha = w['ratio']
-                                        if "elemental merge" in debugs: print(f' - Elemental: merge wiehts[{j}] - {key} - NOT', key, w["elements"], new_alpha)
+                                        if "elemental merge" in debugs: print(f' - Elemental: merge weights[{j}] - {key} - NOT', key, w["elements"], new_alpha)
 
                             # apply elemental merging weight ratio
                             if new_alpha is not None:
