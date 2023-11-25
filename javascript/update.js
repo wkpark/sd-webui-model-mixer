@@ -43,3 +43,69 @@ function slider_to_text() {
 
     return res;
 }
+
+(function(){
+
+function update_mbw() {
+    let mbw = null;
+    let mbws = gradioApp().querySelectorAll(".mm_mbw textarea");
+    for (let i = 0; i < mbws.length; i++) {
+        if (mbws[i].parentElement.offsetParent) {
+            mbw = mbws[i]
+            break;
+        }
+    }
+    if (mbw == null)
+        return;
+
+    /* click the read button of the selected model */
+    let btn = null;
+    let mbw_read_buttons = gradioApp().querySelectorAll("button.mm_mbw_read");
+    for (let i = 0; i < mbw_read_buttons.length; i++) {
+        if (mbw_read_buttons[i].parentElement.offsetParent) {
+            btn = mbw_read_buttons[i]
+            btn.click();
+            break;
+        }
+    }
+}
+
+// setup model tab to update merge block weights
+function setupModelTab(tab){
+    var observer = new MutationObserver(function(mutations) {
+        for (var mutation of mutations) {
+            if (mutation.target.style.display === 'block') {
+                update_mbw();
+            }
+        }
+    });
+
+    observer.observe(tab, {attributes: true, attributeFilter: ['style']});
+}
+
+// setup mergeblock weights accordion to read the merge block weights of the current selected model
+function setupMergeBlockWeights() {
+    let controls = gradioApp().querySelectorAll(".model_mixer_mbws_control");
+
+    var observer = new MutationObserver(function(mutations) {
+        for (var mutation of mutations) {
+            if (mutation.target.classList.contains('open')) {
+                update_mbw();
+            }
+        }
+    });
+    for (var control of controls) {
+        var labelwrap = control.querySelector('.label-wrap');
+        observer.observe(labelwrap, {attributes: true, attributeFilter: ['class']});
+    }
+}
+
+onUiLoaded(function(){
+    setupMergeBlockWeights();
+
+    for (var tab of gradioApp().querySelectorAll('.mm_model_tab')) {
+        setupModelTab(tab);
+    }
+});
+
+})();

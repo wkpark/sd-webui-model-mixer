@@ -967,7 +967,7 @@ class ModelMixerScript(scripts.Script):
                     merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Sum(lerp)": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha"}
                     default_merge_info = merge_method_info[n]["Sum"]
                     tabname = f"Merge Model {name}" if n == 0 else f"Model {name}"
-                    with gr.Tab(tabname):
+                    with gr.Tab(tabname, elem_classes=["mm_model_tab"]):
                         with gr.Row():
                             mm_use[n] = gr.Checkbox(label=f"Model {name}", value=default_use[n], visible=True)
                         with gr.Row():
@@ -981,7 +981,7 @@ class ModelMixerScript(scripts.Script):
                                 mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin"], value="Normal")
                             mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n, is_sdxl)
 
-            with gr.Accordion("Merge Block Weights", open=False) as mbw_controls:
+            with gr.Accordion("Merge Block Weights", open=False, elem_classes=["model_mixer_mbws_control"]) as mbw_controls:
 
                 with gr.Row():
                     advanced_range_mode = gr.Checkbox(label="Enable Advanced block range", value=False, visible=True, interactive=True)
