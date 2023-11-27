@@ -2886,14 +2886,21 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 keyremains.append(k)
 
         stage = 1
+        theta_1 = None
+        checkpointinfo = checkpoint_info # checkpointinfo of model_a
         for n, file in enumerate(mm_models,start=weight_start):
-            checkpointinfo = sd_models.get_closet_checkpoint_match(file)
-            if checkpointinfo is None:
+            checkpointinfo1 = sd_models.get_closet_checkpoint_match(file)
+            if checkpointinfo1 is None:
                 raise RuntimeError(f"No checkpoint found for {file}")
 
-            model_name = checkpointinfo.model_name
-            print(f"Loading model {model_name}...")
-            theta_1 = load_state_dict(checkpointinfo)
+            model_name = checkpointinfo1.model_name
+            if checkpointinfo != checkpointinfo1:
+                print(f"Loading model {model_name}...")
+                theta_1 = load_state_dict(checkpointinfo1)
+                checkpointinfo = checkpointinfo1
+            else:
+                print("use already loaded model...")
+                theta_1 = theta_1 if theta_1 is not None else models["model_a"]
 
             model_b = f"model_{chr(97+n+1-weight_start)}"
             merge_recipe[model_b] = model_name
@@ -2993,7 +3000,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 shared.state.nextjob()
 
             stage += 1
-            del theta_1
+
+        del theta_1
 
         def make_recipe(modes, model_a, models):
             weight_start = 0
