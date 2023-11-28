@@ -100,8 +100,44 @@ function setupMergeBlockWeights() {
     }
 }
 
+// click adjust read button
+function update_adjust() {
+    let adjust = null;
+    let adjusts = gradioApp().querySelectorAll(".model_mixer_adjust_control");
+    for (let i = 0; i < adjusts.length; i++) {
+        if (adjusts[i].parentElement.offsetParent) {
+            adjust = adjusts[i]
+            break;
+        }
+    }
+
+    if (adjust) {
+        adjust.querySelector("button.mm_adjust_read").click();
+    }
+
+}
+
+// setup adjust settings accordion to read the current adjust settings
+function setupAdjust() {
+    let controls = gradioApp().querySelectorAll(".model_mixer_adjust_control");
+
+    var observer = new MutationObserver(function(mutations) {
+        for (var mutation of mutations) {
+            if (mutation.target.classList.contains('open')) {
+                // update adjust
+                update_adjust();
+            }
+        }
+    });
+    for (var control of controls) {
+        var labelwrap = control.querySelector('.label-wrap');
+        observer.observe(labelwrap, {attributes: true, attributeFilter: ['class']});
+    }
+}
+
 onUiLoaded(function(){
     setupMergeBlockWeights();
+    setupAdjust();
 
     for (var tab of gradioApp().querySelectorAll('.mm_model_tab')) {
         setupModelTab(tab);

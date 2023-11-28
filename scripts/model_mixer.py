@@ -1069,11 +1069,11 @@ class ModelMixerScript(scripts.Script):
                     dfalse =  gr.Checkbox(value = False, visible = False)
 
             with gr.Row(elem_classes="accordions"):
-              with gr.Accordion("Adjust settings", open=False, elem_classes=["input-accordion"]):
+              with gr.Accordion("Adjust settings", open=False, elem_classes=["input-accordion", "model_mixer_adjust_control"]):
                 with gr.Row():
                     mm_finetune = gr.Textbox(label="IN,OUT,OUT2,Contrast,Bright,COL1,COL2,COL3", visible=True, value="", lines=1, show_copy_button=True)
                     finetune_write = gr.Button(value="↖", elem_classes=["tool"])
-                    finetune_read = gr.Button(value="↓", elem_classes=["tool"])
+                    finetune_read = gr.Button(value="↓", elem_classes=["tool", "mm_adjust_read"])
                     finetune_reset = gr.Button(value="\U0001f5d1\ufe0f", elem_classes=["tool"])
                 with gr.Row():
                     with gr.Column(scale=1, min_width=100):
