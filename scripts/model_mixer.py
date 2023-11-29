@@ -4388,8 +4388,8 @@ def on_ui_settings():
     shared.opts.add_option(
         "mm_use_unet_partial_update",
         shared.OptionInfo(
-            default=False,
-            label="Use experimental UNet block partial update",
+            default=True,
+            label="Use UNet block partial update",
             component=gr.Checkbox,
             component_args={"interactive": True},
             section=section,
