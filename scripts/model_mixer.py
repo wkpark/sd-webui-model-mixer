@@ -2866,6 +2866,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
             print(" - Calulation device for Rebasin is ", device)
 
+            laplib = shared.opts.data.get("mm_laplib", "lap")
+            print(" - LAP library is", laplib)
+
+
         # set job_count
         save_jobcount = None
         if shared.state.job_count == -1:
@@ -2994,9 +2998,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 print("Rebasin calc...")
                 # rebasin mode
                 # Replace theta_0 with a permutated version using model A and B
-                first_permutation, y = weight_matching(permutation_spec, models["model_a"], theta_0, usefp16=usefp16, device=device, full=fullmatching)
+                first_permutation, y = weight_matching(permutation_spec, models["model_a"], theta_0, usefp16=usefp16, device=device, full=fullmatching, lap=laplib)
                 theta_0 = apply_permutation(permutation_spec, first_permutation, theta_0)
-                #second_permutation, z = weight_matching(permutation_spec, theta_1, theta_0, usefp16=usefp16, device=device, full=fullmatching)
+                #second_permutation, z = weight_matching(permutation_spec, theta_1, theta_0, usefp16=usefp16, device=device, full=fullmatching, lap=laplib)
                 #theta_3= apply_permutation(permutation_spec, second_permutation, theta_0)
                 shared.state.nextjob()
 
@@ -4393,6 +4397,17 @@ def on_ui_settings():
             label="Use UNet block partial update",
             component=gr.Checkbox,
             component_args={"interactive": True},
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        "mm_laplib",
+        shared.OptionInfo(
+            default="lap",
+            label="Select LAP library for Rebasin calc. (Linear Assignment Problem maximum weight matching)",
+            component=gr.Radio,
+            component_args={"choices": ["lap", "lapjv", "scipy"]},
             section=section,
         ),
     )

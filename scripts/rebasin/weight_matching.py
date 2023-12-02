@@ -832,7 +832,7 @@ def apply_permutation(ps: PermutationSpec, perm, params):
   """Apply a `perm` to `params`."""
   return {k: get_permuted_param(ps, perm, k, params) for k in params.keys() if "model_" not in k}
 
-def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None, device="cpu", max_iter=3, init_perm=None, usefp16=False, usetqdm=True, full=False):
+def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None, device="cpu", max_iter=3, init_perm=None, usefp16=False, usetqdm=True, full=False, lap="lap"):
   """Find a permutation of `params_b` to make them match `params_a`."""
   perm_sizes = {p: params_a[axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_axes.items() if axes[0][0] in params_b}
   perm = dict()
@@ -853,7 +853,7 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
   number = 0
   changed = []
 
-  lapfunc = default_lap()
+  lapfunc = default_lap(lap)
 
   if usefp16:
     for iteration in (desc:= tqdm(range(max_iter), position=1, bar_format='{desc}')):
