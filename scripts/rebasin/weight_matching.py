@@ -832,14 +832,26 @@ def apply_permutation(ps: PermutationSpec, perm, params):
   """Apply a `perm` to `params`."""
   return {k: get_permuted_param(ps, perm, k, params) for k in params.keys() if "model_" not in k}
 
-def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None, device="cpu", max_iter=3, init_perm=None, usefp16=False, usetqdm=True):
+def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None, device="cpu", max_iter=3, init_perm=None, usefp16=False, usetqdm=True, full=False):
   """Find a permutation of `params_b` to make them match `params_a`."""
   perm_sizes = {p: params_a[axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_axes.items() if axes[0][0] in params_b}
   perm = dict()
   perm = {p: torch.arange(n) for p, n in perm_sizes.items()} if init_perm is None else init_perm
   special_layers = special_layers if special_layers and len(special_layers) > 0 else sorted(list(perm.keys()))
+  _special_layers = ["P_bg358", "P_bg371", "P_bg324", "bg337"]
+  if not full:
+    special_layers = _special_layers
+
+  checked_layers = []
+  for layer in special_layers:
+    if layer in perm:
+      checked_layers.append(layer)
+
+  special_layers = checked_layers
+
   sum = 0
   number = 0
+  changed = []
 
   lapfunc = default_lap()
 
@@ -879,7 +891,12 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
 
           progress = progress or newL > oldL + 1e-12
 
-          perm[p] = torch.Tensor(ci).long()
+          newperm = torch.Tensor(ci).long()
+          if not torch.all(torch.eq(newperm, perm[p])):
+            changed.append(p)
+            if p not in _special_layers:
+              print(f"\033[92mSpecial layer {p} found\033[0m")
+          perm[p] = newperm
         
       if not progress:
         break
@@ -888,6 +905,7 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
       average = sum / number
     else:
       average = 0
+    print(f"\033[92mweight order changed layers = {changed}\033[0m")
     return (perm, average)
 
   else:
@@ -925,7 +943,12 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
 
           progress = progress or newL > oldL + 1e-12
 
-          perm[p] = torch.Tensor(ci).long()
+          newperm = torch.Tensor(ci).long()
+          if not torch.all(torch.eq(newperm, perm[p])):
+            changed.append(p)
+            if p not in _special_layers:
+              print(f"\033[92mSpecial layer {p} found\033[0m")
+          perm[p] = newperm
         
       if not progress:
         break
@@ -934,6 +957,7 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
       average = sum / number
     else:
       average = 0
+    print(f"\033[92mweight order changed layers = {changed}\033[0m")
     return (perm, average)
 
 

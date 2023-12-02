@@ -913,7 +913,7 @@ class ModelMixerScript(scripts.Script):
                 is_sdxl = gr.Checkbox(label="is SDXL", value=False, visible=True)
             with gr.Row():
                 calc_settings = gr.CheckboxGroup(label=f"Calculation options", info="Optional paramters for calculation if needed. e.g.) Rebasin",
-                    choices=[("Use GPU", "GPU"), ("Use CPU", "CPU")], value=["GPU"])
+                    choices=[("Use GPU", "GPU"), ("Use CPU", "CPU"), ("Fast Rebasin", "fastrebasin")], value=["GPU", "fastrebasin"])
 
 
             def update_basic_settings(basic_settings):
@@ -2850,6 +2850,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         # check Rebasin mode
         if not isxl and "Rebasin" in calcmodes:
+            fullmatching = "fastrebasin" not in calc_settings
             print(" - Dynamic loading rebasin module...")
             load_module(os.path.join(scriptdir, "scripts", "rebasin", "weight_matching.py"))
             from scripts.rebasin.weight_matching import weight_matching, apply_permutation
@@ -2993,9 +2994,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 print("Rebasin calc...")
                 # rebasin mode
                 # Replace theta_0 with a permutated version using model A and B
-                first_permutation, y = weight_matching(permutation_spec, models["model_a"], theta_0, usefp16=usefp16, device=device)
+                first_permutation, y = weight_matching(permutation_spec, models["model_a"], theta_0, usefp16=usefp16, device=device, full=fullmatching)
                 theta_0 = apply_permutation(permutation_spec, first_permutation, theta_0)
-                #second_permutation, z = weight_matching(permutation_spec, theta_1, theta_0, usefp16=usefp16, device=device)
+                #second_permutation, z = weight_matching(permutation_spec, theta_1, theta_0, usefp16=usefp16, device=device, full=fullmatching)
                 #theta_3= apply_permutation(permutation_spec, second_permutation, theta_0)
                 shared.state.nextjob()
 
