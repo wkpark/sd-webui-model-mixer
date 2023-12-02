@@ -1,8 +1,8 @@
 from collections import defaultdict
 from re import L
 from typing import NamedTuple
+import importlib.metadata
 import torch
-from scipy.optimize import linear_sum_assignment
 import time
 from random import shuffle
 from tqdm import tqdm
@@ -781,6 +781,53 @@ def get_permuted_param(ps: PermutationSpec, perm, k: str, params, except_axis=No
 
   return w
 
+def default_lap(lap="lap"):
+    """detect default lap func"""
+
+    def laplapjv(cost):
+        A = -cost.detach().numpy()
+        _, ri, ci = lap.lapjv(A)
+        #ri = np.arange(ci.shape[0])
+        return ci
+
+    def lapjvlapjv(cost):
+        A = -cost.detach().numpy()
+        ri, ci, _ = lapjv(A)
+        #ri = np.arange(ci.shape[0])
+        return ci
+
+    def scipylap(cost):
+        A = cost.detach().numpy()
+        ri, ci = linear_sum_assignment(A, maximize=True)
+
+        assert (torch.tensor(ri) == torch.arange(len(ri))).all()
+        return ci
+
+    if lap not in ["lap", "lapjv", "scipy"]:
+        lap = "lap"
+
+    try:
+        importlib.metadata.version(lap)
+    except Exception:
+        lap = "scipy"
+        pass
+
+    if lap == "lap": # fastest
+        import lap
+        lapfunc = laplapjv
+        print("maximize weight matching using lap...")
+    elif lap == "lapjv":
+        from lapjv import lapjv
+        print("maximize weight matching using lapjv...")
+        lapfunc = lapjvlapjv
+    else:
+        from scipy.optimize import linear_sum_assignment
+        print("maximize weight matching using scipy linear_sum_assignment...")
+        lapfunc = scipylap
+
+    return lapfunc
+
+
 def apply_permutation(ps: PermutationSpec, perm, params):
   """Apply a `perm` to `params`."""
   return {k: get_permuted_param(ps, perm, k, params) for k in params.keys() if "model_" not in k}
@@ -793,6 +840,8 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
   special_layers = special_layers if special_layers and len(special_layers) > 0 else sorted(list(perm.keys()))
   sum = 0
   number = 0
+
+  lapfunc = default_lap()
 
   if usefp16:
     for iteration in (desc:= tqdm(range(max_iter), position=1, bar_format='{desc}')):
@@ -818,10 +867,8 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
               A += torch.matmul(w_a.half(), w_b.half())
 
           A = A.cpu()
-          ri, ci = linear_sum_assignment(A.detach().numpy(), maximize=True)
+          ci = lapfunc(A)
 
-          assert (torch.tensor(ri) == torch.arange(len(ri))).all()
-          
           oldL = torch.vdot(torch.flatten(A).float(), torch.flatten(torch.eye(n)[perm[p].long()]).float()).half()
           newL = torch.vdot(torch.flatten(A).float(), torch.flatten(torch.eye(n)[ci, :]).float()).half()
           
@@ -866,10 +913,8 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
             w_b = torch.moveaxis(w_b, axis, 0).reshape((n, -1)).T.to(device)
             A += torch.matmul(w_a.float(), w_b.float()).cpu()
 
-          ri, ci = linear_sum_assignment(A.detach().numpy(), maximize=True)
+          ci = lapfunc(A)
 
-          assert (torch.tensor(ri) == torch.arange(len(ri))).all()
-        
           oldL = torch.vdot(torch.flatten(A), torch.flatten(torch.eye(n)[perm[p].long()]).float())
           newL = torch.vdot(torch.flatten(A), torch.flatten(torch.eye(n)[ci, :]).float())
 
