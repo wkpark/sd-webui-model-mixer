@@ -864,7 +864,7 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
               w_b = get_permuted_param(ps, perm, wk, params_b, except_axis=axis)
               w_a = torch.moveaxis(w_a, axis, 0).reshape((n, -1)).to(device)
               w_b = torch.moveaxis(w_b, axis, 0).reshape((n, -1)).T.to(device)
-              A += torch.matmul(w_a.half(), w_b.half())
+              A += torch.mm(w_a.half(), w_b.half())
 
           A = A.cpu()
           ci = lapfunc(A)
@@ -879,7 +879,7 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
 
           progress = progress or newL > oldL + 1e-12
 
-          perm[p] = torch.Tensor(ci)
+          perm[p] = torch.Tensor(ci).long()
         
       if not progress:
         break
@@ -911,7 +911,7 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
             w_b = get_permuted_param(ps, perm, wk, params_b, except_axis=axis)
             w_a = torch.moveaxis(w_a, axis, 0).reshape((n, -1)).to(device)
             w_b = torch.moveaxis(w_b, axis, 0).reshape((n, -1)).T.to(device)
-            A += torch.matmul(w_a.float(), w_b.float()).cpu()
+            A += torch.mm(w_a.float(), w_b.float()).cpu()
 
           ci = lapfunc(A)
 
@@ -925,7 +925,7 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None
 
           progress = progress or newL > oldL + 1e-12
 
-          perm[p] = torch.Tensor(ci)
+          perm[p] = torch.Tensor(ci).long()
         
       if not progress:
         break
