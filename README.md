@@ -1,5 +1,5 @@
 ## Checkpoint Model Mixer extension
-This is another model merger/mixer.
+This is a simple but useful model merger/mixer.
 
 It was created when I was looking for a way to use [SuperMerger](https://github.com/hako-mikan/sd-webui-supermerger) with other extensions in the txt2img tab. It doesn't have all the features of SuperMerger, but it inherits the core functionality.
 
