@@ -1429,7 +1429,7 @@ class ModelMixerScript(scripts.Script):
                 with gr.Row():
                     download_status = gr.Textbox(visible=True, label="message")
 
-                def downloader(fileinfo, progress=gr.Progress(track_tqdm=False)):
+                def downloader(fileinfo): # progress=gr.Progress(track_tqdm=False)):
                     import asyncio
                     use_model_dl = shared.opts.data.get("mm_use_model_dl", False)
 
@@ -3454,7 +3454,7 @@ def fineman(fine, isxl):
 
 def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, diff_model_mode,
         custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, min_diff, clamp_quantile,
-        precision, calc_device, save_settings, metadata_settings, extra_settings, progress=gr.Progress(track_tqdm=False)):
+        precision, calc_device, save_settings, metadata_settings, extra_settings): #, progress=gr.Progress(track_tqdm=False)):
 
     if shared.sd_model and shared.sd_model.sd_checkpoint_info:
         metadata = shared.sd_model.sd_checkpoint_info.metadata.copy()
@@ -3536,7 +3536,7 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
     # some possible ommitted keys
     possible_keys = [ "conditioner.embedders.1.model.transformer.text_model.embeddings.position_ids" ]
     is_equal = True
-    progress.track_tqdm=True
+    #progress.track_tqdm=False
     checkbar = tqdm(state_dict_base.keys(), desc="check difference")
     for key in checkbar:
         if "model" not in key:
@@ -3561,7 +3561,7 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
 
     gc.collect()
     devices.torch_gc()
-    progress.track_tqdm=False
+    #progress.track_tqdm=False
 
     device = None
     if calc_device == "auto":
