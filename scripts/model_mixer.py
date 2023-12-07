@@ -2410,6 +2410,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 print(f"  - use current mixed model {confighash}")
                 return
 
+        timer = Timer()
         print("  - mm_use", mm_use)
         print("  - model_a", model_a)
         print("  - base_model", base_model)
@@ -2890,6 +2891,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 item = theta_0.pop(k)
                 keyremains.append(k)
 
+        timer.record("prepare")
         stage = 1
         theta_1 = None
         checkpointinfo = checkpoint_info # checkpointinfo of model_a
@@ -3007,6 +3009,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             stage += 1
 
         del theta_1
+        timer.record("merging")
 
         def make_recipe(modes, model_a, models):
             weight_start = 0
@@ -3127,6 +3130,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         # fix/check bad CLIP ids
         fixclip(theta_0, mm_states["save_settings"], isxl)
 
+        timer.record("merging")
+        print(f' - merge processing in {timer.summary()}.')
         sha256 = None
         t = Timer()
         if not partial_update and shared.opts.data.get("mm_use_precalculate_hash", False):
