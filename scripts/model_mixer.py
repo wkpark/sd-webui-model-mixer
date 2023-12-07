@@ -3019,7 +3019,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 # recipe string
                 if "Sum" in modes[n]:
                     if recipe_all.find(" ") > -1: recipe_all = f"({recipe_all})"
-                    recipe_all = f"({recipe_all}) * (1 - alpha_{n}) + {model_name} * alpha_{n}"
+                    recipe_all = f"{recipe_all} * (1 - alpha_{n}) + {model_name} * alpha_{n}"
                 elif modes[n] in [ "Add-Diff" ]:
                     recipe_all = f"{recipe_all} + ({model_name} - {base_model}) * alpha_{n}"
 
