@@ -2526,6 +2526,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 compact_mode = True if compact_mode is None else compact_mode
             else:
                 compact_mode = False
+                max_blocks = 26 - (0 if not isxl else 6)
+                mm_weights[j] = [mm_alpha[j]] * max_blocks
 
         # fix mm_weights to use poinpoint blocks xyz
         for j in range(len(mm_models)):
