@@ -44,6 +44,8 @@ from ldm.modules.attention import CrossAttention
 from scripts.vxa import generate_vxa, default_hidden_layer_name, get_layer_names
 from scripts.vxa import tokenize
 
+from sd_modelmixer.classifier import get_classifiers, classifier_score
+
 dump_cache = cache.dump_cache
 cache = cache.cache
 
@@ -750,7 +752,10 @@ def load_module(path):
     p = Path(path)
     if "extensions" in p.parts:
         i = p.parts.index("extensions")
-        if "scripts" in p.parts[i:]:
+        if "sd_modelmixer" in p.parts[i:]:
+            j = p.parts[i:].index("sd_modelmixer")
+            name = ".".join(p.parts[i+j:])
+        elif "scripts" in p.parts[i:]:
             j = p.parts[i:].index("scripts")
             name = ".".join(p.parts[i+j:])
         else:
@@ -786,7 +791,16 @@ class ModelMixerScript(scripts.Script):
     elemental_blocks = None
 
     init_on_after_callback = False
+    init_on_app_started = False
 
+    txt2img_ids = ["txt2img_prompt", "txt2img_neg_prompt", "txt2img_styles", "txt2img_steps", "txt2img_sampling", "txt2img_batch_count", "txt2img_batch_size",
+                "txt2img_cfg_scale", "txt2img_width", "txt2img_height", "txt2img_seed", "txt2img_denoising_strength" ]
+
+    img2img_ids = ["img2img_prompt", "img2img_neg_prompt", "img2img_styles", "img2img_steps", "img2img_sampling", "img2img_batch_count", "img2img_batch_size",
+                "img2img_cfg_scale", "img2img_width", "img2img_height", "img2img_seed", "img2img_denoising_strength" ]
+
+    img2img_components = {}
+    txt2img_components = {}
     components = {}
 
     def __init__(self):
@@ -848,9 +862,18 @@ class ModelMixerScript(scripts.Script):
         if elem_id is None:
             return
 
-        if elem_id in [ "txt2img_generate", "img2img_generate" ]:
+        if elem_id in [ "txt2img_generate", "img2img_generate", "img2img_image" ]:
             MM.components[elem_id] = component
             return
+
+        if elem_id in MM.txt2img_ids:
+            MM.txt2img_components[elem_id] = component
+        elif elem_id in MM.img2img_ids:
+            MM.img2img_components[elem_id] = component
+
+        if elem_id in [ "img2img_gallery", "html_info_img2img", "html_log_img2img", "generation_info_img2img",
+                "txt2img_gallery", "html_info_txt2img", "html_log_txt2img", "generation_info_txt2img" ]:
+            MM.components[elem_id] = component
 
 
     def ui(self, is_img2img):
@@ -1220,6 +1243,217 @@ class ModelMixerScript(scripts.Script):
                     show_progress=False,
                 )
 
+            if not is_img2img:
+                with gr.Accordion("Auto Merge Helper", open=False):
+                    with gr.Row():
+                        auto_logging = gr.Textbox(label="Score message", lines=1, value="", show_label=False, info="log message")
+                    with gr.Row():
+                        with gr.Column(variant="compact"):
+                            am_image = gr.Image(elem_id="mm_auto_input_image", type="pil")
+                        generation_info = gr.Textbox(visible=False, elem_id="mm_image_generation_info")
+
+
+                    def get_prompt(x: str):
+                        res = {}
+
+                        prompt = ""
+
+                        *lines, lastline = x.strip().split("\n")
+                        for line in lines:
+                            line = line.strip()
+                            if line.startswith("Negative prompt:"):
+                                break
+                            else:
+                                prompt += ("" if prompt == "" else "\n") + line
+
+                        return prompt
+
+
+                    def get_pnginfo(image):
+                        if image is None:
+                            return gr.update()
+
+                        geninfo, _ = images.read_info_from_image(image)
+                        if geninfo is None or geninfo.strip() == "":
+                            return ''
+
+                        return geninfo
+
+                    am_image.change(
+                        fn=get_pnginfo,
+                        inputs=[am_image],
+                        outputs=[generation_info],
+                    )
+
+                    classifiers = get_classifiers()
+                    with gr.Column(variant="panel"):
+                        with gr.Row():
+                            am_classifier = gr.Dropdown(label='Image Scoring Classifier', elem_id="mm_classifiers", choices=[*classifiers.keys()], value="score_image_reward")
+                        with gr.Row():
+                            am_classifier_btn = gr.Button("Test Image Score Classifier")
+                        with gr.Row():
+                            am_payload_path = gr.Dropdown(label="Payload images directory", choices=list_dirs(), allow_custom_value=True, info="Path of reference images to get prompts to generate images if available")
+                        with gr.Row():
+                            from sd_modelmixer import optimizers
+
+                            am_search_type_a = gr.Dropdown(label="Optimize Method A", choices=optimizers.optimizer_types(), value=optimizers.optimizer_types()[0], elem_id="mm_search_type_A")
+                            am_search_balance = gr.Slider(label="Balance (A-B)", minimum=0, maximum=1, step=0.1, value=0)
+                            am_search_type_b = gr.Dropdown(label="Optimize Method B", choices=["None"] + optimizers.optimizer_types(), value="None", elem_id="mm_search_type_B")
+
+
+                        def update_dir_list(path):
+                            if path == None:
+                                return gr.update()
+                            dirs = list_dirs(path)
+                            if dirs is None:
+                                return gr.update()
+                            return gr.update(choices=dirs, value=path)
+
+                        am_payload_path.change(
+                            fn=update_dir_list,
+                            inputs=[am_payload_path],
+                            outputs=[am_payload_path],
+                            show_progress=False,
+                        )
+
+                    with gr.Tabs():
+                        with gr.Tab("Optimizer A"):
+                            am_tabs_a, am_states_a = optimizers.ui_optimizers(optimizers.optimizer_types()[0])
+                        with gr.Tab("Optimizer B"):
+                            am_tabs_b, am_states_b = optimizers.ui_optimizers("None")
+
+                    def select_optimizer(optimizer, tabs):
+                        # show hide wrapper group of the selected optimizer options accordion
+                        ret = []
+                        for name, tab in tabs.items():
+                           if name == optimizer:
+                               ret.append(gr.update(visible=True))
+                           else:
+                               ret.append(gr.update(visible=False))
+                        return ret
+
+                    am_search_type_a.change(
+                        fn=lambda search: select_optimizer(search, am_tabs_a),
+                        inputs=[am_search_type_a],
+                        outputs=[*am_tabs_a.values()],
+                        show_progress=False,
+                    )
+
+                    am_search_type_b.change(
+                        fn=lambda search: select_optimizer(search, am_tabs_b),
+                        inputs=[am_search_type_b],
+                        outputs=[*am_tabs_b.values()],
+                        show_progress=False,
+                    )
+
+                    with gr.Column(variant="panel"):
+                        with gr.Column():
+                            with gr.Row():
+                                am_search_time = gr.Slider(label="Search Time Limit (min)", minimum=1, maximum=2880, step=1, value=10)
+                                am_search_iterations = gr.Slider(label="Search Iterations", minimum=10, maximum=1000, step=1, value=250)
+                            with gr.Row():
+                                am_variable_blocks = gr.Dropdown(["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:], value=[], multiselect=True, label="Variable Search Blocks", info="select variable blocks to optimize (default: all blocks)")
+                            with gr.Row():
+                                am_variable_models = gr.CheckboxGroup(["B","C","D","E"], value=[], label="Variable Models", info="select variable models to optimize (default: all models)")
+                            with gr.Row():
+                                am_search_upper = gr.Slider(label="Search Upper", minimum=0.0, maximum=1.0, step=0.001, value=0.2)
+                                am_search_lower = gr.Slider(label="Search Lower", minimum=-1.0, maximum=0.0, step=0.001, value=-0.2)
+                                am_search_max = gr.Slider(label="Search Max Limit", minimum=0.0, maximum=1.0, step=0.001, value=0.5)
+                        with gr.Row():
+                            tally_types = ["Arithmetic Mean", "Geometric Mean", "Harmonic Mean", "A/G Mean", "G/H Mean", "A/H Mean",  "Median", "Min", "Max", "Min*Max", "Fuzz Mode"]
+                            am_tally_type = gr.Dropdown(label="Tally Type", choices=tally_types, value="Arithmetic Mean", info="How to tally the scores", elem_id="mm_auto_tally_type")
+                        with gr.Column():
+                            with gr.Row():
+                                am_warm_start = gr.Checkbox(label="Warm Start", value=True)
+                            with gr.Row():
+                                am_initialize_grid = gr.Slider(label="Initialize Points [grid]", minimum=0, maximum=50, step=1, value=4)
+                                am_initialize_vertices = gr.Slider(label="Initialize Points [vertices]", minimum=0, maximum=50, step=1, value=4)
+                                am_initialize_random = gr.Slider(label="Initialize Points [random]", minimum=0, maximum=50, step=1, value=2)
+                        with gr.Column():
+                            with gr.Row():
+                                am_enable_early_stop = gr.Checkbox(label="Early Stop", value=False)
+                            with gr.Row():
+                                am_n_iter_no_change = gr.Slider(label="Iterations Tolerance", minimum=0, maximum=1000, step=1, value=25, interactive=False)
+                                am_tol_abs = gr.Slider(label="Absolute Tolerance", minimum=0.0, maximum=1.0, step=0.01, value=0, interactive=False)
+                                am_tol_rel = gr.Slider(label="Relative Tolerance", minimum=0.0, maximum=1.0, step=0.01, value=0, interactive=False)
+
+                        am_enable_early_stop.change(
+                            fn=lambda a: [gr.update(interactive=a)]*3,
+                            inputs=[am_enable_early_stop],
+                            outputs=[am_n_iter_no_change, am_tol_abs, am_tol_rel],
+                            show_progress=False,
+                        )
+
+                    am_params = {
+                        "classifier": am_classifier,
+                        "payload_path": am_payload_path,
+                        "search_type_a": am_search_type_a,
+                        "search_type_b": am_search_type_b,
+                        "search_balance": am_search_balance,
+                        "tally_type": am_tally_type,
+                        "search_iterations": am_search_iterations,
+                        "search_time": am_search_time,
+                        "variable_blocks": am_variable_blocks,
+                        "variable_models": am_variable_models,
+                        "search_upper": am_search_upper,
+                        "search_lower": am_search_lower,
+                        "search_max": am_search_max,
+                        "initialize_grid": am_initialize_grid,
+                        "initialize_vertices": am_initialize_vertices,
+                        "initialize_random": am_initialize_random,
+                        "warm_start": am_warm_start,
+                        "enable_early_stop": am_enable_early_stop,
+                        "n_iter_no_change": am_n_iter_no_change,
+                        "tol_abs": am_tol_abs,
+                        "tol_rel": am_tol_rel,
+                    }
+
+                    with gr.Row():
+                        am_auto_merge_btn = gr.Button("Start Auto merge", variant="primary")
+                        am_stop_merge_btn = gr.Button("Interrupt")
+                        am_reset_merge_btn = gr.Button("Reset Optimizer")
+
+                    am_stop_merge_btn.click(
+                        fn=lambda: shared.state.interrupt(),
+                        inputs=[],
+                        outputs=[],
+                    )
+
+                    def reset_optimizer():
+                        if getattr(shared, "modelmixer_overrides", None) is not None:
+                            delattr(shared, "modelmixer_overrides")
+                        if getattr(shared, "_optimizer_config", None) is not None:
+                            delattr(shared, "_optimizer_config")
+
+                    am_reset_merge_btn.click(
+                        fn=reset_optimizer,
+                        inputs=[],
+                        outputs=[],
+                    )
+
+
+                def test_score_func(classifier, image, geninfo):
+                    if classifier not in classifiers:
+                        return f"module {classifier} not found"
+
+                    module_path = classifiers[classifier]
+                    if module_path and image and geninfo:
+                        positive_prompt = get_prompt(geninfo)
+                        score = classifier_score(module_path, image, positive_prompt)
+                        return f"Score: {score}"
+
+                    if image is None:
+                        return "Empty image"
+                    return "Empty pnginfo or invalid module."
+
+                am_classifier_btn.click(
+                    fn=test_score_func,
+                    inputs=[am_classifier, am_image, generation_info],
+                    outputs=[auto_logging],
+                    show_progress=True,
+                )
+
+
             with gr.Accordion("Save the current merged model", open=False):
                 with gr.Row():
                     logging = gr.Textbox(label="Message", lines=1, value="", show_label=False, info="log message")
@@ -1514,6 +1748,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             with gr.Row(variant="compact"):
                 unload_sd_model = gr.Button("Unload model to free VRAM")
                 reload_sd_model = gr.Button("Reload model back to VRAM")
+
+            # dummy_components
+            dummy_component = gr.Label(visible=False)
 
             def call_func_and_return_text(func, text):
                 def handler():
@@ -2163,6 +2400,178 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
             return states
 
+        all_args = [
+            model_a, base_model, mm_max_models, mm_finetune, mm_states,
+            *mm_use, *mm_models, *mm_modes, *mm_alpha,
+            *mbw_use_advanced, *mm_usembws, *mm_usembws_simple,
+            *mm_weights, *mm_use_elemental, *mm_elementals,
+        ]
+
+
+        def hyper_merge(task, tab, gallery_idx, input, gallery, generation_info,
+                seed_index,
+                prompt, negative_prompt, styles, steps, sampler_name, batch_count, batch_size,
+                cfg_scale, width, height, seed, denoising_strength,
+                classifier, payload_path,
+                search_type_a, search_type_b, search_balance,
+                tally_type,
+                search_iterations, search_time,
+                variable_blocks, variable_models,
+                search_upper, search_lower, search_max,
+                initialize_grid, initialize_vertices, initialize_random,
+                warm_start,
+                enable_early_stop, n_iter_no_change, tol_abs, tol_rel,
+                states_a, states_b,
+                request: gr.Request,
+                *_args):
+
+            MM = ModelMixerScript
+
+            try:
+                print(" - loading sd_modelmixer.hyper...")
+                load_module(os.path.join(scriptdir, "sd_modelmixer", "hyper.py"))
+            except Exception as e:
+                print(f"No sd_modelmixer.hyper modules found. ERROR: {e}")
+                return "Fail to load hyper"
+            from sd_modelmixer import hyper
+
+            txt2img_args = [
+                task,
+                prompt,
+                negative_prompt,
+                styles,
+                steps,
+                sampler_name,
+                batch_count,
+                batch_size,
+                cfg_scale,
+                height,
+                width,
+                False, # enable_hr,
+                denoising_strength,
+                2.0, # hr_scale,
+                "Latent", # hr_upscaler,
+                0, # hr_second_pass_steps,
+                0, # hr_resize_x,
+                0, # hr_resize_y,
+                "Use same checkpoint", # hr_checkpoint_name,
+                "Use same sampler", # hr_sampler_name,
+                "", # hr_prompt,
+                "", # hr_negative_prompt,
+                [], # overide_settings,
+                request, # gr.Request(),
+                *_args[len(all_args):],
+            ]
+
+            optimizer_args = dict(
+                txt2img_args=txt2img_args,
+                seed_index=seed_index,
+                classifier=classifier,
+                payload_path=payload_path,
+                search_type_a=search_type_a,
+                search_type_b=search_type_b,
+                search_balance=search_balance,
+                tally_type=tally_type,
+                search_iterations=search_iterations,
+                search_time=search_time,
+                variable_blocks=variable_blocks,
+                variable_models=variable_models,
+                search_upper=search_upper,
+                search_lower=search_lower,
+                search_max=search_max,
+                initialize_grid=initialize_grid,
+                initialize_vertices=initialize_vertices,
+                initialize_random=initialize_random,
+                warm_start=warm_start,
+                enable_early_stop=enable_early_stop,
+                n_iter_no_change=n_iter_no_change,
+                tol_abs=tol_abs,
+                tol_rel=tol_rel,
+                search_opts_a=states_a[search_type_a],
+                search_opts_b=states_b[search_type_b] if search_type_b != "None" else None,
+            )
+
+            # setup search optimizer options
+            ret = hyper.hyper_optimizer(**optimizer_args)
+
+            return ret
+
+
+        def get_txt2img_components():
+            MM = ModelMixerScript
+            ret = []
+            for elem_id in MM.txt2img_ids:
+                ret.append(MM.txt2img_components[elem_id])
+            return ret
+
+
+        def get_img2img_components():
+            MM = ModelMixerScript
+            ret = []
+            for elem_id in MM.img2img_ids:
+                ret.append(MM.img2img_components[elem_id])
+            return ret
+
+
+        # from supermerger GenParamGetter.py
+        def compare_components_with_ids(components: list[gr.Blocks], ids: list[int]):
+            return len(components) == len(ids) and all(component._id == _id for component, _id in zip(components, ids))
+
+
+        def on_app_started(demo, app):
+            MM = ModelMixerScript
+
+            for _id, is_txt2img in zip([MM.components["txt2img_generate"]._id, MM.components["img2img_generate"]._id], [True, False]):
+                dependencies = [x for x in demo.dependencies if x["trigger"] == "click" and _id in x["targets"]]
+                dependency = None
+
+                for d in dependencies:
+                    if "js" in d and d["js"] in [ "submit", "submit_img2img" ]:
+                        dependency = d
+
+                params = [params for params in demo.fns if compare_components_with_ids(params.inputs, dependency["inputs"])]
+
+                if is_txt2img:
+                    MM.components["txt2img_elem_ids"] = [x.elem_id if hasattr(x,"elem_id") else "None" for x in params[0].inputs]
+                else:
+                    MM.components["img2img_elem_ids"] = [x.elem_id if hasattr(x,"elem_id") else "None" for x in params[0].inputs]
+
+                if is_txt2img:
+                    MM.components["txt2img_params"] = params[0].inputs
+                else:
+                    MM.components["img2img_params"] = params[0].inputs
+
+
+            if not self.init_on_app_started:
+                if not is_img2img:
+                    script_args = MM.components["txt2img_params"][MM.components["txt2img_elem_ids"].index("txt2img_override_settings")+1:]
+                else:
+                    script_args = MM.components["img2img_params"][MM.components["img2img_elem_ids"].index("img2img_override_settings")+1:]
+
+                with demo:
+                    if not is_img2img:
+                        # HACK. get seed component index
+                        ii = MM.components["txt2img_elem_ids"].index("txt2img_seed")
+                        seed_index = gr.State(ii)
+
+                        am_auto_merge_btn.click(
+                            fn=hyper_merge,
+                            inputs=[dummy_component, dummy_component, dummy_component, am_image, MM.components["txt2img_gallery"], MM.components["generation_info_txt2img"],
+                                seed_index,
+                                *get_txt2img_components(),
+                                *[*am_params.values()],
+                                am_states_a, am_states_b,
+                                *all_args, *script_args],
+                            outputs=[auto_logging],
+                            show_progress=False,
+                        )
+
+            self.init_on_app_started = True
+
+        if self.init_on_app_started is False:
+            script_callbacks.on_app_started(on_app_started)
+
+
         generate_button = MM.components["img2img_generate" if is_img2img else "txt2img_generate"]
         generate_button.click(
             fn=prepare_states,
@@ -2172,8 +2581,16 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             queue=False,
         )
 
-        return [enabled, model_a, base_model, mm_max_models, mm_finetune, mm_states, *mm_use, *mm_models, *mm_modes, *mm_alpha,
-            *mbw_use_advanced, *mm_usembws, *mm_usembws_simple, *mm_weights, *mm_use_elemental, *mm_elementals]
+        if not is_img2img:
+            am_auto_merge_btn.click(
+                fn=prepare_states,
+                inputs=[mm_states, save_settings, calc_settings, *mm_calcmodes],
+                outputs=[mm_states],
+                show_progress=False,
+                queue=False,
+            )
+
+        return [enabled, *all_args]
 
     def modelmixer_extra_params(self, model_a, base_model, mm_max_models, mm_finetune, mm_states, *args_):
         num_models = int(mm_max_models)
@@ -2386,6 +2803,21 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 mm_use_elemental.append(use_elemental)
                 mm_elementals.append(elemental)
                 mm_calcmodes.append(calcmode)
+
+
+        # auto merge optimizer
+        if getattr(shared, "modelmixer_overrides", None) is not None:
+            overrides = getattr(shared, "modelmixer_overrides")
+            _weights = overrides["weights"]
+            _uses = overrides["uses"]
+            args = list(args_)
+            for j in range(len(_uses)):
+                if _uses[j] and len(_weights) > j:
+                    mm_weights[j] = _weights[j]
+                    # update args to set extra_params
+                    args[num_models*7+j] = _weights[j]
+            # restore
+            args_ = tuple(args)
 
         calc_settings = mm_states.pop("calc_settings", {})
         # exclude calc_settings from fake hash
@@ -3314,6 +3746,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         shared.modelmixer_config = {
             "hash": sha256 if sha256 else confighash,
             "confighash": confighash,
+            "uses": mm_use,
+            "usembws": mm_usembws,
             "models" : modelinfos,
             "hashes" : modelhashes,
             "model_a": model_a,
@@ -3327,6 +3761,22 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             "recipe": recipe_all + alphastr,
         }
         return
+
+
+def list_dirs(parent="None"):
+    if parent == "None" or parent == "":
+        parent = shared.opts.outdir_samples or shared.opts.outdir_txt2img_samples
+
+    if not os.path.isdir(parent):
+        return None
+
+    subdirs = [os.path.join(parent, item) for item in os.listdir(parent) if os.path.isdir(os.path.join(parent, item))]
+    if len(subdirs) > 0:
+        if os.path.dirname(parent) != "":
+            return ["None", os.path.dirname(parent), parent] + subdirs
+        return ["None", parent] + subdirs
+    return None
+
 
 def precalculate_safetensors_hashes(state_dict, metadata, save_settings, isxl, fixheader=True):
     import safetensors
@@ -4776,6 +5226,7 @@ def on_before_ui():
 
 def on_model_loaded(model):
     shared.modelmixer_config = None
+    shared.modelmixer_overrides = None
 
 
 script_callbacks.on_ui_settings(on_ui_settings)
