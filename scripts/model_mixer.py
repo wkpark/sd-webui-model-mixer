@@ -2223,6 +2223,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         return params
 
     def before_process(self, p, enabled, model_a, base_model, mm_max_models, mm_finetune, mm_states, *args_):
+        global permutation_spec
+
         if not enabled:
             return
         debugs = shared.opts.data.get("mm_debugs", ["elemental merge"])
@@ -2856,9 +2858,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             fullmatching = "fastrebasin" not in calc_settings
             print(" - Dynamic loading rebasin module...")
             load_module(os.path.join(scriptdir, "scripts", "rebasin", "weight_matching.py"))
-            from scripts.rebasin.weight_matching import weight_matching, apply_permutation
+            from scripts.rebasin.weight_matching import weight_matching, apply_permutation, sdunet_permutation_spec
 
             print("Rebasin mode")
+
+            if permutation_spec is None:
+                # one time initializer
+                permutation_spec = sdunet_permutation_spec()
 
             device = get_device()
             usefp16 = True
