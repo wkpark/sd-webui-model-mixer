@@ -1,6 +1,6 @@
-from .aesthetic import judge
+from .aesthetic import judge_waifu
 
 
 def score(image, prompt=""):
-    _, _, waifu = judge(image)
+    waifu = judge_waifu(image)
     return waifu["waifu"]

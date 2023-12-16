@@ -1,32 +1,11 @@
 import os
-from pathlib import Path
-from glob import glob
-import shutil
+from transformers import pipeline
 
-import gradio as gr
-from PIL import Image, ImageFile
-
-ImageFile.LOAD_TRUNCATED_IMAGES = True
-
-from modules import shared, scripts, script_callbacks, ui
-from modules import generation_parameters_copypaste as parameters_copypaste
-from modules.call_queue import wrap_gradio_gpu_call
-import launch
-
-script_dir = Path(scripts.basedir())
 aesthetics = {}  # name: pipeline
-
-
-def library_check():
-    if not launch.is_installed("transformers"):
-        launch.run_pip("install transformers", "requirements for autoMBW: Cafe Aesthetic - adapted from p1atdev")
 
 
 def model_check(name):
     if name not in aesthetics:
-        library_check()
-        from transformers import pipeline
-
         if name == "aesthetic":
             aesthetics["aesthetic"] = pipeline(
                 "image-classification", model="cafeai/cafe_aesthetic"

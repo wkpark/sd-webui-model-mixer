@@ -13,9 +13,11 @@ clipprocessor = CLIPProcessor.from_pretrained(clip_name)
 clipmodel = CLIPModel.from_pretrained(clip_name)
 
 clipmodel.eval()
+clipmodel.to("cpu")
 
 aes_model = Classifier(512, 256, 1)
 aes_model.load_state_dict(safetensors.torch.load_file(aesthetic_path))
+aes_model.to("cpu")
 
 
 def score(image, prompt="", use_cuda=True):
