@@ -964,7 +964,7 @@ class ModelMixerScript(scripts.Script):
                     name_a = chr(66+n-1) if n == 0 else f"merge_{n}"
                     name = chr(66+n)
                     lowername = chr(98+n)
-                    merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Sum(lerp)": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha"}
+                    merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha"}
                     default_merge_info = merge_method_info[n]["Sum"]
                     tabname = f"Merge Model {name}" if n == 0 else f"Model {name}"
                     with gr.Tab(tabname, elem_classes=["mm_model_tab"]):
@@ -976,7 +976,7 @@ class ModelMixerScript(scripts.Script):
 
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
-                                mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info, choices=["Sum", "Sum(lerp)", "Add-Diff"], value="Sum")
+                                mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value="Sum")
                             with gr.Row():
                                 mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin"], value="Normal")
                             mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n, is_sdxl)
@@ -2712,10 +2712,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         }
 
         # merge functions
-        def weighted_sum(theta0, theta1, alpha):
+        def _weighted_sum(theta0, theta1, alpha):
             return (1 - alpha) * theta0 + alpha * theta1
 
-        def torch_lerp(theta0, theta1, alpha):
+        def _torch_lerp(theta0, theta1, alpha):
             return torch.lerp(theta0.to(torch.float32), theta1.to(torch.float32), alpha).to(theta0.dtype)
 
         def add_difference(theta0, theta1, base, alpha):
@@ -2878,6 +2878,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             laplib = shared.opts.data.get("mm_laplib", "lap")
             print(" - LAP library is", laplib)
 
+        # check to use torch.lerp()
+        use_fast_weighted_sum = shared.opts.data.get("mm_use_fast_weighted_sum", True)
+        if use_fast_weighted_sum:
+            weighted_sum = _torch_lerp
+        else:
+            weighted_sum = _weighted_sum
+
 
         # set job_count
         save_jobcount = None
@@ -2983,10 +2990,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         if alpha == 1.0:
                             theta_0[key] = theta_1[key]
                         elif alpha != 0.0:
-                            if "lerp" in modes[n]:
-                                theta_0[key] = torch_lerp(theta_0[key], theta_1[key], alpha)
-                            else:
-                                theta_0[key] = weighted_sum(theta_0[key], theta_1[key], alpha)
+                            theta_0[key] = weighted_sum(theta_0[key], theta_1[key], alpha)
                     else:
                         if alpha != 0.0:
                             theta_0[key] = add_difference(theta_0[key], theta_1[key], model_base[key], alpha)
@@ -4426,6 +4430,17 @@ def on_ui_settings():
     )
 
     shared.opts.add_option(
+        "mm_use_fast_weighted_sum",
+        shared.OptionInfo(
+            default=True,
+            label="Use Fast weighted sum using torch.lerp()",
+            component=gr.Checkbox,
+            component_args={"interactive": True},
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
         "mm_use_precalculate_hash",
         shared.OptionInfo(
             default=False,
@@ -4504,6 +4519,9 @@ def on_infotext_pasted(infotext, results):
         if config_lock:
             excludes.append(k)
             continue
+
+        if k.find(" merge mode ") > 0 and v == "Sum(lerp)":
+            updates[k] = "Sum"
 
         if k.find(" model ") > 0:
             # ModelMixer Model a:... params
