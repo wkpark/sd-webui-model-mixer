@@ -9,19 +9,23 @@ import numpy as np
 import clip
 
 from modules import devices
+from modules import sd_disable_initialization
 
-model, preprocess = clip.load("ViT-L/14")
-model.to("cpu")
+with sd_disable_initialization.DisableInitialization(disable_clip=False):
+    model, preprocess = clip.load("ViT-L/14")
 
 def image_embeddings_direct(image, model, processor, use_cuda=True):
     if use_cuda:
         model.to("cuda")
+    else:
+        model.to("cpu")
     inputs = processor(images=image, return_tensors='pt')['pixel_values'].float()
     if use_cuda:
         inputs = inputs.to('cuda')
     result = model.get_image_features(pixel_values=inputs).cpu().detach().numpy()
 
-    model.to("cpu")
+    if use_cuda:
+        model.to("cpu")
     devices.torch_gc()
 
     return (result / np.linalg.norm(result)).squeeze(axis=0)
@@ -48,7 +52,8 @@ def image_embeddings_direct_laion(pil_image, use_cuda=True):
         image_features = model.encode_image(image)
     im_emb_arr = normalized(image_features.cpu().detach().numpy())
 
-    model.to("cpu")
+    if use_cuda:
+        model.to("cpu")
     devices.torch_gc()
     return im_emb_arr
 

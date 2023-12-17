@@ -9,7 +9,8 @@ def image_embeddings_direct(image, model, processor, use_cuda=True):
         model.to("cuda")
     result = model.get_image_features(pixel_values=inputs).cpu().detach().numpy()
 
-    model.to("cpu")
+    if use_cuda:
+        model.to("cpu")
     return (result / np.linalg.norm(result)).squeeze(axis=0)
 
 

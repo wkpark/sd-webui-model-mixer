@@ -2,6 +2,7 @@ import math
 import ImageReward as reward
 
 from modules import devices
+from modules import sd_disable_initialization
 
 
 def sigmoid(x):
@@ -15,7 +16,8 @@ def score(image, prompt="", use_cuda=True):
     global model
 
     if model == None:
-        model = reward.load("ImageReward-v1.0")
+        with sd_disable_initialization.DisableInitialization(disable_clip=False):
+            model = reward.load("ImageReward-v1.0", device="cpu")
     if use_cuda:
         model.to("cuda")
         model.device = "cuda"
@@ -26,6 +28,7 @@ def score(image, prompt="", use_cuda=True):
     score_origin = model.score(prompt, image)
     score = sigmoid(score_origin)
 
-    model.to("cpu")
+    if use_cuda:
+        model.to("cpu")
     devices.torch_gc()
     return score

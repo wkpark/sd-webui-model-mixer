@@ -14,6 +14,9 @@ import torch
 import torch.nn as nn
 
 from modules import devices
+from modules import sd_disable_initialization
+from ..laion.laion import model as clip_model
+from ..laion.laion import preprocess as clip_preprocess
 
 
 dirname = os.path.dirname(__file__)
@@ -26,11 +29,8 @@ predictor.load_state_dict(safetensors.torch.load_file(aesthetic_path))
 predictor.eval()
 predictor.to("cpu")
 
-clip_model, clip_preprocess = clip.load("ViT-L/14")
-clip_model.to("cpu")
 
-
-def get_image_features(image, model=clip_model, preprocess=clip_preprocess, use_cuda=False):
+def get_image_features(image, model=clip_model, preprocess=clip_preprocess, use_cuda=True):
     if use_cuda:
         model.to("cuda")
     else:
@@ -47,7 +47,8 @@ def get_image_features(image, model=clip_model, preprocess=clip_preprocess, use_
         image_features /= image_features.norm(dim=-1, keepdim=True)
     image_features = image_features.cpu().detach().numpy()
 
-    model.to("cpu")
+    if use_cuda:
+        model.to("cpu")
     devices.torch_gc()
 
     return image_features
@@ -58,14 +59,17 @@ def sigmoid(x):
 
 
 def score(image, prompt="", use_cuda=True):
-    image_features = get_image_features(image)
+    image_features = get_image_features(image, use_cuda=use_cuda)
     features = torch.from_numpy(image_features).float()
     if use_cuda:
         features = features.to("cuda")
         predictor.to("cuda")
+    else:
+        predictor.to("cpu")
     score_origin = predictor(features).item() - 5.6
 
-    predictor.to("cpu")
+    if use_cuda:
+        predictor.to("cpu")
     devices.torch_gc()
     print(" > score_origin =", score_origin)
 
