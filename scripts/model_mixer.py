@@ -2819,7 +2819,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             # restore
             args_ = tuple(args)
 
-        calc_settings = mm_states.pop("calc_settings", {})
+        mm_copy_states = mm_states.copy()
+        calc_settings = mm_copy_states.pop("calc_settings", {})
         # exclude calc_settings from fake hash
 
         # extra_params
@@ -2831,7 +2832,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         if hasattr(p, "modelmixer_xyz"):
             xyz = p.modelmixer_xyz
         # make a hash to cache results
-        confighash = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_states, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
+        confighash = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_copy_states, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
         print("config hash = ", confighash)
         current = getattr(shared, "modelmixer_config", None)
 
