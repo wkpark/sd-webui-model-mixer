@@ -1001,7 +1001,7 @@ class ModelMixerScript(scripts.Script):
                             with gr.Row():
                                 mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value="Sum")
                             with gr.Row():
-                                mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin"], value="Normal")
+                                mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin", "Cosine", "Simple Cosine"], value="Normal")
                             mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n, is_sdxl)
 
             with gr.Accordion("Merge Block Weights", open=False, elem_classes=["model_mixer_mbws_control"]) as mbw_controls:
@@ -3376,6 +3376,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 alphas.append(mm_weights[n])
                 print(f"mode = {modes[n]}, mbw mode, alpha = {mm_weights[n]}")
 
+            if "Cosine" in calcmodes[n]:
+                print(f" - Use {calcmodes[n]} merge")
+
             # main routine
             shared.state.sampling_steps = len(sel_keys)
             shared.state.sampling_step = 0
@@ -3418,6 +3421,29 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             # apply elemental merging weight ratio
                             if new_alpha is not None:
                                 alpha = new_alpha
+
+                    def cosim(theta_0, theta_1, calcmode):
+                        """simplified cosine simlarity merge"""
+                        theta_a = theta_0[key].float().to(devices.device)
+                        theta_b = theta_1[key].float().to(devices.device)
+                        simab = torch.nn.functional.cosine_similarity(theta_a, theta_b, dim=0).abs()
+                        simab = simab.detach().cpu()
+                        sims = simab.numpy().copy()
+                        sims = sims[~np.isnan(sims)]
+                        sims = np.delete(sims, np.where(sims < np.percentile(sims, 1 ,method = 'midpoint')))
+                        sims = np.delete(sims, np.where(sims > np.percentile(sims, 99 ,method = 'midpoint')))
+                        if len(sims) == 1 or sims.min() == sims.max():
+                            return False
+                        k = (simab - sims.min())/(sims.max() - sims.min())
+                        k = k.mean() * alpha if "Simple" in calcmode else k * alpha
+                        theta_0[key] = weighted_sum(theta_0[key], theta_1[key], k)
+                        return True
+
+                    # unet only
+                    if "Cosine" in calcmodes[n] and "model.diffusion_model" in key and alpha != 0.0:
+                        ret = cosim(theta_0, theta_1, calcmodes[n])
+                        if ret:
+                            continue
 
                     if "Sum" in modes[n]:
                         if alpha == 1.0:
