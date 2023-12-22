@@ -979,7 +979,7 @@ class ModelMixerScript(scripts.Script):
                 show_progress=False,
             )
 
-            mm_max_models = gr.Number(value=num_models, precision=0, visible=False)
+            mm_max_models = gr.Number(label="mm_max_models", value=num_models, precision=0, visible=False, interactive=False)
             merge_method_info = [{}] * num_models
             with gr.Group(), gr.Tabs():
                 mm_states = gr.State({})
@@ -2073,7 +2073,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 modes[n] = _args[num_models + n]
                 models[n] = None if _args[num_models*2 + n] == "None" else _args[num_models*2 + n]
                 modelname = chr(66+n)
-                if uses[n] and models[n] is not None:
+                if uses[n] and models[n] != "None":
                     if "Sum" in modes[n]:
                         recipe = f"({recipe})" if recipe.find(" ") != -1 else recipe
                         recipe = f"{recipe} × (1 - α<sub>{n}</sub>) + {modelname} × α<sub>{n}</sub>"
@@ -2652,6 +2652,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         base_model = None if base_model == "None" else base_model
         # extract model infos
         num_models = int(mm_max_models)
+        print(" - mm_max_models = ", mm_max_models)
         mm_use = ["False"]*num_models
         mm_models = []
         mm_modes = []
@@ -4966,6 +4967,8 @@ def on_infotext_pasted(infotext, results):
     config_lock = getattr(shared, "config_lock", False)
     excludes = []
 
+    num_max_models = shared.opts.data.get("mm_max_models", 2)
+
     models = {}
     modelnames = {}
     modelhashes = {}
@@ -4999,6 +5002,9 @@ def on_infotext_pasted(infotext, results):
 
         if k.find(" merge mode ") > 0 and v == "Sum(lerp)":
             updates[k] = "Sum"
+
+        if k.find(" max models") > 0:
+            updates[k] = num_max_models # do not change max_models constant
 
         if k.find(" model ") > 0:
             # ModelMixer Model a:... params
