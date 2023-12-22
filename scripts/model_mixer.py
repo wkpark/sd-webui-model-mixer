@@ -4822,9 +4822,9 @@ def on_ui_settings():
         "mm_max_models",
         shared.OptionInfo(
             default=3,
-            label="Maximum Merge models",
+            label="Maximum Merge models (requires Reload UI)",
             component=gr.Slider,
-            component_args={"minimum": 1, "maximum": 5, "step": 1},
+            component_args={"minimum": 1, "maximum": 7, "step": 1},
             section=section,
         ),
     )
