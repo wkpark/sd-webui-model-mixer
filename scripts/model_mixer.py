@@ -1001,7 +1001,7 @@ class ModelMixerScript(scripts.Script):
                             with gr.Row():
                                 mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value="Sum")
                             with gr.Row():
-                                mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin", "Cosine", "Simple Cosine"], value="Normal")
+                                mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin", "Cosine", "Simple Cosine", "Inv. Cosine", "Simple Inv. Cosine"], value="Normal")
                             mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n, is_sdxl)
 
             with gr.Accordion("Merge Block Weights", open=False, elem_classes=["model_mixer_mbws_control"]) as mbw_controls:
@@ -3436,8 +3436,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         if len(sims) == 1 or sims.min() == sims.max():
                             return False
                         k = (simab - sims.min())/(sims.max() - sims.min())
+                        k = 1.0 - k if "Inv" in calcmode else k # use cosine similarity or cosine distance
                         k = k.mean() * alpha if "Simple" in calcmode else k * alpha
-                        theta_0[key] = weighted_sum(theta_0[key], theta_1[key], k)
+
+                        if "Sum" in modes[n]:
+                            theta_0[key] = weighted_sum(theta_0[key], theta_1[key], k)
+                        else:
+                            theta_0[key] = add_difference(theta_0[key], theta_1[key], model_base[key], k)
                         return True
 
                     # unet only
