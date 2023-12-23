@@ -1354,7 +1354,8 @@ class ModelMixerScript(scripts.Script):
                             with gr.Row():
                                 am_variable_blocks = gr.Dropdown(["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:], value=[], multiselect=True, label="Variable Search Blocks", info="select variable blocks to optimize (default: all blocks)")
                             with gr.Row():
-                                am_variable_models = gr.CheckboxGroup(["B","C","D","E"], value=[], label="Variable Models", info="select variable models to optimize (default: all models)")
+                                model_names = [chr(66 + i) for i in range(num_models)]
+                                am_variable_models = gr.CheckboxGroup(model_names, value=[], label="Variable Models", info="select variable models to optimize (default: all models)")
                             with gr.Row():
                                 am_search_upper = gr.Slider(label="Search Upper", minimum=0.0, maximum=1.0, step=0.001, value=0.2)
                                 am_search_lower = gr.Slider(label="Search Lower", minimum=-1.0, maximum=0.0, step=0.001, value=-0.2)
