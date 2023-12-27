@@ -294,6 +294,7 @@ def hyper_optimizer(
 
         if initial is None:
             shared._memory_warm_start = None
+            shared._memory_warm_hash = None
             shared._optimizer_config = current
             initial = current
 
@@ -326,17 +327,19 @@ def hyper_optimizer(
     if variable_models is not None and len(variable_models) == 0:
         variable_models = None
 
+    k = 0
     for i in range(len(uses)):
         if uses[i] is not True:
             continue
 
         # is this model in the variable_models? e.g.) chr(0+66) == B
         if variable_models is not None and chr(i+66) not in variable_models:
+            k += 1
             continue
 
         name = f"model_{chr(i + 98)}"
-        weight = weights[i]
-        mbw = normalize_mbw(usembws[i], isxl)
+        weight = weights[k]
+        mbw = normalize_mbw(usembws[k], isxl)
         for b in selected_blocks:
             j = blocks.index(b)
             if j < len(weight) and _BLOCKS[j] in mbw:
@@ -347,6 +350,7 @@ def hyper_optimizer(
                 lower = max(val + search_lower, 0)
                 upper = min(val + search_upper, search_max)
                 search_space[f"{name}.{_BLOCKS[j]}"] = [*np.round(np.linspace(lower, upper, 5), 8)]
+        k += 1
 
     #print(" - search_space keys =", search_space.keys())
 
@@ -363,6 +367,12 @@ def hyper_optimizer(
         for i in range(len(_uses)):
             if _uses[i] is not True:
                 continue
+
+            # is this model in the variable_models? e.g.) chr(0+66) == B
+            if variable_models is not None and chr(i+66) not in variable_models:
+                k += 1
+                continue
+
             name = f"model_{chr(i + 98)}"
             weight = _weights[k]
             mbw = normalize_mbw(_usembws[k], isxl)
@@ -378,7 +388,25 @@ def hyper_optimizer(
 
     prompt = txt2img_args[1]
 
-    memory_warm_start = getattr(shared, "_memory_warm_start", None)
+    # check warm_start hash
+    warm_start_hash_args = [
+        classifier,
+        search_type_a, search_type_b, search_balance,
+        tally_type,
+        search_iterations,
+        variable_blocks,
+        variable_models,
+        search_upper, search_lower, search_max,
+        initialize_grid, initialize_vertices, initialize_random,
+        search_opts_a, search_opts_b]
+    warm_hash = hash(json.dumps(warm_start_hash_args))
+
+    warm_hash_saved = getattr(shared, "_memory_warm_hash", None)
+    if warm_hash is not None and warm_hash == warm_hash_saved:
+        memory_warm_start = getattr(shared, "_memory_warm_start", None)
+    else:
+        memory_warm_start = None
+
     for _pass in range(passes):
         if _pass > 0:
             warm_start = []
@@ -466,6 +494,7 @@ def hyper_optimizer(
             print("Result score =", score)
 
         shared._memory_warm_start = hyper.search_data(hyper_score)
+        shared._memory_warm_hash = warm_hash
 
     # search data save
     #timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%I-%M%p-%S")
