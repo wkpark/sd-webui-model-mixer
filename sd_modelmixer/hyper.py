@@ -38,7 +38,7 @@ def para_to_weights(para, isxl):
     maxid = max(weights.keys())
     nweights = [""] * (maxid + 1)
     for i in weights.keys():
-        nweights[i] = ",".join([str(f) for f in weights[i]])
+        nweights[i] = ",".join([("0" if float(f) == 0.0 else str(f)) for f in weights[i]])
 
     return nweights
 
@@ -233,7 +233,7 @@ def hyper_optimizer(
 
         _weights = [""] * len(testweights)
         for j in range(len(testweights)):
-            _weights[j] = ','.join([str(w) for w in testweights[j]])
+            _weights[j] = ','.join([("0" if float(w) == 0.0 else str(w)) for w in testweights[j]])
         print(" - test weights: ", _weights)
 
         # setup override weights. will be replaced with mm_weights
