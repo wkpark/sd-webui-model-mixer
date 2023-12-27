@@ -359,17 +359,19 @@ def hyper_optimizer(
         _weights = current["weights"] # normalized weights
         _usembws = current["usembws"] # merged blocks
         _selected_blocks = current["selected"]
+        k = 0 # fix index for not used model. e.g.) A, B, E (C is not selected case)
         for i in range(len(_uses)):
             if _uses[i] is not True:
                 continue
             name = f"model_{chr(i + 98)}"
-            weight = _weights[i]
-            mbw = normalize_mbw(_usembws[i], isxl)
+            weight = _weights[k]
+            mbw = normalize_mbw(_usembws[k], isxl)
             for b in _selected_blocks:
                 j = blocks.index(b)
                 if j < len(weight) and _BLOCKS[j] in mbw:
                     val = weight[j]
                     warm[f"{name}.{_BLOCKS[j]}"] = val
+            k += 1
 
         print(" - warm_start = ", warm)
         warm_start = [warm]
