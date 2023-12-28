@@ -828,9 +828,15 @@ def default_lap(lap="lap"):
     return lapfunc
 
 
+def _valid_key(key):
+    if "cond_stage_model.transformer.text_model." in key:
+        return True
+    return "model_" not in key
+
+
 def apply_permutation(ps: PermutationSpec, perm, params):
   """Apply a `perm` to `params`."""
-  return {k: get_permuted_param(ps, perm, k, params) for k in params.keys() if "model_" not in k}
+  return {k: get_permuted_param(ps, perm, k, params) for k in params.keys() if _valid_key(k)}
 
 def weight_matching(ps: PermutationSpec, params_a, params_b, special_layers=None, device="cpu", max_iter=3, init_perm=None, usefp16=False, usetqdm=True, full=False, lap="lap"):
   """Find a permutation of `params_b` to make them match `params_a`."""
