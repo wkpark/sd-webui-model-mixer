@@ -2685,10 +2685,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         # check xyz grid and override args_
         if hasattr(p, "modelmixer_xyz"):
             # prepare some variables
-            fines = mm_finetune.split(",")
-            if len(fines) < 7:
-                fines += [0]*(7-len(fines))
-            fines = fines[0:7]
+            fines = None
+            if mm_finetune != "":
+                fines = mm_finetune.split(",")
+                if len(fines) < 7:
+                    fines += [0]*(7-len(fines))
+                fines = fines[0:7]
 
             args = list(args_)
             for k, v in p.modelmixer_xyz.items():
@@ -2753,7 +2755,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             args[num_models*9+idx] = v
             # restore
             args_ = tuple(args)
-            mm_finetune = ",".join([str(int(float(x))) if float(x) == int(float(x)) else str(x) for x in fines])
+            if fines is not None and mm_finetune != "":
+                mm_finetune = ",".join([str(int(float(x))) if float(x) == int(float(x)) else str(x) for x in fines])
 
         for n in range(num_models):
             use = args_[n]
