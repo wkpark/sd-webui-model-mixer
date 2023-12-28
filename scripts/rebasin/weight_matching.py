@@ -829,8 +829,8 @@ def default_lap(lap="lap"):
 
 
 def _valid_key(key):
-    if "cond_stage_model.transformer.text_model." in key:
-        return True
+    if "cond_stage_model." in key and "transformer.text_model." not in key:
+        return False
     return "model_" not in key
 
 
