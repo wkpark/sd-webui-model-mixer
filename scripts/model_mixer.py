@@ -2951,7 +2951,15 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             models['model_a'] = sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
             isxl = True
 
-        print("isxl =", isxl)
+        # check SD2
+        isv20 = False
+        if not isxl:
+            for k in ["transformer.resblocks.0.attn.in_proj_weight"]:
+                if f"cond_stage_model.model.{k}" in models['model_a']:
+                    isv20 = True
+                    break
+
+        print("isxl =", isxl, ", sd2 =", isv20)
 
         # get all selected elemental blocks
         elemental_selected = []
@@ -3001,7 +3009,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             BLOCKIDS = BLOCKID if not isxl else BLOCKIDXL
 
             # get all blocks affected by same perm groups by rebasin merge
-            if not isxl and "Rebasin" in mm_calcmodes:
+            if not isxl and not isv20 and "Rebasin" in mm_calcmodes:
                 print("check affected permutation blocks by rebasin merge...")
                 jj = 0
                 while True:
@@ -3294,7 +3302,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         print(" - No change blocks detected.")
 
         # check Rebasin mode
-        if not isxl and "Rebasin" in calcmodes:
+        if not isxl and not isv20 and "Rebasin" in calcmodes:
             fullmatching = "fastrebasin" not in calc_settings
             print(" - Dynamic loading rebasin module...")
             load_module(os.path.join(scriptdir, "scripts", "rebasin", "weight_matching.py"))
@@ -3479,7 +3487,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                                 print(f" +{k}")
                                 theta_0[key] = theta_1[key]
 
-            if not isxl and "Rebasin" in calcmodes[n]:
+            if not isxl and not isv20 and "Rebasin" in calcmodes[n]:
                 print("Rebasin calc...")
                 # rebasin mode
                 # Replace theta_0 with a permutated version using model A and B
