@@ -3681,7 +3681,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 for k in weight_changed[prefix]:
                     # remove prefix, 'cond_stage_model.' or 'conditioner.' will be removed
                     key = k[len(prefix):]
-                    base_dict[key] = theta_0[k]
+                    if k in theta_0:
+                        base_dict[key] = theta_0[k]
                 if isxl:
                     shared.sd_model.conditioner.load_state_dict(base_dict, strict=False)
                 else:
