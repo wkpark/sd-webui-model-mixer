@@ -190,6 +190,19 @@ def hyper_optimizer(
         enable_early_stop=False, n_iter_no_change=25, tol_abs=0, tol_rel=0,
         search_opts_a=None, search_opts_b=None):
 
+    import inspect
+    prompt_idx = 1 # 1 for webui 1.7.0, 2 for webui dev. determined later
+
+    check_args = inspect.signature(txt2img.txt2img).parameters
+    _prompt = list(check_args)[1]
+    if ': str' not in str(check_args[_prompt]):
+        # new webui dev calling convension. fix request arg order
+        _req = txt2img_args.pop(23) # 23-th argument is 'gr.Request'
+        txt2img_args.insert(1, _req) # insert request to the 2nd argument
+        prompt_idx = 2
+        print(" - fix request parameter order...")
+
+
     def score_func(classifier, image, prompt):
         if classifier not in classifiers:
             raise ValueError("no classifier found")
@@ -252,8 +265,8 @@ def hyper_optimizer(
             # generate images
             args = txt2img_args.copy()
             for payload in payloads:
-                args[1] = payload["prompt"]
-                args[2] = payload["neg_prompt"]
+                args[prompt_idx] = payload["prompt"]
+                args[prompt_idx + 1] = payload["neg_prompt"]
 
                 orig_seed = None
                 if "Seed" in payload:
@@ -264,7 +277,7 @@ def hyper_optimizer(
                 ret = txt2img.txt2img(*args)
 
                 if len(ret[0]) > 0:
-                    score = score_func(classifier, ret[0][0], args[1])
+                    score = score_func(classifier, ret[0][0], args[prompt_idx])
                     images.append(ret[0][0])
                     scores.append(score)
 
@@ -276,8 +289,7 @@ def hyper_optimizer(
 
         return score
 
-
-    if txt2img_args[1] is None or txt2img_args[1].strip() == "":
+    if txt2img_args[prompt_idx] is None or txt2img_args[prompt_idx].strip() == "":
         raise ValueError("FATAL: Empty prompt payload!")
 
     # get initial positions
@@ -391,7 +403,7 @@ def hyper_optimizer(
         print(" - warm_start = ", warm)
         warm_start = [warm]
 
-    prompt = txt2img_args[1]
+    prompt = txt2img_args[prompt_idx]
 
     # check warm_start hash
     warm_start_hash_args = [
