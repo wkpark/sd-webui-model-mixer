@@ -138,6 +138,7 @@ def ui_optimizers(default="None"):
                 with gr.Group(visible=visible) as tab:
                     with gr.Row():
                         gr.HTML("<p>No optimizer options</p>", label=lab, show_label=False)
+                    defaults[optimizer] = {}
                     tabs[optimizer] = tab
                 continue
             with gr.Group(visible=visible) as tab, gr.Accordion(lab, open=True):
