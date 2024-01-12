@@ -1365,6 +1365,17 @@ class ModelMixerScript(scripts.Script):
                                 am_search_upper = gr.Slider(label="Search Upper", minimum=0.0, maximum=1.0, step=0.001, value=0.2)
                                 am_search_lower = gr.Slider(label="Search Lower", minimum=-1.0, maximum=0.0, step=0.001, value=-0.2)
                                 am_search_max = gr.Slider(label="Search Max Limit", minimum=0.0, maximum=1.0, step=0.001, value=0.5)
+                            with gr.Row():
+                                am_search_steps = gr.Slider(label="Search Steps", info="Search steps", minimum=1, maximum=10, step=1, value=5)
+                                am_search_inc = gr.Slider(label="Search Increase", info="Search increase used if it is not 0", minimum=0.0001, maximum=0.5, step=0.0001, value=0.01)
+
+                            am_search_steps.release(
+                                fn=lambda: 0,
+                                inputs=[],
+                                outputs=[am_search_inc],
+                                show_progress=False,
+                            )
+
                         with gr.Row():
                             tally_types = ["Arithmetic Mean", "Geometric Mean", "Harmonic Mean", "A/G Mean", "G/H Mean", "A/H Mean",  "Median", "Min", "Max", "Min*Max", "Fuzz Mode"]
                             am_tally_type = gr.Dropdown(label="Tally Type", choices=tally_types, value="Arithmetic Mean", info="How to tally the scores", elem_id="mm_auto_tally_type")
@@ -1404,6 +1415,8 @@ class ModelMixerScript(scripts.Script):
                         "search_upper": am_search_upper,
                         "search_lower": am_search_lower,
                         "search_max": am_search_max,
+                        "search_steps": am_search_steps,
+                        "search_inc": am_search_inc,
                         "initialize_grid": am_initialize_grid,
                         "initialize_vertices": am_initialize_vertices,
                         "initialize_random": am_initialize_random,
@@ -2424,6 +2437,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 search_iterations, search_time,
                 variable_blocks, variable_models,
                 search_upper, search_lower, search_max,
+                search_steps, search_inc,
                 initialize_grid, initialize_vertices, initialize_random,
                 warm_start,
                 enable_early_stop, n_iter_no_change, tol_abs, tol_rel,
@@ -2485,6 +2499,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 search_upper=search_upper,
                 search_lower=search_lower,
                 search_max=search_max,
+                steps_or_inc=search_inc if search_inc > 0 else search_steps,
                 initialize_grid=initialize_grid,
                 initialize_vertices=initialize_vertices,
                 initialize_random=initialize_random,

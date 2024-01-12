@@ -185,6 +185,7 @@ def hyper_optimizer(
         variable_blocks=None,
         variable_models=None,
         search_upper=0.2, search_lower=-0.2, search_max=1.0,
+        steps_or_inc=5,
         initialize_grid=4, initialize_vertices=4, initialize_random=2,
         warm_start=True,
         enable_early_stop=False, n_iter_no_change=25, tol_abs=0, tol_rel=0,
@@ -192,6 +193,17 @@ def hyper_optimizer(
 
     import inspect
     prompt_idx = 1 # 1 for webui 1.7.0, 2 for webui dev. determined later
+
+    if steps_or_inc <= 0:
+        steps_or_inc = 5
+        print(" - set steps_or_inc as 5")
+    steps_or_inc = round(steps_or_inc) if steps_or_inc >= 1 else steps_or_inc
+
+    if search_upper == search_lower:
+        search_lower = -search_upper
+    if search_upper < search_lower:
+        search_upper, search_lower = search_lower, search_upper
+    print(" - set search lower, upper =", search_lower, search_upper)
 
     check_args = inspect.signature(txt2img.txt2img).parameters
     _prompt = list(check_args)[1]
@@ -366,7 +378,10 @@ def hyper_optimizer(
                 # setup range, lower + val ~ val + upper < search max. e.g.) -0.3 + val ~ val + 0.3 < 0.5
                 lower = max(val + search_lower, 0)
                 upper = min(val + search_upper, search_max)
-                search_space[f"{name}.{_BLOCKS[j]}"] = [*np.round(np.linspace(lower, upper, 5), 8)]
+                if steps_or_inc >= 1:
+                    search_space[f"{name}.{_BLOCKS[j]}"] = [*np.round(np.linspace(lower, upper, steps_or_inc), 8)]
+                elif steps_or_inc < 1:
+                    search_space[f"{name}.{_BLOCKS[j]}"] = [*np.round(np.arange(lower, upper, steps_or_inc), 8)]
         k += 1
 
     print(" - search_space keys =", search_space.keys())
