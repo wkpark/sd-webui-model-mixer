@@ -22,11 +22,11 @@ from .utils import all_blocks, _all_blocks, load_module
 
 classifiers = get_classifiers()
 
-def para_to_weights(para, isxl):
+def para_to_weights(para, weights=None, isxl=False):
     BLOCKS = all_blocks(isxl)
     BLOCKLEN = (12 if not isxl else 9)*2 + 2
 
-    weights = {}
+    weights = {} if weights is None else dict(zip(range(len(weights)), weights))
     for k in para:
         name = k.split(".")
         modelidx = ord(name[0].split("_")[1]) - 98
@@ -512,7 +512,7 @@ def hyper_optimizer(
             shared.state.end()
 
         if best_para is not None:
-            best_weights = para_to_weights(best_para, isxl)
+            best_weights = para_to_weights(best_para, weights, isxl)
             print(" - Best weights para = ", best_weights, override_uses)
 
             # setup override weights. will be replaced with mm_weights
