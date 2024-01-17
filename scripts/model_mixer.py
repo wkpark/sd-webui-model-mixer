@@ -2834,10 +2834,14 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         if getattr(shared, "modelmixer_overrides", None) is not None:
             overrides = getattr(shared, "modelmixer_overrides")
             _weights = overrides["weights"]
+            _alpha = overrides["alpha"]
             _uses = overrides["uses"]
             args = list(args_)
             for j in range(len(_uses)):
-                if _uses[j] and len(_weights) > j:
+                if _uses[j] and len(_alpha) > j and _alpha[j] != "":
+                    mm_alpha[j] = _alpha[j]
+                    args[num_models*3+j] = _alpha[j]
+                elif _uses[j] and len(_weights) > j:
                     mm_weights[j] = _weights[j]
                     # update args to set extra_params
                     args[num_models*7+j] = _weights[j]

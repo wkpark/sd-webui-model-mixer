@@ -233,6 +233,7 @@ def hyper_optimizer(
         tunables = localargs.pass_through["tunables"]
         isxl = localargs.pass_through["isxl"]
         uses = localargs.pass_through["uses"]
+        usembws = localargs.pass_through["usembws"]
         testweights = localargs.pass_through["weights"].copy()
         prompt = localargs.pass_through["prompt"]
         payload_path = localargs.pass_through["payload_path"]
@@ -244,11 +245,16 @@ def hyper_optimizer(
         if shared.state.interrupted:
             raise ValueError("Error: Interrupted!")
 
+        testalpha = [""] * len(usembws)
         # gather tunable variables into override weights
         for k in tunables:
             name = k.split(".")
             modelidx = ord(name[0].split("_")[1]) - 98
             if uses[modelidx] is False:
+                continue
+
+            if len(usembws[modelidx]) == 0:
+                testalpha[modelidx] = localargs[k]
                 continue
 
             weight = testweights[modelidx]
@@ -259,10 +265,12 @@ def hyper_optimizer(
         _weights = [""] * len(testweights)
         for j in range(len(testweights)):
             _weights[j] = ','.join([("0" if float(w) == 0.0 else str(w)) for w in testweights[j]])
+
         print(" - test weights: ", _weights)
+        print(" - test alphas: ", testalpha)
 
         # setup override weights. will be replaced with mm_weights
-        shared.modelmixer_overrides = {"weights": _weights, "uses": uses}
+        shared.modelmixer_overrides = {"weights": _weights, "alpha": testalpha, "uses": uses}
 
         if len(payloads) == 0:
             images = []
@@ -332,6 +340,7 @@ def hyper_optimizer(
     uses = initial["uses"] # used models
     weights = initial["weights"] # normalized weights
     usembws = initial["usembws"] # merged blocks
+    alpha = initial["alpha"] # alpha values without merged blocks
     selected_blocks = initial["selected"]
 
     isxl = shared.sd_model.is_sdxl
@@ -367,6 +376,20 @@ def hyper_optimizer(
                 continue
 
         name = f"model_{chr(i + 98)}"
+        if len(usembws[k]) == 0:
+            # no merged block weighs
+            val = alpha[k]
+            # setup range, lower + val ~ val + upper < search max. e.g.) -0.3 + val ~ val + 0.3 < 0.5
+            lower = max(val + search_lower, 0)
+            upper = min(val + search_upper, search_max)
+            if steps_or_inc >= 1:
+                search_space[f"{name}.alpha"] = [*np.round(np.linspace(lower, upper, steps_or_inc), 8)]
+            elif steps_or_inc < 1:
+                search_space[f"{name}.alpha"] = [*np.round(np.arange(lower, upper, steps_or_inc), 8)]
+
+            k += 1
+            continue
+
         weight = weights[k]
         mbw = normalize_mbw(usembws[k], isxl)
         for b in selected_blocks:
@@ -394,6 +417,7 @@ def hyper_optimizer(
         _uses = current["uses"] # used models
         _weights = current["weights"] # normalized weights
         _usembws = current["usembws"] # merged blocks
+        _alpha = current["alpha"] # merged blocks
         _selected_blocks = current["selected"]
         k = 0 # fix index for not used model. e.g.) A, B, E (C is not selected case)
         for i in range(len(_uses)):
@@ -406,6 +430,14 @@ def hyper_optimizer(
                 continue
 
             name = f"model_{chr(i + 98)}"
+            if len(_usembws[k]) == 0:
+                # no merged block weighs
+                val = _alpha[k]
+                warm[f"{name}.alpha"] = val
+
+                k += 1
+                continue
+
             weight = _weights[k]
             mbw = normalize_mbw(_usembws[k], isxl)
             for b in _selected_blocks:
@@ -452,7 +484,9 @@ def hyper_optimizer(
         pass_through = {
             "tunables": [*search_space.keys()],
             "weights": weights,
+            "alpha": alpha,
             "uses": override_uses,
+            "usembws": usembws,
             "classifier": classifier,
             "payload_path": payload_path,
             "tally_type": tally_type,
