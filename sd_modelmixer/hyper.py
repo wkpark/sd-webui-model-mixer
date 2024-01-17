@@ -45,10 +45,12 @@ def para_to_weights(para, weights=None, alpha=None, isxl=False):
     for i in weights.keys():
         nweights[i] = ",".join([("0" if float(f) == 0.0 else str(f)) for f in weights[i]])
 
-    maxid = max(alpha.keys())
-    nalpha = [""] * (maxid + 1)
-    for i in alpha.keys():
-        nalpha[i] = alpha[i]
+    nalpha = []
+    if len(alpha) > 0:
+        maxid = max(alpha.keys())
+        nalpha = [""] * (maxid + 1)
+        for i in alpha.keys():
+            nalpha[i] = alpha[i]
 
     return nweights, nalpha
 
