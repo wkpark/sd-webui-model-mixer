@@ -1009,6 +1009,23 @@ class ModelMixerScript(scripts.Script):
                                 mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin", "Cosine", "Simple Cosine", "Inv. Cosine", "Simple Inv. Cosine"], value="Normal")
                             mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n, is_sdxl)
 
+            with gr.Accordion("Load settings", open=False, elem_classes=["model_mixer_load_settings"]) as mbw_load_settings:
+                with gr.Row():
+                    with gr.Group(), gr.Tabs():
+                        with gr.Tab("from image"):
+                            with gr.Row():
+                                with gr.Column():
+                                    infotext_image1 = gr.Image(elem_id="mm_infotext_image1", type="pil")
+                                    infotext_image1_load = gr.Button('Load', variant='secondary', elem_id=f'mm_load_settings_from_image1')
+                                with gr.Column():
+                                    infotext_image2 = gr.Image(elem_id="mm_infotext_image2", type="pil")
+                                    infotext_image2_load = gr.Button('Load', variant='secondary', elem_id=f'mm_load_settings_from_image2')
+                        with gr.Tab("from infotext"):
+                            with gr.Column():
+                                infotext_text = gr.Textbox(label="Setting parameters", info="Infotext format text", placeholder="ModelMixer model a: foo, ModelMixer model b:...", lines=3)
+                                infotext_load_settings = gr.Button('Load', variant='secondary', elem_id=f'mm_load_infotext_from_text')
+
+
             with gr.Accordion("Merge Block Weights", open=False, elem_classes=["model_mixer_mbws_control"]) as mbw_controls:
 
                 with gr.Row():
@@ -1771,6 +1788,65 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             # dummy_components
             dummy_component = gr.Label(visible=False)
 
+
+            def load_mm_settings(text_or_image, reset=True):
+                """load weight settings from text or image"""
+
+                if text_or_image is None:
+                    raise gr.Error("Not a valid image or text")
+
+                if type(text_or_image) is str:
+                    geninfo = text_or_image.replace("\n", "")
+                else:
+                    geninfo, _ = images.read_info_from_image(text_or_image)
+
+                    if geninfo is None:
+                        raise gr.Error("Not a valid text or image")
+
+                params = parse_generation_parameters(geninfo)
+                # update
+                on_infotext_pasted(geninfo, params)
+
+                max_models = int(params.get("ModelMixer max models", 0))
+
+                n_models = shared.opts.data.get("mm_max_models", 2)
+
+                if max_models == 0:
+                    if reset:
+                        # reset current settings
+                        max_models = n_models
+                    else:
+                        raise gr.Error("No valid merge info.")
+
+                ret = [
+                    params.get("ModelMixer model a", "None"),
+                    params.get("ModelMixer base model", "None"),
+                    max_models,
+                    params.get("ModelMixer adjust", ""),
+                ]
+
+                for n in range(max_models):
+                    name = f"{chr(98+n)}"
+                    if n > n_models:
+                        break
+
+                    ret += [
+                        bool(params.get(f"ModelMixer use model {name}", False)),
+                        params.get(f"ModelMixer model {name}", "None"),
+                        params.get(f"ModelMixer merge mode {name}", "Sum"),
+                        params.get(f"ModelMixer calcmode {name}", "Normal"),
+                        params.get(f"ModelMixer alpha {name}", "0.5"),
+                        params.get(f"ModelMixer mbw mode {name}", "False"),
+                        gr.update(value=params.get(f"ModelMixer mbw {name}", [])),
+                        gr.update(value=params.get(f"ModelMixer simple mbw {name}", [])),
+                        params.get(f"ModelMixer mbw weights {name}", ""),
+                        bool(params.get(f"ModelMixer use elemental {name}", False)),
+                        params.get(f"ModelMixer elemental {name}", ""),
+                    ]
+
+                return ret
+
+
             def call_func_and_return_text(func, text):
                 def handler():
                     t = Timer()
@@ -2054,6 +2130,27 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 (mm_use_elemental[n], f"ModelMixer use elemental {name}"),
                 (mm_elementals[n], f"ModelMixer elemental {name}"),
             )
+
+        infotext_image1_load.click(
+            fn=load_mm_settings,
+            inputs=[infotext_image1],
+            outputs=[x[0] for x in self.infotext_fields],
+            show_progress=False,
+        )
+
+        infotext_image2_load.click(
+            fn=load_mm_settings,
+            inputs=[infotext_image2],
+            outputs=[x[0] for x in self.infotext_fields],
+            show_progress=False,
+        )
+
+        infotext_load_settings.click(
+            fn=load_mm_settings,
+            inputs=[infotext_text],
+            outputs=[x[0] for x in self.infotext_fields],
+            show_progress=False,
+        )
 
         # download helper
         for n in range(5):
