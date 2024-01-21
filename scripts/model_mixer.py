@@ -1022,8 +1022,13 @@ class ModelMixerScript(scripts.Script):
                                     infotext_image2_load = gr.Button('Load', variant='secondary', elem_id=f'mm_load_settings_from_image2')
                         with gr.Tab("from infotext"):
                             with gr.Column():
-                                infotext_text = gr.Textbox(label="Setting parameters", info="Infotext format text", placeholder="ModelMixer model a: foo, ModelMixer model b:...", lines=3)
+                                infotext_text = gr.Textbox(label="Infotext parameters", info="input infotext format parameters", placeholder="ModelMixer model a: foo, ModelMixer model b: bar,...", lines=3)
                                 infotext_load_settings = gr.Button('Load', variant='secondary', elem_id=f'mm_load_infotext_from_text')
+                        with gr.Tab("from metadata"):
+                            with gr.Column():
+                                infotext_load_model_a_metadata = gr.Button("Load from model A metadata")
+                                infotext_metadata = gr.Textbox(label="Load from Merge recipe metadata", info="Input metadata JSON format text", placeholder="{}", lines=3)
+                                infotext_load_metadata_settings = gr.Button('Load from metadata', variant='secondary', elem_id=f'mm_load_infotext_from_text')
 
 
             with gr.Accordion("Merge Block Weights", open=False, elem_classes=["model_mixer_mbws_control"]) as mbw_controls:
@@ -1796,14 +1801,96 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     raise gr.Error("Not a valid image or text")
 
                 if type(text_or_image) is str:
-                    geninfo = text_or_image.replace("\n", "")
+                    geninfo = text_or_image.replace("\n", "").strip()
+
+                    parsed = None
+                    if geninfo[0] == "{" and geninfo[-1] == "}":
+                        try:
+                            parsed = json.loads(geninfo)
+                        except Exception as e:
+                            raise gr.Error(f"Not a valid JSON: {e}")
+
+                    # check checkpointinfo name
+                    elif "[" in geninfo:
+                        pos = geninfo.index("[")
+                        plen = geninfo[pos+1:].index("]")
+                        if plen == 10: # "foobar [0123456789]" model string
+                            checkpoint = sd_models.get_closet_checkpoint_match(geninfo)
+                            if checkpoint is not None:
+                                parsed = read_metadata_from_safetensors(checkpoint.filename)
+
+                    if parsed is not None:
+                        recipe = parsed.get("sd_merge_recipe", None)
+                        if recipe is not None:
+                            parsed = recipe
+                        models = parsed.get("sd_merge_models", None)
+
+                        params = {}
+                        weights = parsed.get("weights_alpha", None)
+                        wlen = len(weights)
+                        alphas = parsed.get("alpha", [0.5] * wlen)
+                        modes = parsed.get("mode", ["Sum"] * wlen)
+                        uses = parsed.get("uses", ["False"] * wlen)
+                        calcmodes = parsed.get("calcmode", ["Normal"] * wlen)
+                        elementals = parsed.get("elemental", [""] * wlen)
+                        use_elementals = parsed.get("use_elemental", ["False"] * wlen)
+                        params["ModelMixer adjust"] = parsed.get("adjust", "")
+                        params["ModelMixer model a"] = parsed.get("model_a", "None")
+
+                        BLOCKIDS = BLOCKID if len(weights[0]) > 20 else BLOCKIDXL
+                        if weights is not None:
+                            if type(weights) is list:
+                                for n, mbw in enumerate(weights):
+                                    name = f"{chr(98+n)}"
+                                    if type(mbw) is str:
+                                        # mbw is a normalized merge model weights
+                                        mbw = [float(w.strip()) for w in mbw.strip().split(",")]
+
+                                    blocks = ",".join([BLOCKIDS[i] for i, x in enumerate(mbw) if float(x) != 0.0])
+                                    mbw = ",".join([str(int(float(x))) if float(x) == int(float(x)) else str(x) for x in mbw])
+                                    params[f"ModelMixer mbw weights {name}"] = mbw
+                                    params[f"ModelMixer alpha {name}"] = alphas[n]
+                                    params[f"ModelMixer merge mode {name}"] = modes[n]
+                                    model = parsed.get(f"model_{name}", "None")
+                                    found = False
+                                    if models is not None and model is not None and model != "None":
+                                        for k, m in models.items():
+                                            if m.name == model:
+                                                try_model = f"{model} [{k[0:10]}]"
+                                                checkpointinfo = sd_models.get_closet_checkpoint_match(try_model)
+                                                if checkpointinfo is not None:
+                                                    found = True
+                                                    params[f"ModelMixer model {name}"] = checkpointinfo.title
+                                                break
+                                    else:
+                                        checkpointinfo = sd_models.get_closet_checkpoint_match(model)
+                                        if checkpointinfo is not None:
+                                            found = True
+                                            params[f"ModelMixer model {name}"] = checkpointinfo.title
+
+                                    if not found:
+                                        params[f"ModelMixer model {name}"] = model
+
+                                    params[f"ModelMixer calcmode {name}"] = calcmodes[n]
+                                    params[f"ModelMixer mbw {name}"] = blocks
+                                    params[f"ModelMixer use model {name}"] = str(uses[n])
+                                    params[f"ModelMixer use elemental {name}"] = str(use_elementals[n])
+                                    if elementals[n].strip() != "":
+                                        params[f"ModelMixer elemental {name}"] = elementals[n]
+
+                        geninfo = None
+
+                    else:
+                        params = parse_generation_parameters(geninfo)
+
                 else:
                     geninfo, _ = images.read_info_from_image(text_or_image)
 
                     if geninfo is None:
                         raise gr.Error("Not a valid text or image")
 
-                params = parse_generation_parameters(geninfo)
+                    params = parse_generation_parameters(geninfo)
+
                 # update
                 on_infotext_pasted(geninfo, params)
 
@@ -2148,6 +2235,20 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         infotext_load_settings.click(
             fn=load_mm_settings,
             inputs=[infotext_text],
+            outputs=[x[0] for x in self.infotext_fields],
+            show_progress=False,
+        )
+
+        infotext_load_metadata_settings.click(
+            fn=load_mm_settings,
+            inputs=[infotext_metadata],
+            outputs=[x[0] for x in self.infotext_fields],
+            show_progress=False,
+        )
+
+        infotext_load_model_a_metadata.click(
+            fn=load_mm_settings,
+            inputs=[model_a],
             outputs=[x[0] for x in self.infotext_fields],
             show_progress=False,
         )
@@ -2986,6 +3087,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         print("  - use elemental", mm_use_elemental)
         print("  - elementals", mm_elementals)
 
+        # save original mm_elementals
+        orig_elementals = mm_elementals.copy()
+
         # parse elemental weights
         if "elemental merge" in debugs: print("  - Parse elemental merge...")
         all_elemental_blocks = []
@@ -3246,8 +3350,14 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             "weights_alpha_orig": mm_weights_orig,
             "alpha": mm_alpha,
             "model_a": model_a,
+            "base_model": base_model,
             "mode": mm_modes,
             "calcmode": mm_calcmodes,
+            "elemental": orig_elementals,
+            "use_elemental": mm_use_elemental,
+            "adjust": mm_finetune,
+            "uses": mm_use,
+            "use_mbws": [True if len(usembws) > 0 else False for usembws in mm_usembws],
         }
         metadata["sd_merge_models"] = {}
 
