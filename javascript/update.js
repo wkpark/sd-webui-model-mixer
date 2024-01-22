@@ -1,4 +1,4 @@
-function slider_to_text() {
+function mm_slider_to_text() {
     let res = Array.from(arguments);
     const ISXLBLOCK = [
         /* base, in01, in02,... */
@@ -44,6 +44,9 @@ function slider_to_text() {
     return res;
 }
 
+var mm_text_to_slider = function() {};
+var slider_to_text = mm_slider_to_text;
+
 (function(){
 
 function update_mbw() {
@@ -69,6 +72,8 @@ function update_mbw() {
         }
     }
 }
+
+mm_text_to_slider = update_mbw;
 
 // setup model tab to update merge block weights
 function setupModelTab(tab){

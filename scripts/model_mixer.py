@@ -1031,6 +1031,9 @@ class ModelMixerScript(scripts.Script):
 
 
             with gr.Accordion("Merge Block Weights", open=False, elem_classes=["model_mixer_mbws_control"]) as mbw_controls:
+                with gr.Row():
+                    fake_setalpha = gr.Button(elem_classes=["mm_fake_mbw_set"], value="↑ set alpha")
+                    fake_readalpha = gr.Button(elem_classes=["mm_fake_mbw_read"], value="↓ read alpha")
 
                 with gr.Row():
                     advanced_range_mode = gr.Checkbox(label="Enable Advanced block range", value=False, visible=True, interactive=True)
@@ -2190,6 +2193,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         advanced_range_mode.change(fn=update_slider_range, inputs=[advanced_range_mode], outputs=[*members])
 
         # update block text using js
+        fake_setalpha.click(_js="slider_to_text", fn=lambda *args: None, inputs=[is_sdxl, *members], outputs=[], show_progress=False)
+        fake_readalpha.click(_js="mm_text_to_slider", fn=lambda: None, inputs=[], outputs=[])
+
         block_args = dict(_js="slider_to_text", fn=lambda *args: None, inputs=[is_sdxl, *members], outputs=[], show_progress=False)
         for block in members:
             block.release(**block_args)
