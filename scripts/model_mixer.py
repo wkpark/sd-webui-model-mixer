@@ -1010,25 +1010,24 @@ class ModelMixerScript(scripts.Script):
                             mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n, is_sdxl)
 
             with gr.Accordion("Load settings", open=False, elem_classes=["model_mixer_load_settings"]) as mbw_load_settings:
-                with gr.Row():
-                    with gr.Group(), gr.Tabs():
-                        with gr.Tab("from image"):
-                            with gr.Row():
-                                with gr.Column():
-                                    infotext_image1 = gr.Image(elem_id="mm_infotext_image1", type="pil")
-                                    infotext_image1_load = gr.Button('Load', variant='secondary', elem_id=f'mm_load_settings_from_image1')
-                                with gr.Column():
-                                    infotext_image2 = gr.Image(elem_id="mm_infotext_image2", type="pil")
-                                    infotext_image2_load = gr.Button('Load', variant='secondary', elem_id=f'mm_load_settings_from_image2')
-                        with gr.Tab("from infotext"):
+                with gr.Group(), gr.Tabs():
+                    with gr.Tab("from image"):
+                        with gr.Row():
                             with gr.Column():
-                                infotext_text = gr.Textbox(label="Infotext parameters", info="input infotext format parameters", placeholder="ModelMixer model a: foo, ModelMixer model b: bar,...", lines=3)
-                                infotext_load_settings = gr.Button('Load', variant='secondary', elem_id=f'mm_load_infotext_from_text')
-                        with gr.Tab("from metadata"):
+                                infotext_image1 = gr.Image(elem_id="mm_infotext_image1", type="pil")
+                                infotext_image1_load = gr.Button('Load settings', variant='secondary', elem_id=f'mm_load_settings_from_image1')
                             with gr.Column():
-                                infotext_load_model_a_metadata = gr.Button("Load from model A metadata")
-                                infotext_metadata = gr.Textbox(label="Load from Merge recipe metadata", info="Input metadata JSON format text", placeholder="{}", lines=3)
-                                infotext_load_metadata_settings = gr.Button('Load from metadata', variant='secondary', elem_id=f'mm_load_infotext_from_text')
+                                infotext_image2 = gr.Image(elem_id="mm_infotext_image2", type="pil")
+                                infotext_image2_load = gr.Button('Load settings', variant='secondary', elem_id=f'mm_load_settings_from_image2')
+                    with gr.Tab("from infotext"):
+                        with gr.Column():
+                            infotext_text = gr.Textbox(label="Infotext parameters", info="input infotext format parameters", placeholder="ModelMixer model a: foo, ModelMixer model b: bar,...", lines=3)
+                            infotext_load_settings = gr.Button('Load', variant='secondary', elem_id=f'mm_load_infotext_from_text')
+                    with gr.Tab("from metadata"):
+                        with gr.Column():
+                            infotext_load_model_a_metadata = gr.Button("Load from model A metadata")
+                            infotext_metadata = gr.Textbox(label="Load from Merge recipe metadata", info="Input metadata JSON format text", placeholder="{}", lines=3)
+                            infotext_load_metadata_settings = gr.Button('Load from metadata', variant='secondary', elem_id=f'mm_load_infotext_from_text')
 
 
             with gr.Accordion("Merge Block Weights", open=False, elem_classes=["model_mixer_mbws_control"]) as mbw_controls:
