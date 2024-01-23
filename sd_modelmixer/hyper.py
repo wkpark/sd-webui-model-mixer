@@ -317,7 +317,7 @@ def hyper_optimizer(
             score = tally_score(tally_type, scores)
 
         display_images = images
-        print(" - score is ", score)
+        print(f" - score is \033[93m{score}\033[0m")
 
         return score
 
@@ -573,7 +573,7 @@ def hyper_optimizer(
                 gallery = ret[0] # gallery
 
                 score = score_func(classifier, gallery[0], prompt)
-                print("Result score =", score)
+                print(f" - Result score = \033[93m{score}\033[0m")
 
             shared._memory_warm_start = hyper.search_data(hyper_score)
             shared._memory_warm_hash = warm_hash
