@@ -11,6 +11,10 @@ button.reset {
     height: 0px;
 }
 
+.gradio-column.mm_infotext_image {
+    min-width: min(100px, 100%) !important;
+}
+
 .mm-vxa-token{ cursor: pointer; }
 .mm-vxa-punct {background: rgba(136, 136, 136, 0.55); padding:0; margin:0;}
 .mm-vxa-token-0 {background: rgba(209, 17, 65, 0.85); border-radius:3px;}

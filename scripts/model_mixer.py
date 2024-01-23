@@ -1012,13 +1012,16 @@ class ModelMixerScript(scripts.Script):
             with gr.Accordion("Load settings", open=False, elem_classes=["model_mixer_load_settings"]) as mbw_load_settings:
                 with gr.Group(), gr.Tabs():
                     with gr.Tab("from image"):
-                        with gr.Row():
-                            with gr.Column():
+                        with gr.Row(size=3):
+                            with gr.Column(elem_classes=["mm_infotext_image"], scale=1):
                                 infotext_image1 = gr.Image(elem_id="mm_infotext_image1", type="pil")
                                 infotext_image1_load = gr.Button('Load settings', variant='secondary', elem_id=f'mm_load_settings_from_image1')
-                            with gr.Column():
+                            with gr.Column(elem_classes=["mm_infotext_image"], scale=1):
                                 infotext_image2 = gr.Image(elem_id="mm_infotext_image2", type="pil")
                                 infotext_image2_load = gr.Button('Load settings', variant='secondary', elem_id=f'mm_load_settings_from_image2')
+                            with gr.Column(elem_classes=["mm_infotext_image"], scale=1):
+                                infotext_image3 = gr.Image(elem_id="mm_infotext_image3", type="pil")
+                                infotext_image3_load = gr.Button('Load settings', variant='secondary', elem_id=f'mm_load_settings_from_image3')
                     with gr.Tab("from infotext"):
                         with gr.Column():
                             infotext_text = gr.Textbox(label="Infotext parameters", info="input infotext format parameters", placeholder="ModelMixer model a: foo, ModelMixer model b: bar,...", lines=3)
@@ -2233,6 +2236,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         infotext_image2_load.click(
             fn=load_mm_settings,
             inputs=[infotext_image2],
+            outputs=[x[0] for x in self.infotext_fields],
+            show_progress=False,
+        )
+
+        infotext_image3_load.click(
+            fn=load_mm_settings,
+            inputs=[infotext_image3],
             outputs=[x[0] for x in self.infotext_fields],
             show_progress=False,
         )
