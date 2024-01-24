@@ -1458,6 +1458,7 @@ class ModelMixerScript(scripts.Script):
                         am_auto_merge_btn = gr.Button("Start Auto merge", variant="primary")
                         am_stop_merge_btn = gr.Button("Interrupt")
                         am_reset_merge_btn = gr.Button("Reset Optimizer")
+                        am_refresh_gal_btn = gr.Button("Refresh Gallery")
 
                     am_stop_merge_btn.click(
                         fn=lambda: shared.state.interrupt(),
@@ -2799,6 +2800,14 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             outputs=[auto_logging],
                             show_progress=False,
                         )
+
+                        # update gallery
+                        am_refresh_gal_btn.click(
+                            fn=lambda: shared.am_display_images if getattr(shared, "am_display_images", None) is not None else gr.update(),
+                            inputs=[],
+                            outputs=[MM.components["txt2img_gallery"]],
+                        )
+
 
             self.init_on_app_started = True
 

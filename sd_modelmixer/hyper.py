@@ -203,7 +203,11 @@ def hyper_optimizer(
         enable_early_stop=False, n_iter_no_change=25, tol_abs=0, tol_rel=0,
         search_opts_a=None, search_opts_b=None):
 
+    global display_images
+
     import inspect
+    # reset
+    display_images = None
     prompt_idx = 1 # 1 for webui 1.7.0, 2 for webui dev. determined later
 
     if steps_or_inc <= 0:
@@ -316,7 +320,8 @@ def hyper_optimizer(
             tally_type = localargs.pass_through["tally_type"]
             score = tally_score(tally_type, scores)
 
-        display_images = images
+        display_images = images if display_images is None else display_images + images
+        shared.am_display_images = display_images
         print(f" - score is \033[93m{score}\033[0m")
 
         return score
