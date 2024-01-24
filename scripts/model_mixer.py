@@ -3885,16 +3885,16 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         # partial update
         state_dict = theta_0.copy()
+        make_fake = True
         if partial_update:
             # in this case, use sd_model's checkpoint_info
             checkpoint_info = shared.sd_model.sd_checkpoint_info
             # copy old aliases ids
             old_ids = checkpoint_info.ids.copy()
             # change info without using deepcopy() if checkpoint.filename already exists
-            if os.path.exists(checkpoint_info.filename):
-                make_fake = True
-            else:
+            if not os.path.exists(checkpoint_info.filename):
                 make_fake = False
+                orig_checkpoint_info = checkpoint_info
             checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256 if sha256 else confighash, make_fake)
 
             # check lora_patches
@@ -3992,6 +3992,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 shared.opts.data["sd_model_checkpoint"] = checkpoint_info.title
                 shared.opts.data["sd_checkpoint_hash"] = checkpoint_info.sha256
                 shared.sd_model.sd_model_hash = checkpoint_info.shorthash
+
+            if not make_fake:
+                print(" - remove old checkpointinfo")
+                sd_models.checkpoints_list.pop(orig_checkpoint_info.title, None)
 
         if state_dict is not None:
           checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256 if sha256 else confighash)
