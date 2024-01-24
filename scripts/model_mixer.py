@@ -3077,6 +3077,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         confighash = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_copy_states, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
         print("config hash = ", confighash)
         current = getattr(shared, "modelmixer_config", None)
+        if current is None and getattr(shared.sd_model.sd_checkpoint_info, "modelmixer_config", None) is not None:
+            print(" - restore modelmixer_config")
+            shared.modelmixer_config = shared.sd_model.sd_checkpoint_info.modelmixer_config
+            current = shared.modelmixer_config
 
         if shared.sd_model is not None and shared.sd_model.sd_checkpoint_info is not None:
             if shared.sd_model.sd_checkpoint_info.sha256 == confighash and sd_models.get_closet_checkpoint_match(shared.sd_model.sd_checkpoint_info.title) is not None:
@@ -4039,7 +4043,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         del theta_0
 
         # update merged model info.
-        shared.modelmixer_config = {
+        modelmixer_config = {
             "hash": sha256 if sha256 else confighash,
             "confighash": confighash,
             "uses": mm_use,
@@ -4056,6 +4060,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             "elemental": mm_elementals,
             "recipe": recipe_all + alphastr,
         }
+        shared.modelmixer_config = modelmixer_config
+        checkpoint_info.modelmixer_config = modelmixer_config
         return
 
 
