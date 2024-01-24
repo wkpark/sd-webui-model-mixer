@@ -634,8 +634,12 @@ def mm_list_models():
     checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
     orig_list_models()
     if checkpoint_info is not None:
-        # register again
-        checkpoint_info.register()
+        for i in range(len(sd_models.model_data.loaded_sd_models)):
+            model = sd_models.model_data.loaded_sd_models[i]
+            if model.sd_checkpoint_info.filename == checkpoint_info.filename and model.sd_checkpoint_info.sha256 == checkpoint_info.sha256:
+                # register again
+                checkpoint_info.register()
+                break
 
 
 permutation_spec = None
