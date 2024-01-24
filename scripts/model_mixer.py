@@ -626,10 +626,13 @@ def get_valid_checkpoint_title():
         return checkpoint_info.title
     return ""
 
+
+orig_list_models = sd_models.list_models
 def mm_list_models():
+    global orig_list_models
     # save current checkpoint_info and call register() again to restore
     checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
-    sd_models.list_models()
+    orig_list_models()
     if checkpoint_info is not None:
         # register again
         checkpoint_info.register()
@@ -5545,6 +5548,12 @@ def on_model_loaded(model):
     shared.modelmixer_overrides = None
 
 
+def hook_list_models(demo, app):
+    """hook sd_models.list_models() to preserve current fake checkpointinfo"""
+    sd_models.list_models = mm_list_models
+
+
+script_callbacks.on_app_started(hook_list_models)
 script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_before_image_saved(on_image_save)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
