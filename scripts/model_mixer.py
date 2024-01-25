@@ -210,7 +210,7 @@ def calc_mbws(mbw, mbw_blocks, isxl=False):
     elif " " in mbw.strip():
         weights = [t.strip() for t in mbw.strip().split(" ")]
     else:
-        weights = ['']
+        weights = [mbw.strip()]
     expect = 0
     MAXLEN = 26 - (0 if not isxl else 6)
     BLOCKLEN = 12 - (0 if not isxl else 3)
