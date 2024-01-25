@@ -2819,6 +2819,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             self.init_on_app_started = True
 
         if self.init_on_app_started is False:
+            # hook sd_models.list_models() to preserve current fake checkpointinfo
+            sd_models.list_models = mm_list_models
             script_callbacks.on_app_started(on_app_started)
 
 
@@ -5554,12 +5556,6 @@ def on_model_loaded(model):
     shared.modelmixer_overrides = None
 
 
-def hook_list_models(demo, app):
-    """hook sd_models.list_models() to preserve current fake checkpointinfo"""
-    sd_models.list_models = mm_list_models
-
-
-script_callbacks.on_app_started(hook_list_models)
 script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_before_image_saved(on_image_save)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
