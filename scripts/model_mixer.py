@@ -4078,6 +4078,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         }
         shared.modelmixer_config = modelmixer_config
         checkpoint_info.modelmixer_config = modelmixer_config
+        # restore mm_weights
+        mm_weights = mm_weights_orig
         return
 
 
