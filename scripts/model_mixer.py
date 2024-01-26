@@ -630,15 +630,15 @@ def get_valid_checkpoint_title():
 orig_list_models = sd_models.list_models
 def mm_list_models():
     global orig_list_models
+
     # save current checkpoint_info and call register() again to restore
     checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
     orig_list_models()
     if checkpoint_info is not None:
         for i in range(len(sd_models.model_data.loaded_sd_models)):
             model = sd_models.model_data.loaded_sd_models[i]
-            if model.sd_checkpoint_info.filename == checkpoint_info.filename and model.sd_checkpoint_info.sha256 == checkpoint_info.sha256:
-                # register again
-                checkpoint_info.register()
+            if getattr(model.sd_checkpoint_info, "modelmixer_config", None) is not None:
+                model.sd_checkpoint_info.register()
                 break
 
 
