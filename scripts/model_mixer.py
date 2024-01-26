@@ -627,7 +627,7 @@ def get_valid_checkpoint_title():
     return ""
 
 
-orig_list_models = sd_models.list_models
+orig_list_models = None
 def mm_list_models():
     global orig_list_models
 
@@ -2819,8 +2819,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             self.init_on_app_started = True
 
         if self.init_on_app_started is False:
-            # hook sd_models.list_models() to preserve current fake checkpointinfo
-            sd_models.list_models = mm_list_models
             script_callbacks.on_app_started(on_app_started)
 
 
@@ -5568,6 +5566,17 @@ def on_model_loaded(model):
         sd_models.model_data.loaded_sd_models.insert(0, merged_model)
 
 
+def hook_list_models(demo, app):
+    """hook sd_models.list_models() to preserve current fake checkpointinfo"""
+    global orig_list_models
+
+    if orig_list_models is None:
+        orig_list_models = sd_models.orig_list_models = sd_models.list_models
+
+    sd_models.list_models = mm_list_models
+
+
+script_callbacks.on_app_started(hook_list_models)
 script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_before_image_saved(on_image_save)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
