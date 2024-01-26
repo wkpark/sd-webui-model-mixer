@@ -5555,6 +5555,18 @@ def on_model_loaded(model):
     shared.modelmixer_config = None
     shared.modelmixer_overrides = None
 
+    # check merged model
+    merged = None
+    for i in range(len(sd_models.model_data.loaded_sd_models)):
+        model = sd_models.model_data.loaded_sd_models[i]
+        if getattr(model.sd_checkpoint_info, "modelmixer_config", None) is not None:
+            merged = i
+            break
+    if merged is not None:
+        # merged model first
+        merged_model = sd_models.model_data.loaded_sd_models.pop(merged)
+        sd_models.model_data.loaded_sd_models.insert(0, merged_model)
+
 
 script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_before_image_saved(on_image_save)
