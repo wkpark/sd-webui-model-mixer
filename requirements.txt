@@ -1,1 +1,2 @@
 diffusers~=0.16.1
+hyperactive
