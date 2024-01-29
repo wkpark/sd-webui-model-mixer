@@ -1880,13 +1880,14 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                                         if checkpointinfo is not None:
                                             found = True
                                             params[f"ModelMixer model {name}"] = checkpointinfo.title
+                                            model = checkpointinfo.title
 
                                     if not found:
                                         params[f"ModelMixer model {name}"] = model
 
                                     params[f"ModelMixer calcmode {name}"] = calcmodes[n]
                                     params[f"ModelMixer mbw {name}"] = blocks
-                                    params[f"ModelMixer use model {name}"] = str(uses[n])
+                                    params[f"ModelMixer use model {name}"] = str(uses[n] and model != "None")
                                     params[f"ModelMixer use elemental {name}"] = str(use_elementals[n])
                                     if elementals[n].strip() != "":
                                         params[f"ModelMixer elemental {name}"] = elementals[n]
@@ -1930,8 +1931,11 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     if n > n_models:
                         break
 
+                    use_model = params.get(f"ModelMixer use model {name}", False) in ["True", True]
+                    use_elemental = params.get(f"ModelMixer use elemental {name}", False) in ["True", True]
+
                     ret += [
-                        bool(params.get(f"ModelMixer use model {name}", False)),
+                        use_model,
                         params.get(f"ModelMixer model {name}", "None"),
                         params.get(f"ModelMixer merge mode {name}", "Sum"),
                         params.get(f"ModelMixer calcmode {name}", "Normal"),
@@ -1940,7 +1944,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         gr.update(value=params.get(f"ModelMixer mbw {name}", [])),
                         gr.update(value=params.get(f"ModelMixer simple mbw {name}", [])),
                         params.get(f"ModelMixer mbw weights {name}", ""),
-                        bool(params.get(f"ModelMixer use elemental {name}", False)),
+                        use_elemental,
                         params.get(f"ModelMixer elemental {name}", ""),
                     ]
 
