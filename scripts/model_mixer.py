@@ -314,8 +314,8 @@ def calc_mbws(mbw, mbw_blocks, isxl=False):
 
     return mbws, compact_mbws, selected
 
-def get_mbws(mbw, mbw_blocks, isxl=False):
-    mbws, compact_mbws, selected = calc_mbws(mbw, mbw_blocks, isxl=isxl)
+def get_mbws(mbw, use_advanced, mbw_blocks, simple_blocks, isxl=False):
+    mbws, compact_mbws, selected = calc_mbws(mbw, mbw_blocks if use_advanced else simple_blocks, isxl=isxl)
     if isxl:
         j = 0
         ret = []
@@ -2631,7 +2631,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
             mm_set_elem[n].click(fn=set_elemental, inputs=[mm_elementals[n], mm_elemental_main], outputs=[mm_elementals[n]])
 
-            mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mm_usembws[n], is_sdxl], outputs=[*members, mbw_controls], show_progress=False)
+            mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mbw_use_advanced[n], mm_usembws[n], mm_usembws_simple[n], is_sdxl], outputs=[*members, mbw_controls], show_progress=False)
             mm_models[n].change(fn=lambda modelname: [gr_show(modelname != "None"), gr.update(value="<h3>...</h3>")], inputs=[mm_models[n]], outputs=[model_options[n], recipe_all], show_progress=False)
             mm_models[n].select(fn=check_model_b, inputs=[model_a, mm_models[n]], outputs=[model_options[n], mm_models[n]], show_progress=False)
             mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
