@@ -73,8 +73,6 @@ function update_mbw() {
     }
 }
 
-mm_text_to_slider = update_mbw;
-
 // setup model tab to update merge block weights
 function setupModelTab(tab){
     var observer = new MutationObserver(function(mutations) {
@@ -141,6 +139,8 @@ function setupAdjust() {
 }
 
 onUiLoaded(function(){
+    mm_text_to_slider = update_mbw;
+
     setupMergeBlockWeights();
     setupAdjust();
 
