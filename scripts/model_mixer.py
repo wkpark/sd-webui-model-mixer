@@ -1066,6 +1066,51 @@ class ModelMixerScript(scripts.Script):
                                     addweight = gr.Button(elem_classes=["reset"], value="Add")
                                     mulweight = gr.Button(elem_classes=["reset"], value="Mul")
 
+                        with gr.Tab("Weight Sum Calculator"):
+                            gr.HTML(label="weight sum helper", show_labe=False, value="<p>Calculate alphas of series of model weights. e.g.) model_a * ca + model_b * cb ... = model_a * (1 - alpha) + model_b * alpha...</p>")
+                            with gr.Row():
+                                model_weights = [0.0] * num_models
+                                for n in range(num_models):
+                                    name = chr(65 + n)
+                                    model_weights[n] = gr.Slider(label=f"Model-{name}", minimum=0, maximum=2, step=0.001, value=0)
+                            with gr.Row():
+                                calced_weights = gr.Textbox(label="Calculated alphas for given model weights for Weight Sum", value="")
+                            with gr.Row():
+                                calc_weights = gr.Button("Calcuate weights for Weight Sum")
+
+
+                        # calculate weights to get Weight Sum of models.
+                        # how to mix A:B:C:D evenly?
+                        # ((model_a * (1 - alpha) + model_b * alpha) * (1 - beta) + model_c * beta) * (1 - gamma) + model_d * gamma
+                        # in this case, alpha = 0.5, beta = 0.333333, gamma = 0.25
+                        # calc_weights_for_sum will calc alpha, beta, gamma,...
+                        def calc_weights_for_sum(*weights):
+                            weights = list(weights)
+                            s = sum(weights)
+                            weights = [ w / s for w in weights] # normalize weights
+
+                            n = len(weights) - 1
+                            cw = [0.0] * (n + 1)
+                            alpha = 0.0
+                            one_minus_alpha = 1
+                            for i, w in enumerate(reversed(weights)):
+                                if w > 0 and n >= 0:
+                                    cw[n] = weights[n] / one_minus_alpha
+                                    one_minus_alpha *= 1 - cw[n]
+                                n -= 1
+
+                            cwstr = ",".join(["0" if x == 0.0 else str(round(x, 6)) for x in cw[1:]])
+                            return cwstr.rstrip(",0")
+
+
+                        calc_weights.click(
+                            fn=calc_weights_for_sum,
+                            inputs=[*model_weights],
+                            outputs=[calced_weights],
+                            show_progress=True,
+                        )
+
+
                     with gr.Box(elem_id=f"mm_preset_edit_dialog", elem_classes="popup-dialog") as preset_edit_dialog:
                         with gr.Row():
                             preset_edit_select = gr.Dropdown(label="Presets", elem_id="mm_preset_edit_edit_select", choices=mbwpresets().keys(), interactive=True, value=[], allow_custom_value=True, info="Preset editing allow you to add custom weight presets.")
