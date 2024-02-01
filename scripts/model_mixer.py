@@ -31,9 +31,8 @@ import numpy as np
 from PIL import Image
 
 from copy import copy, deepcopy
-from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_settings, ui_common
-from modules import scripts, cache, devices, lowvram, deepbooru, images, paths
-from modules import sd_unet
+from modules import script_callbacks, sd_hijack, sd_models, sd_vae, shared, ui_common
+from modules import scripts, devices, lowvram, deepbooru, images, paths
 from modules.generation_parameters_copypaste import parse_generation_parameters
 from modules.sd_models import model_hash, model_path, checkpoints_loaded
 from modules.scripts import basedir
@@ -46,8 +45,47 @@ from scripts.vxa import tokenize
 
 from sd_modelmixer.classifier import get_classifiers, classifier_score
 
-dump_cache = cache.dump_cache
-cache = cache.cache
+
+# check some compatibility
+try:
+    from modules import cache
+    dump_cache = cache.dump_cache
+    cache = cache.cache
+except Exception as e:
+    print("No cache module found. ignore.")
+    dump_cache = None
+    cache = None
+
+sdnext = False
+try:
+    from modules import sd_unet
+except Exception as e:
+    sd_unet = None
+    print("No sd_unet module found. this is SD.Next. ignore.")
+    sdnext = True
+
+try:
+    send_model_to_cpu = sd_models.send_model_to_cpu
+    send_model_to_device = sd_models.send_model_to_device
+except Exception as e:
+    def send_model_to_cpu(m):
+        if getattr(m, "lowvram", False):
+            lowvram.send_everything_to_cpu()
+        else:
+            m.to(devices.cpu)
+
+        devices.torch_gc()
+
+
+    def send_model_to_device(m):
+        if shared.cmd_opts.lowvram or shared.cmd_opts.medvram:
+            lowvram.setup_for_low_vram(m, not shared.cmd_opts.lowvram)
+        else:
+            m.lowvram = False
+
+        if not getattr(m, "lowvram", False):
+            m.to(shared.device)
+
 
 scriptdir = basedir()
 
@@ -571,6 +609,9 @@ def is_xl(modelname):
     if checkpointinfo is None:
         return None
 
+    is_safetensors = getattr(checkpointinfo, "is_safetensors", None)
+    if is_safetensors is None:
+        checkpointinfo.is_safetensors = checkpointinfo.filename.endswith(".safetensors")
     if checkpointinfo.is_safetensors:
         header = get_safetensors_header(checkpointinfo.filename)
     elif checkpointinfo.filename.endswith(".ckpt"):
@@ -590,6 +631,9 @@ def sdversion(modelname):
     if checkpointinfo is None:
         return None
 
+    is_safetensors = getattr(checkpointinfo, "is_safetensors", None)
+    if is_safetensors is None:
+        checkpointinfo.is_safetensors = checkpointinfo.filename.endswith(".safetensors")
     if checkpointinfo.is_safetensors:
         header = get_safetensors_header(checkpointinfo.filename)
     elif checkpointinfo.filename.endswith(".ckpt"):
@@ -617,7 +661,10 @@ def get_valid_checkpoint_title():
         info = sd_models.get_closet_checkpoint_match(name)
         if info is None:
             # no matched found.
-            return sd_models.checkpoint_tiles()[0]
+            ret = sd_models.checkpoint_tiles()
+            if ret is not None:
+                return ret[0]
+            return "None"
         if info != checkpoint_info:
             # this is a fake checkpoint_info
             # return original title
@@ -635,6 +682,8 @@ def mm_list_models():
     checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
     orig_list_models()
     if checkpoint_info is not None:
+        if getattr(sd_models.model_data, "loaded_sd_models", None) is None:
+            return
         for i in range(len(sd_models.model_data.loaded_sd_models)):
             model = sd_models.model_data.loaded_sd_models[i]
             if getattr(model.sd_checkpoint_info, "modelmixer_config", None) is not None:
@@ -796,6 +845,22 @@ def load_module(path):
             # register parent package as import_module() does
             load_module(os.path.dirname(path))
     return module
+
+
+# copy of ui_common.setup_dialog from v1.6.0
+def setup_dialog(button_show, dialog, *, button_close=None):
+    """Sets up the UI so that the dialog (gr.Box) is invisible, and is only shown when buttons_show is clicked, in a fullscreen modal window."""
+
+    dialog.visible = False
+
+    button_show.click(
+        fn=lambda: gr.update(visible=True),
+        inputs=[],
+        outputs=[dialog],
+    ).then(fn=None, _js="function(){ popupId('" + dialog.elem_id + "'); }")
+
+    if button_close:
+        button_close.click(fn=None, _js="closePopup")
 
 
 class ModelMixerScript(scripts.Script):
@@ -1132,7 +1197,7 @@ class ModelMixerScript(scripts.Script):
                             preset_edit_delete = gr.Button('Delete', variant='primary', elem_id=f'mm_preset_edit_delete')
                             preset_edit_close = gr.Button('Close', variant='secondary', elem_id=f'mm_preset_edit_close')
 
-                    ui_common.setup_dialog(button_show=preset_save, dialog=preset_edit_dialog, button_close=preset_edit_close)
+                    setup_dialog(button_show=preset_save, dialog=preset_edit_dialog, button_close=preset_edit_close)
                     # preset_save.click() will be redefined later
 
                 with gr.Row():
@@ -2014,13 +2079,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 return handler
 
             unload_sd_model.click(
-                fn=call_func_and_return_text(lambda: sd_models.send_model_to_cpu(shared.sd_model), 'Unloaded the checkpoint'),
+                fn=call_func_and_return_text(lambda: send_model_to_cpu(shared.sd_model), 'Unloaded the checkpoint'),
                 inputs=[],
                 outputs=[logging]
             )
 
             reload_sd_model.click(
-                fn=call_func_and_return_text(lambda: sd_models.send_model_to_device(shared.sd_model), 'Reload the checkpoint'),
+                fn=call_func_and_return_text(lambda: send_model_to_device(shared.sd_model), 'Reload the checkpoint'),
                 inputs=[],
                 outputs=[logging]
             )
@@ -2838,8 +2903,11 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 dependency = None
 
                 for d in dependencies:
-                    if "js" in d and d["js"] in [ "submit", "submit_img2img" ]:
+                    if "js" in d and d["js"] in [ "submit", "submit_img2img", "submit_txt2img"]: # submit_txt2img for SD.Next
                         dependency = d
+
+                if dependency is None:
+                    continue
 
                 params = [params for params in demo.fns if compare_components_with_ids(params.inputs, dependency["inputs"])]
 
@@ -3955,12 +4023,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
             # XXX add a fake checkpoint_info
             # force to set with a new sha256 hash
-            hashes = cache("hashes")
-            hashes[f"checkpoint/{checkpoint_info.name}"] = {
-                "mtime": os.path.getmtime(checkpoint_info.filename),
-                "sha256": sha256,
-            }
-            dump_cache()
+            if cache is not None:
+                hashes = cache("hashes")
+                hashes[f"checkpoint/{checkpoint_info.name}"] = {
+                    "mtime": os.path.getmtime(checkpoint_info.filename),
+                    "sha256": sha256,
+                }
+                dump_cache()
 
             # XXX hack. set ids for a fake checkpoint info
             checkpoint_info.ids = [checkpoint_info.model_name, checkpoint_info.name, checkpoint_info.name_for_extra]
@@ -4015,8 +4084,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 print(" - Fail to patch lora")
                 pass
             # to cpu ram
-            sd_unet.apply_unet("None")
-            sd_models.send_model_to_cpu(shared.sd_model)
+            if sd_unet is not None:
+                sd_unet.apply_unet("None")
+            send_model_to_cpu(shared.sd_model)
             sd_hijack.model_hijack.undo_hijack(shared.sd_model)
 
             if "cond_stage_model." in weight_changed_blocks or "conditioner." in weight_changed_blocks:
@@ -4066,11 +4136,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 state_dict = None
 
                 # restore to gpu
-                sd_models.send_model_to_device(shared.sd_model)
+                send_model_to_device(shared.sd_model)
                 sd_hijack.model_hijack.hijack(shared.sd_model)
 
                 sd_models.model_data.set_sd_model(shared.sd_model)
-                sd_unet.apply_unet()
+                if sd_unet is not None:
+                    sd_unet.apply_unet()
 
             if lora_patch:
                 patch.undo()
@@ -4109,19 +4180,23 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             #sd_models.model_data.__init__()
 
           if sd_models.model_data.sd_model:
-            sd_models.send_model_to_cpu(sd_models.model_data.sd_model)
+            send_model_to_cpu(sd_models.model_data.sd_model)
             sd_models.model_data.sd_model = None
 
             # the follow procedure normally called at the reuse_model_from_already_loaded()
             # manully check shared.opts.sd_checkpoints_limit here before call load_model()
-            if len(sd_models.model_data.loaded_sd_models) > shared.opts.sd_checkpoints_limit > 0:
-                print(f"Unloading model {len(sd_models.model_data.loaded_sd_models)} over the limit of {shared.opts.sd_checkpoints_limit}...")
-                while len(sd_models.model_data.loaded_sd_models) > shared.opts.sd_checkpoints_limit:
-                    loaded_model = sd_models.model_data.loaded_sd_models.pop()
-                    print(f" - model {len(sd_models.model_data.loaded_sd_models)}: {loaded_model.sd_checkpoint_info.title}")
-                    sd_models.send_model_to_trash(loaded_model)
+            if getattr(sd_models.model_data, "loaded_sd_models", None) is not None:
+                if len(sd_models.model_data.loaded_sd_models) > shared.opts.sd_checkpoints_limit > 0:
+                    print(f"Unloading model {len(sd_models.model_data.loaded_sd_models)} over the limit of {shared.opts.sd_checkpoints_limit}...")
+                    while len(sd_models.model_data.loaded_sd_models) > shared.opts.sd_checkpoints_limit:
+                        loaded_model = sd_models.model_data.loaded_sd_models.pop()
+                        print(f" - model {len(sd_models.model_data.loaded_sd_models)}: {loaded_model.sd_checkpoint_info.title}")
+                        sd_models.send_model_to_trash(loaded_model)
             devices.torch_gc()
 
+          if make_fake:
+            # set checkpoints_list to fix compatible issue
+            sd_models.checkpoints_list[checkpoint_info.title] = checkpoint_info
           sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
           del state_dict
 
@@ -4813,7 +4888,7 @@ def get_current_state_dict(lora=False, base=True):
     from scripts.patches import StateDictPatches, StateDictLoraPatches
 
     # save to cpu
-    sd_models.send_model_to_cpu(shared.sd_model)
+    send_model_to_cpu(shared.sd_model)
     sd_hijack.model_hijack.undo_hijack(shared.sd_model)
 
     ret = []
@@ -4848,8 +4923,8 @@ def get_current_state_dict(lora=False, base=True):
 
         if base:
             # withot following two line patch does not work correctly
-            sd_models.send_model_to_device(shared.sd_model)
-            sd_models.send_model_to_cpu(shared.sd_model)
+            send_model_to_device(shared.sd_model)
+            send_model_to_cpu(shared.sd_model)
 
         state_dict_with_lora = shared.sd_model.state_dict()
         ret.insert(0, state_dict_with_lora.copy())
@@ -4861,7 +4936,7 @@ def get_current_state_dict(lora=False, base=True):
 
     # restore to gpu
     sd_hijack.model_hijack.hijack(shared.sd_model)
-    sd_models.send_model_to_device(shared.sd_model)
+    send_model_to_device(shared.sd_model)
 
     return ret
 
@@ -4906,6 +4981,9 @@ def prepare_elemental_blocks(model=None, force=False):
     res = {}
     if model is None and sd_models.checkpoints_list is not None:
         for checkpoint in sd_models.checkpoints_list:
+            is_safetensors = getattr(checkpoint, "is_safetensors", None)
+            if is_safetensors is None:
+                checkpoint.is_safetensors = checkpoint.filename.endswith(".safetensors")
             if checkpoint.is_safetensors:
                 abspath = os.path.abspath(checkpoint.filename)
                 if os.path.exists(abspath):
@@ -4916,6 +4994,9 @@ def prepare_elemental_blocks(model=None, force=False):
             return None
     elif model is not None:
         checkpoint = sd_models.get_closet_checkpoint_match(model)
+        is_safetensors = getattr(checkpoint, "is_safetensors", None)
+        if is_safetensors is None:
+            checkpoint.is_safetensors = checkpoint.filename.endswith(".safetensors")
         if checkpoint.is_safetensors:
             abspath = os.path.abspath(checkpoint.filename)
             if os.path.exists(abspath):
@@ -4952,6 +5033,13 @@ def get_blocks_elements(res):
             k = key.replace(".bias", ".weight")
             if res.get(k, None) is not None:
                 continue
+        tmp = key.split(".")
+        if tmp[0] not in ["cond_stage_model", "conditioner"]:
+            if tmp[0] == "model" and tmp[1] == "diffusion_model":
+                pass
+            else:
+                continue
+
         k = key.replace(".weight", "") # strip .weight
         k = k.replace("model.diffusion_model.", "")
         k = k.replace("cond_stage_model.transformer.text_model.", "BASE.")
@@ -5528,6 +5616,8 @@ def get_civitai_model_by_hash(h, filename=None):
 
 # xyz support
 def make_axis_on_xyz_grid():
+    global sdnext
+
     xyz_grid = None
     for script in scripts.scripts_data:
         if script.script_class.__module__ == "xyz_grid.py":
@@ -5573,7 +5663,7 @@ def make_axis_on_xyz_grid():
             "[Model Mixer] Adjust",
             str,
             partial(set_value, field="adjust"),
-            format_value=format_weights_add_label
+            **(dict(fmt=format_weights_add_label) if sdnext else dict(format_value=format_weights_add_label)),
         ),
         xyz_grid.AxisOption(
             "[Model Mixer] Pinpoint Adjust",
@@ -5608,13 +5698,13 @@ def make_axis_on_xyz_grid():
                 f"[Model Mixer] MBW alpha {Name}",
                 str,
                 partial(set_value, field=f"mbw alpha {name}"),
-                format_value=format_weights_add_label
+                **(dict(fmt=format_weights_add_label) if sdnext else dict(format_value=format_weights_add_label)),
             ),
             xyz_grid.AxisOption(
                 f"[Model Mixer] elemental merge {Name}",
                 str,
                 partial(set_value, field=f"elemental {name}"),
-                format_value=format_elemental_add_label,
+                **(dict(fmt=format_elemental_add_label) if sdnext else dict(format_value=format_elemental_add_label)),
             ),
             xyz_grid.AxisOption(
                 f"[Model Mixer] Pinpoint block {Name}",
@@ -5648,6 +5738,9 @@ def on_before_ui():
 def on_model_loaded(model):
     shared.modelmixer_config = None
     shared.modelmixer_overrides = None
+
+    if getattr(sd_models.model_data, "loaded_sd_models", None) is None:
+        return
 
     # check merged model
     merged = None
