@@ -991,7 +991,7 @@ class ModelMixerScript(scripts.Script):
                 show_progress=False,
             )
 
-            mm_max_models = gr.Number(label="mm_max_models", value=num_models, precision=0, visible=False, interactive=False)
+            mm_max_models = gr.State(value=num_models)
             merge_method_info = [{}] * num_models
             with gr.Group(), gr.Tabs():
                 mm_states = gr.State({})
@@ -3875,7 +3875,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 if old_finetune: print(" - Old adjust")
                 for i, key in enumerate(tunekeys):
                     if i == 5:
-                        theta_0[key] = theta_0[key] + torch.tensor(fines[5])
+                        theta_0[key] = theta_0[key] + torch.tensor(fines[5], device=theta_0[key].device)
                     elif fines[i] != 1.0:
                         theta_0[key] = theta_0[key] * fines[i]
 
@@ -4095,6 +4095,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         # XXX fix checkpoint_info.filename
         filename = os.path.join(model_path, f"{model_name}.safetensors")
         shared.sd_model.sd_model_checkpoint = checkpoint_info.filename = filename
+        if getattr(shared.sd_model, "filename", None) is not None:
+            shared.sd_model.filename = filename # for sd-webui-forge
+            shared.opts.data["sd_model_checkpoint"] = checkpoint_info.title
 
         if not partial_update and shared.opts.sd_checkpoint_cache > 0:
             # FIXME for partial updated case
