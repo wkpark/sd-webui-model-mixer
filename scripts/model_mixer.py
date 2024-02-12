@@ -1006,7 +1006,11 @@ class ModelMixerScript(scripts.Script):
                         with gr.Row():
                             mm_use[n] = gr.Checkbox(label=f"Model {name}", value=default_use[n], visible=True)
                         with gr.Row():
-                            mm_models[n] = gr.Dropdown(["None"]+sd_models.checkpoint_tiles(), value="None", elem_id=f"model_mixer_model_{lowername}", label=f"Merge {name}", show_label=False, interactive=True)
+                            if n == 0:
+                                tiles = sd_models.checkpoint_tiles()
+                            else:
+                                tiles = []
+                            mm_models[n] = gr.Dropdown(["None"]+tiles, value="None", elem_id=f"model_mixer_model_{lowername}", label=f"Merge {name}", show_label=False, interactive=True)
                             create_refresh_button(mm_models[n], mm_list_models, lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()}, "refresh_checkpoint_Z")
 
                         with gr.Group(visible=False) as model_options[n]:
@@ -2672,12 +2676,17 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
             return gr_show(model_b != "None"), gr.update()
 
+        def _update_model(model):
+            if model == "None":
+                return gr.update()
+            return gr.update(choices=["None"]+sd_models.checkpoint_tiles(), value=model)
+
         for n in range(num_models):
             mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
             mm_set_elem[n].click(fn=set_elemental, inputs=[mm_elementals[n], mm_elemental_main], outputs=[mm_elementals[n]])
 
             mm_readalpha[n].click(fn=get_mbws, inputs=[mm_weights[n], mbw_use_advanced[n], mm_usembws[n], mm_usembws_simple[n], is_sdxl], outputs=[*members, mbw_controls], show_progress=False)
-            mm_models[n].change(fn=lambda modelname: [gr_show(modelname != "None"), gr.update(value="<h3>...</h3>")], inputs=[mm_models[n]], outputs=[model_options[n], recipe_all], show_progress=False)
+            mm_models[n].change(fn=lambda modelname: [_update_model(modelname), gr_show(modelname != "None"), gr.update(value="<h3>...</h3>")], inputs=[mm_models[n]], outputs=[mm_models[n], model_options[n], recipe_all], show_progress=False)
             mm_models[n].select(fn=check_model_b, inputs=[model_a, mm_models[n]], outputs=[model_options[n], mm_models[n]], show_progress=False)
             mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
