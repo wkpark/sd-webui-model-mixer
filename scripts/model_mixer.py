@@ -822,6 +822,9 @@ class ModelMixerScript(scripts.Script):
         return "Model Mixer"
 
     def show(self, is_img2img):
+        use_txt2img_only = shared.opts.data.get("mm_use_txt2img_only", False)
+        if is_img2img and use_txt2img_only:
+            return False
         return scripts.AlwaysVisible
 
     def _model_option_ui(self, n, isxl):
@@ -889,6 +892,10 @@ class ModelMixerScript(scripts.Script):
 
 
     def ui(self, is_img2img):
+        use_txt2img_only = shared.opts.data.get("mm_use_txt2img_only", False)
+        if is_img2img and use_txt2img_only:
+            return []
+
         import modules.ui
         MM = ModelMixerScript
 
@@ -2821,7 +2828,14 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         def on_app_started(demo, app):
             MM = ModelMixerScript
 
-            for _id, is_txt2img in zip([MM.components["txt2img_generate"]._id, MM.components["img2img_generate"]._id], [True, False]):
+            generates = [MM.components["txt2img_generate"]._id]
+            is_txt2imgs = [True]
+            use_txt2img_only = shared.opts.data.get("mm_use_txt2img_only", False)
+            if not use_txt2img_only:
+                generates += [MM.components["img2img_generate"]._id]
+                is_txt2imgs += [False]
+
+            for _id, is_txt2img in zip(generates, is_txt2imgs):
                 dependencies = [x for x in demo.dependencies if x["trigger"] == "click" and _id in x["targets"]]
                 dependency = None
 
@@ -2841,6 +2855,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 else:
                     MM.components["img2img_params"] = params[0].inputs
 
+
+            if use_txt2img_only:
+                return
 
             if not self.init_on_app_started:
                 if not is_img2img:
@@ -5309,6 +5326,15 @@ def on_ui_settings():
         shared.OptionInfo(
             default="",
             label="Civitai API Key",
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        "mm_use_txt2img_only",
+        shared.OptionInfo(
+            default=False,
+            label="Use txt2img tab only to reduce loading time",
             section=section,
         ),
     )
