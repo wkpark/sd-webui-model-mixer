@@ -15,6 +15,18 @@ button.reset {
     min-width: min(100px, 100%) !important;
 }
 
+div.block.mm-compact-accordion{
+
+}
+div.accordions > div.mm-compact-accordion{
+    min-width: fit-content !important;
+}
+
+div.accordions > div.mm-compact-accordion.mm-compact-accordion-open{
+    flex: 1 auto;
+    flex-flow: column;
+}
+
 .mm-vxa-token{ cursor: pointer; }
 .mm-vxa-punct {background: rgba(136, 136, 136, 0.55); padding:0; margin:0;}
 .mm-vxa-token-0 {background: rgba(209, 17, 65, 0.85); border-radius:3px;}

@@ -1176,7 +1176,7 @@ class ModelMixerScript(scripts.Script):
                     dfalse =  gr.Checkbox(value = False, visible = False)
 
             with gr.Row(elem_classes="accordions"):
-              with gr.Accordion("Adjust settings", open=False, elem_classes=["input-accordion", "model_mixer_adjust_control"]):
+              with gr.Accordion("Adjust settings", open=False, elem_classes=["mm-compact-accordion", "model_mixer_adjust_control"]):
                 with gr.Row():
                     mm_finetune = gr.Textbox(label="IN,OUT,OUT2,Contrast,Bright,COL1,COL2,COL3", visible=True, value="", lines=1, show_copy_button=True)
                     finetune_write = gr.Button(value="↖", elem_classes=["tool"])
@@ -1202,7 +1202,7 @@ class ModelMixerScript(scripts.Script):
                     with gr.Column(scale=1, min_width=100):
                         col3 = gr.Slider(label="Yellow-Blue", minimum=-10, maximum=10, step=0.01, value=0, info="Color3, Yellow(-)-Blue(+)")
 
-              with gr.Accordion("Elemental Merge",open = False, elem_classes=["input-accordion"]):
+              with gr.Accordion("Elemental Merge",open = False, elem_classes=["mm-compact-accordion"]):
                 with gr.Row():
                     mm_elemental_main = gr.Textbox(label="Blocks:Elements:Ratio,Blocks:Elements:Ratio,...",lines=1,max_lines=4,value="", show_copy_button=True)
                     elemental_write = gr.Button(value="↖", elem_classes=["tool"])
