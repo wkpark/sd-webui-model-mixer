@@ -946,10 +946,10 @@ class ModelMixerScript(scripts.Script):
 
             with gr.Row():
                 model_a = gr.Dropdown(sd_models.checkpoint_tiles(), value=initial_checkpoint, elem_id="model_mixer_model_a", label="Model A", interactive=True)
-                create_refresh_button(model_a, mm_list_models,lambda: {"choices": sd_models.checkpoint_tiles(), "value": get_valid_checkpoint_title()},"refresh_checkpoint_Z")
+                create_refresh_button(model_a, mm_list_models,lambda: {"choices": sd_models.checkpoint_tiles(), "value": get_valid_checkpoint_title()},"mm_refresh_model_a")
 
-                base_model = gr.Dropdown(["None"]+sd_models.checkpoint_tiles(), elem_id="model_mixer_model_base", value="None", label="Base Model used for Add-Difference mode", interactive=True)
-                create_refresh_button(base_model, mm_list_models,lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()},"refresh_checkpoint_Z")
+                base_model = gr.Dropdown(["None"], elem_id="model_mixer_model_base", value="None", label="Base Model used for Add-Difference mode", interactive=True)
+                create_refresh_button(base_model, mm_list_models,lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()},"mm_refresh_base_model")
             with gr.Row():
                 enable_sync = gr.Checkbox(label="Sync with Default SD checkpoint", value=False, visible=True)
                 is_sdxl = gr.Checkbox(label="is SDXL", value=False, visible=True)
@@ -1013,12 +1013,8 @@ class ModelMixerScript(scripts.Script):
                         with gr.Row():
                             mm_use[n] = gr.Checkbox(label=f"Model {name}", value=default_use[n], visible=True)
                         with gr.Row():
-                            if n == 0:
-                                tiles = sd_models.checkpoint_tiles()
-                            else:
-                                tiles = []
-                            mm_models[n] = gr.Dropdown(["None"]+tiles, value="None", elem_id=f"model_mixer_model_{lowername}", label=f"Merge {name}", show_label=False, interactive=True)
-                            create_refresh_button(mm_models[n], mm_list_models, lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()}, "refresh_checkpoint_Z")
+                            mm_models[n] = gr.Dropdown(["None"], value="None", elem_id=f"model_mixer_model_{lowername}", label=f"Merge {name}", show_label=False, interactive=True)
+                            create_refresh_button(mm_models[n], mm_list_models, lambda: {"choices": ["None"]+sd_models.checkpoint_tiles()}, f"mm_refresh_model_{lowername}")
 
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
@@ -2688,6 +2684,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 return gr.update()
             return gr.update(choices=["None"]+sd_models.checkpoint_tiles(), value=model)
 
+        base_model.change(fn=lambda modelname: [_update_model(modelname)], inputs=[base_model], outputs=[base_model], show_progress=False)
+
         for n in range(num_models):
             mm_setalpha[n].click(fn=slider2text,inputs=[is_sdxl, *members],outputs=[mm_weights[n]])
             mm_set_elem[n].click(fn=set_elemental, inputs=[mm_elementals[n], mm_elemental_main], outputs=[mm_elementals[n]])
@@ -2856,7 +2854,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     MM.components["img2img_params"] = params[0].inputs
 
 
-            if use_txt2img_only:
+            if use_txt2img_only and is_img2img:
                 return
 
             if not self.init_on_app_started:
@@ -2889,6 +2887,17 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             inputs=[],
                             outputs=[MM.components["txt2img_gallery"]],
                         )
+
+                    def _update_model_list(max_models):
+                        models = ["None"] + sd_models.checkpoint_tiles()
+                        return [gr.update(choices=models)] * (max_models + 1)
+
+                    demo.load(
+                        fn=_update_model_list,
+                        inputs=mm_max_models,
+                        outputs=[base_model, *mm_models],
+                        show_progress=False,
+                    )
 
 
             self.init_on_app_started = True
