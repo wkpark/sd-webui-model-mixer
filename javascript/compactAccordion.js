@@ -16,7 +16,7 @@ function setupCompactAccordion(accordion) {
 }
 
 onUiLoaded(() => {
-    for (var accordion of gradioApp().querySelectorAll('.compact-accordion')) {
+    for (var accordion of gradioApp().querySelectorAll('.mm-compact-accordion')) {
         setupCompactAccordion(accordion);
     }
 });

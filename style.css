@@ -22,7 +22,7 @@ div.accordions > div.mm-compact-accordion{
     min-width: fit-content !important;
 }
 
-div.accordions > div.mm-compact-accordion.mm-compact-accordion-open{
+div.accordions > div.mm-compact-accordion.compact-accordion-open{
     flex: 1 auto;
     flex-flow: column;
 }
