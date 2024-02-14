@@ -2761,8 +2761,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             mm_modes[n].change(fn=(lambda nd: lambda mode: [gr.update(info=merge_method_info[nd][mode]), gr.update(value="<h3>...</h3>")])(n), inputs=[mm_modes[n]], outputs=[mm_modes[n], recipe_all], show_progress=False)
             mm_use[n].change(fn=lambda use: gr.update(value="<h3>...</h3>"), inputs=mm_use[n], outputs=recipe_all, show_progress=False)
 
-        def prepare_states(states, save_settings, calc_settings, *calcmodes):
-            states["calcmodes"] = calcmodes
+        def prepare_states(states, save_settings, calc_settings):
             states["save_settings"] = save_settings
             states["calc_settings"] = calc_settings
 
@@ -2773,6 +2772,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             *mm_use, *mm_models, *mm_modes, *mm_alpha,
             *mbw_use_advanced, *mm_usembws, *mm_usembws_simple,
             *mm_weights, *mm_use_elemental, *mm_elementals,
+            *mm_calcmodes,
         ]
 
 
@@ -2977,7 +2977,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         generate_button = MM.components["img2img_generate" if is_img2img else "txt2img_generate"]
         generate_button.click(
             fn=prepare_states,
-            inputs=[mm_states, save_settings, calc_settings, *mm_calcmodes],
+            inputs=[mm_states, save_settings, calc_settings],
             outputs=[mm_states],
             show_progress=False,
             queue=False,
@@ -2986,7 +2986,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         if not is_img2img:
             am_auto_merge_btn.click(
                 fn=prepare_states,
-                inputs=[mm_states, save_settings, calc_settings, *mm_calcmodes],
+                inputs=[mm_states, save_settings, calc_settings],
                 outputs=[mm_states],
                 show_progress=False,
                 queue=False,
@@ -3006,7 +3006,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         if base_model is not None and len(base_model) > 0:
             params.update({"ModelMixer base model": base_model})
 
-        _calcmodes = mm_states["calcmodes"]
         for j in range(num_models):
             name = f"{chr(98+j)}"
             params.update({f"ModelMixer use model {name}": args_[j]})
@@ -3021,7 +3020,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     f"ModelMixer alpha {name}": args_[num_models*3+j],
                     f"ModelMixer mbw mode {name}": args_[num_models*4+j],
                     f"ModelMixer use elemental {name}": use_elemental,
-                    f"ModelMixer calcmode {name}": _calcmodes[j],
+                    f"ModelMixer calcmode {name}": args_[num_models*10+j],
                 })
                 if len(args_[num_models*5+j]) > 0:
                     params.update({f"ModelMixer mbw {name}": ",".join(args_[num_models*5+j])})
@@ -3165,7 +3164,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             print("No selected models found")
             return
 
-        _calcmodes = mm_states["calcmodes"]
         for j in range(num_models):
             if mm_use[j]:
                 model = args_[num_models+j]
@@ -3186,7 +3184,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     elemental = [f.strip() for f in elemental]
                     elemental = ",".join(elemental)
 
-                calcmode = _calcmodes[j]
+                calcmode = args_[num_models*10+j]
 
                 if not mbw_use_advanced:
                     usembws = usembws_simple
