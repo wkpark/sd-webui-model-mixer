@@ -1107,7 +1107,9 @@ class ModelMixerScript(scripts.Script):
                             infotext_load_settings = gr.Button('Load', variant='secondary', elem_id=f'mm_load_infotext_from_text')
                     with gr.Tab("from metadata"):
                         with gr.Column():
-                            infotext_load_model_a_metadata = gr.Button("Load from model A metadata")
+                            with gr.Row():
+                                infotext_load_current_model_metadata = gr.Button("Load from current checkpoint")
+                                infotext_load_model_a_metadata = gr.Button("from model A metadata")
                             infotext_metadata = gr.Textbox(label="Load from Merge recipe metadata", info="Input metadata JSON format text", placeholder="{}", lines=3)
                             infotext_load_metadata_settings = gr.Button('Load from metadata', variant='secondary', elem_id=f'mm_load_infotext_from_text')
 
@@ -1924,11 +1926,16 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             dummy_component = gr.Label(visible=False)
 
 
-            def load_mm_settings(text_or_image, reset=True):
+            def load_mm_settings(text_or_image=None, reset=True):
                 """load weight settings from text or image"""
 
                 if text_or_image is None:
-                    raise gr.Error("Not a valid image or text")
+                    # load from the current selected checkpoint
+                    current_model = shared.opts.data.get("sd_model_checkpoint", None)
+                    checkpoint_info = sd_models.get_closet_checkpoint_match(current_model)
+                    if checkpoint_info is None:
+                        raise gr.Error("Not a valid image or text")
+                    text_or_image = checkpoint_info.title
 
                 if type(text_or_image) is str:
                     geninfo = text_or_image.replace("\n", "").strip()
@@ -2386,6 +2393,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         infotext_load_metadata_settings.click(
             fn=load_mm_settings,
             inputs=[infotext_metadata],
+            outputs=[x[0] for x in self.infotext_fields],
+            show_progress=False,
+        )
+
+        infotext_load_current_model_metadata.click(
+            fn=load_mm_settings,
+            inputs=None,
             outputs=[x[0] for x in self.infotext_fields],
             show_progress=False,
         )
