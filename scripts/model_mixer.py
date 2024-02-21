@@ -3801,6 +3801,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 theta_1 = theta_1 if theta_1 is not None else models["model_a"]
 
             model_b = f"model_{chr(97+n+1-weight_start)}"
+            shared.state.textinfo = f"Merge {model_name}..."
             merge_recipe[model_b] = model_name
             modelinfos.append(model_name)
             if checkpointinfo.shorthash is None:
@@ -3987,6 +3988,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             if fines is not None:
                 old_finetune = shared.opts.data.get("mm_use_old_finetune", False)
                 print(f"Apply fine tune {fines}")
+                shared.state.textinfo = "Apply adjust..."
                 if old_finetune: print(" - Old adjust")
                 for i, key in enumerate(tunekeys):
                     if i == 5:
@@ -4051,15 +4053,18 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         fixclip(theta_0, mm_states["save_settings"], isxl)
 
         timer.record("merging")
+        shared.state.textinfo = "Merge completed..."
         print(f' - merge processing in {timer.summary()}.')
         sha256 = None
         t = Timer()
         if not partial_update and shared.opts.data.get("mm_use_precalculate_hash", False):
+            shared.state.textinfo = "Precalculate model hash..."
             sha256 = precalculate_safetensors_hashes(theta_0, metadata.copy(), mm_states["save_settings"], isxl)
             print(" - precalculated hash = ", sha256)
             t.record("precalculate hash")
 
         if not partial_update and "save model" in debugs:
+            shared.state.textinfo = "Saving merged model..."
             save_settings = shared.opts.data.get("mm_save_model", ["safetensors", "fp16"])
             save_filename = shared.opts.data.get("mm_save_model_filename", "modelmixer-[hash].safetensors")
             save_filename = save_filename.replace("[hash]", f"{sha256[0:10] if sha256 else confighash[0:10]}").replace("[model_name]", f"{model_name}")
@@ -4072,6 +4077,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         state_dict = theta_0.copy()
         make_fake = True
         if partial_update:
+            shared.state.textinfo = "Partial update UNet..."
             # in this case, use sd_model's checkpoint_info
             checkpoint_info = shared.sd_model.sd_checkpoint_info
             # copy old aliases ids
@@ -4118,6 +4124,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 else:
                     shared.sd_model.cond_stage_model.load_state_dict(base_dict, strict=False)
                 print(" - \033[92mTextencoder(BASE) has been successfully updated\033[0m")
+                shared.state.textinfo = "Update Textencoder..."
 
             # get unet_blocks_map
             unet_map = unet_blocks_map(shared.sd_model.model.diffusion_model, isxl)
@@ -4125,6 +4132,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             # partial update unet blocks state_dict
             unet_updated = 0
             for s in weight_changed_blocks:
+                shared.state.textinfo = "Update UNet Blocks..."
                 if s in ["cond_stage_model.", "conditioner."]:
                     # Textencoder(BASE)
                     continue
@@ -4143,6 +4151,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             # textencoder partial update does not work as expected. read state_dict() and set state_dict.
             if "cond_stage_model." in weight_changed_blocks or "conditioner." in weight_changed_blocks:
                 print(" - \033[93mReload full state_dict...\033[0m")
+                shared.state.textinfo = "Reload full state_dict..."
                 state_dict = shared.sd_model.state_dict().copy()
             else:
                 state_dict = None
@@ -4209,6 +4218,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
           if make_fake:
             # set checkpoints_list to fix compatible issue
             sd_models.checkpoints_list[checkpoint_info.title] = checkpoint_info
+          shared.state.textinfo = "Loading merged model..."
           sd_models.load_model(checkpoint_info=checkpoint_info, already_loaded_state_dict=state_dict)
           del state_dict
 
@@ -4254,6 +4264,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         checkpoint_info.modelmixer_config = modelmixer_config
         # restore mm_weights
         mm_weights = mm_weights_orig
+        shared.state.textinfo = None
         return
 
 
