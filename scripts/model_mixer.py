@@ -3695,6 +3695,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     if "" in all_elemental_blocks:
                         # always update elemental blocks
                         weight_changed_blocks += ["time_embed.", "out."]
+                    elif changed[max_blocks - 1]:
+                        # last block changed. add time_embed. and out.
+                        weight_changed_blocks += ["time_embed.", "out."]
 
                     # check finetune
                     finetune_changed = current["adjust"] != mm_finetune
