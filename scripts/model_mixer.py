@@ -4875,6 +4875,15 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
         pre = ".fp16"
     else:
         pre = ""
+
+    # is it a inpainting or instruct-pix2pix2 model?
+    if "model.diffusion_model.input_blocks.0.0.weight" in state_dict:
+        shape = state_dict["model.diffusion_model.input_blocks.0.0.weight"].shape
+        if shape[1] == 9:
+            pre += "-inpainting"
+        if shape[1] == 8:
+            pre += "-instruct-pix2pix"
+
     ext = ".safetensors" if "safetensors" in save_settings else ".ckpt"
 
     if not custom_name or custom_name == "":
