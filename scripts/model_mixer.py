@@ -1020,7 +1020,7 @@ class ModelMixerScript(scripts.Script):
                 is_sdxl = gr.Checkbox(label="is SDXL", value=False, visible=True)
             with gr.Row():
                 calc_settings = gr.CheckboxGroup(label=f"Calculation options", info="Optional paramters for calculation if needed. e.g.) Rebasin",
-                    choices=[("Use GPU", "GPU"), ("Use CPU", "CPU"), ("Fast Rebasin", "fastrebasin")], value=["GPU", "fastrebasin"])
+                    choices=[("Use GPU", "GPU"), ("Use CPU", "CPU"), ("Fast Rebasin", "fastrebasin"), ("use FP16 to reduce RAM usage", "usefp16"),], value=["GPU", "fastrebasin"])
 
 
             def update_basic_settings(basic_settings):
@@ -3373,6 +3373,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             models['model_a'] = sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
             isxl = True
 
+        if "usefp16" in calc_settings:
+            # use fp16 to reduce RAM usage
+            models['model_a'] = to_half(models['model_a'], True)
+
         # check SD2
         isv20 = False
         if not isxl:
@@ -3487,6 +3491,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
             checkpointinfo = sd_models.get_closet_checkpoint_match(base_model)
             model_base = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu")
+            if "usefp16" in calc_settings:
+                # use fp16 to reduce RAM usage
+                model_base = to_half(model_base, True)
 
         # setup selected keys
         theta_0 = {}
@@ -3796,6 +3803,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 print(f"Loading model {model_name}...")
                 theta_1 = load_state_dict(checkpointinfo1)
                 checkpointinfo = checkpointinfo1
+                if "usefp16" in calc_settings:
+                    theta_1 = to_half(theta_1, True)
             else:
                 print("use already loaded model...")
                 theta_1 = theta_1 if theta_1 is not None else models["model_a"]
