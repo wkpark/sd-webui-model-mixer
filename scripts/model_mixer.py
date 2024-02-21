@@ -3828,6 +3828,37 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             if "Cosine" in calcmodes[n]:
                 print(f" - Use {calcmodes[n]} merge")
 
+            # check inpainting or instruct-pix2pix model
+            theta_0_inpaint = None
+            key = "model.diffusion_model.input_blocks.0.0.weight"
+            a = theta_0[key]
+            b = theta_1[key]
+
+            # this enables merging an inpainting model (A) with another one (B);
+            # where normal model would have 4 channels, for latenst space, inpainting model would
+            # have another 4 channels for unmasked picture's latent space, plus one channel for mask, for a total of 9
+            if a.shape != b.shape and a.shape[0:1] + a.shape[2:] == b.shape[0:1] + b.shape[2:]:
+                if a.shape[1] not in [4, 8, 9] or b.shape[1] not in [4, 8, 9]:
+                    raise RuntimeError(f"Only support inpainting, instruct-pix2pix model. A={a.shape}, B={b.shape}")
+
+                if a.shape[1] == 8 or b.shape[1] == 8:#If we have an Instruct-Pix2Pix model...
+                    print(" - Instruct PIX2PIX model")
+                    result_is_instruct_pix2pix_model = True
+                elif a.shape[1] == 9 or b.shape[1] == 9:
+                    print(" - Inpainting model")
+                    result_is_inpainting_model = True
+
+                # Merge only the vectors the models have in common.  Otherwise we get an error due to dimension mismatch.
+                # save original
+                if a.shape[1] > b.shape[1]:
+                    # model_a is inpainting or instruct-pix2pix2
+                    theta_0_inpaint = theta_0[key].clone()
+                    theta_0[key] = theta_0[key][:, 0:b.shape[1], :, :]
+                else:
+                    # model_b is inpainting or instruct-pix2pix2
+                    theta_0_inpaint = theta_1[key].clone()
+                    theta_1[key] = theta_1[key][:, 0:a.shape[1], :, :]
+
             # main routine
             shared.state.sampling_steps = len(sel_keys)
             shared.state.sampling_step = 0
@@ -3930,6 +3961,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 #second_permutation, z = weight_matching(permutation_spec, theta_1, theta_0, usefp16=usefp16, device=device, full=fullmatching, lap=laplib)
                 #theta_3= apply_permutation(permutation_spec, second_permutation, theta_0)
                 shared.state.nextjob()
+
+            if theta_0_inpaint is not None:
+                # restore inpainting or instruct-pix2pix tensor
+                key = "model.diffusion_model.input_blocks.0.0.weight"
+                minsz = min(a.shape[1], b.shape[1])
+                theta_0_inpaint[:, 0:minsz, :, :] = theta_0[key]
+                theta_0[key] = theta_0_inpaint
 
             stage += 1
 
