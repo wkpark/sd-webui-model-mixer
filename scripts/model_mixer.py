@@ -3831,13 +3831,14 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             # check inpainting or instruct-pix2pix model
             theta_0_inpaint = None
             key = "model.diffusion_model.input_blocks.0.0.weight"
-            a = theta_0[key]
-            b = theta_1[key]
+            if key in theta_0:
+                a = theta_0[key]
+                b = theta_1[key]
 
             # this enables merging an inpainting model (A) with another one (B);
             # where normal model would have 4 channels, for latenst space, inpainting model would
             # have another 4 channels for unmasked picture's latent space, plus one channel for mask, for a total of 9
-            if a.shape != b.shape and a.shape[0:1] + a.shape[2:] == b.shape[0:1] + b.shape[2:]:
+            if key in theta_0 and a.shape != b.shape and a.shape[0:1] + a.shape[2:] == b.shape[0:1] + b.shape[2:]:
                 if a.shape[1] not in [4, 8, 9] or b.shape[1] not in [4, 8, 9]:
                     raise RuntimeError(f"Only support inpainting, instruct-pix2pix model. A={a.shape}, B={b.shape}")
 
