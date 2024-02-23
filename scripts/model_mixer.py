@@ -5368,7 +5368,7 @@ def on_ui_settings():
             default=3,
             label="Maximum Merge models (requires Reload UI)",
             component=gr.Slider,
-            component_args={"minimum": 1, "maximum": 7, "step": 1},
+            component_args={"minimum": 1, "maximum": 14, "step": 1},
             section=section,
         ),
     )
