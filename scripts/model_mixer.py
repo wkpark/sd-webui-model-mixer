@@ -2906,7 +2906,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 is_txt2imgs += [False]
 
             for _id, is_txt2img in zip(generates, is_txt2imgs):
-                dependencies = [x for x in demo.dependencies if x["trigger"] == "click" and _id in x["targets"]]
+                dependencies = [x for x in demo.dependencies if (("trigger" in x and x["trigger"] == "click" and _id in x["targets"]) or
+                                    ("trigger" not in x and isinstance(x["targets"][0], tuple) and "click" in x["targets"][0] and _id in x["targets"][0]))]
                 dependency = None
 
                 for d in dependencies:
