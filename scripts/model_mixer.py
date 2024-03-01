@@ -3250,7 +3250,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         if hasattr(p, "modelmixer_xyz"):
             xyz = p.modelmixer_xyz
         # make a hash to cache results
-        confighash = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_copy_states, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
+        confighash = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_calcmodes, mm_copy_states, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
         print("config hash = ", confighash)
         current = getattr(shared, "modelmixer_config", None)
         if current is None and getattr(shared.sd_model.sd_checkpoint_info, "modelmixer_config", None) is not None:
