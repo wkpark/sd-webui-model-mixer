@@ -3925,10 +3925,15 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             if new_alpha is not None:
                                 alpha = new_alpha
 
-                    def cosim(theta_0, theta_1, calcmode):
+                    # resize tensors if needed
+                    theta0, theta1 = theta_0[key], theta_1[key]
+                    if theta0.shape != theta1.shape:
+                        theta0, theta1 = resize_tensors(theta0, theta1)
+
+                    def cosim(theta0, theta1, calcmode):
                         """simplified cosine simlarity merge"""
-                        theta_a = theta_0[key].float().to(devices.device)
-                        theta_b = theta_1[key].float().to(devices.device)
+                        theta_a = theta0.float().to(devices.device)
+                        theta_b = theta1.float().to(devices.device)
                         simab = torch.nn.functional.cosine_similarity(theta_a, theta_b, dim=0).abs()
                         simab = simab.detach().cpu()
                         sims = simab.numpy().copy()
@@ -3942,30 +3947,31 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         k = k.mean() * alpha if "Simple" in calcmode else k * alpha
 
                         if "Sum" in modes[n]:
-                            theta_0[key] = weighted_sum(theta_0[key], theta_1[key], k)
+                            theta0 = weighted_sum(theta0, theta1, k)
                         elif "Add-Diff" in modes[n]:
-                            theta_0[key] = add_difference(theta_0[key], theta_1[key], model_base[key], k)
+                            theta0 = add_difference(theta0, theta1, model_base[key], k)
                         elif "DARE" in modes[n]:
-                            theta_0[key] = dare_merge(theta_0[key], theta_1[key], alpha, 0.5)
+                            theta0 = dare_merge(theta0, theta1, alpha, 0.5)
                         return True
 
                     # unet only
                     if "Cosine" in calcmodes[n] and "model.diffusion_model" in key and alpha != 0.0:
-                        ret = cosim(theta_0, theta_1, calcmodes[n])
+                        ret = cosim(theta0, theta1, calcmodes[n])
                         if ret:
+                            theta_0[key] = theta0
                             continue
 
                     if "Sum" in modes[n]:
                         if alpha == 1.0:
-                            theta_0[key] = theta_1[key]
+                            theta_0[key] = theta1
                         elif alpha != 0.0:
-                            theta_0[key] = weighted_sum(theta_0[key], theta_1[key], alpha)
+                            theta_0[key] = weighted_sum(theta0, theta1, alpha)
                     elif "Add-Diff" in modes[n]:
                         if alpha != 0.0:
-                            theta_0[key] = add_difference(theta_0[key], theta_1[key], model_base[key], alpha)
+                            theta_0[key] = add_difference(theta0, theta1, model_base[key], alpha)
                     elif "DARE" in modes[n]:
                         if alpha != 0.0:
-                            theta_0[key] = dare_merge(theta_0[key], theta_1[key], alpha, 0.5)
+                            theta_0[key] = dare_merge(theta0, theta1, alpha, 0.5)
 
                 if use_safe_open:
                     # reset theta_1 to reduce ram usage
@@ -5065,6 +5071,30 @@ def get_current_state_dict(lora=False, base=True):
     send_model_to_device(shared.sd_model)
 
     return ret
+
+
+# https://github.com/martyn/safetensors-merge-supermario/blob/main/merge.py#L54C3-L74C4
+def resize_tensors(tensor1, tensor2):
+    if len(tensor1.shape) not in [1, 2]:
+        return tensor1, tensor2
+
+    # Pad along the last dimension (width)
+    if tensor1.shape[-1] < tensor2.shape[-1]:
+        padding_size = tensor2.shape[-1] - tensor1.shape[-1]
+        tensor1 = torch.nn.functional.pad(tensor1, (0, padding_size, 0, 0))
+    elif tensor2.shape[-1] < tensor1.shape[-1]:
+        padding_size = tensor1.shape[-1] - tensor2.shape[-1]
+        tensor2 = torch.nn.functional.pad(tensor2, (0, padding_size, 0, 0))
+
+    # Pad along the first dimension (height)
+    if tensor1.shape[0] < tensor2.shape[0]:
+        padding_size = tensor2.shape[0] - tensor1.shape[0]
+        tensor1 = torch.nn.functional.pad(tensor1, (0, 0, 0, padding_size))
+    elif tensor2.shape[0] < tensor1.shape[0]:
+        padding_size = tensor1.shape[0] - tensor2.shape[0]
+        tensor2 = torch.nn.functional.pad(tensor2, (0, 0, 0, padding_size))
+
+    return tensor1, tensor2
 
 
 # from https://github.com/martyn/safetensors-merge-supermario/blob/main/merge.py
