@@ -23,7 +23,7 @@ from tqdm import tqdm
 import torch
 import traceback
 from functools import partial, lru_cache
-from safetensors.torch import save_file
+from safetensors.torch import safe_open, save_file
 from typing import Dict, Union
 from zipfile import ZipFile, is_zipfile
 import numpy as np
@@ -3795,6 +3795,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         timer.record("prepare")
         stage = 1
         theta_1 = None
+        theta_1f = None
+        use_safe_open = shared.opts.data.get("mm_use_safe_open", False)
         checkpointinfo = checkpoint_info # checkpointinfo of model_a
         for n, file in enumerate(mm_models,start=weight_start):
             checkpointinfo1 = sd_models.get_closet_checkpoint_match(file)
@@ -3802,7 +3804,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 raise RuntimeError(f"No checkpoint found for {file}")
 
             model_name = checkpointinfo1.model_name
-            if checkpointinfo != checkpointinfo1:
+            if isxl or use_safe_open:
+                # open checkpoint to reduce memory usage
+                theta_1f = open_state_dict(checkpointinfo1)
+                theta_1 = {}
+
+            elif checkpointinfo != checkpointinfo1:
                 print(f"Loading model {model_name}...")
                 theta_1 = load_state_dict(checkpointinfo1)
                 checkpointinfo = checkpointinfo1
@@ -3838,9 +3845,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             # check inpainting or instruct-pix2pix model
             theta_0_inpaint = None
             key = "model.diffusion_model.input_blocks.0.0.weight"
+
+            if key not in theta_1 and theta_1f is not None:
+                theta_1[key] = theta_1f.get_tensor(key)
+
             if key in theta_0:
                 a = theta_0[key]
-                b = theta_1[key]
+                b = theta_1[key] if key in theta_1 else theta_1f.get_tensor(key)
 
             # this enables merging an inpainting model (A) with another one (B);
             # where normal model would have 4 channels, for latenst space, inpainting model would
@@ -3876,6 +3887,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     continue
                 if key in checkpoint_dict_skip_on_merge:
                     continue
+
+                if key not in theta_1 and theta_1f is not None:
+                    theta_1[key] = theta_1f.get_tensor(key)
+
                 if "model" in key and key in theta_1:
                     if usembw:
                         i = _weight_index(key, isxl=isxl)
@@ -3952,6 +3967,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         if alpha != 0.0:
                             theta_0[key] = dare_merge(theta_0[key], theta_1[key], alpha, 0.5)
 
+                if use_safe_open:
+                    # reset theta_1 to reduce ram usage
+                    del theta_1[key]
+
 
             shared.state.nextjob()
 
@@ -3964,6 +3983,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                                 s = f"model.diffusion_model.{s}"
                             if s in key and key not in theta_0 and key not in checkpoint_dict_skip_on_merge:
                                 print(f" +{k}")
+                                if key not in theta_1 and theta_1f is not None:
+                                    theta_1[key] = theta_1f.get_tensor(key)
                                 theta_0[key] = theta_1[key]
 
             if not isxl and not isv20 and "Rebasin" in calcmodes[n]:
@@ -5046,6 +5067,37 @@ def get_current_state_dict(lora=False, base=True):
     return ret
 
 
+# from https://github.com/martyn/safetensors-merge-supermario/blob/main/merge.py
+class BinDataHandler():
+    def __init__(self, data):
+        self.data = data
+
+    def get_tensor(self, key):
+        return self.data[key]
+
+    def keys(self):
+        return self.data.keys()
+
+
+def open_state_dict(checkpoint_info):
+    if not os.path.exists(checkpoint_info.filename):
+        # this is a fake checkpoint_info
+        raise RuntimeError(f"No cached checkpoint found for {checkpoint_info.title}")
+
+    # read state_dict from file
+    print(f"Open state_dict from file {checkpoint_info.filename}...")
+    file_path = checkpoint_info.filename
+    if file_path.endswith(".safetensors"):
+        f = safe_open(file_path, framework="pt", device="cpu")
+        return f
+
+    if file_path.endswith(".ckpt"):
+        data = torch.load(file_path, map_location=torch.device('cpu'))
+        f = BinDataHandler(data)
+        return f
+    return None
+
+
 def prepare_model(model):
     global elemental_blocks
     if elemental_blocks is None:
@@ -5537,6 +5589,15 @@ def on_ui_settings():
         shared.OptionInfo(
             default=False,
             label="Use txt2img tab only to reduce loading time",
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        "mm_use_safe_open",
+        shared.OptionInfo(
+            default=False,
+            label="Always use safe_open() checkpoint to reduce memory usage",
             section=section,
         ),
     )
