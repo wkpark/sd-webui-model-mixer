@@ -1071,7 +1071,7 @@ class ModelMixerScript(scripts.Script):
                     name_a = chr(66+n-1) if n == 0 else f"merge_{n}"
                     name = chr(66+n)
                     lowername = chr(98+n)
-                    merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha"}
+                    merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha", "DARE": "{name_a} + dare_weights({name}-{name_a})×alpha" }
                     default_merge_info = merge_method_info[n]["Sum"]
                     tabname = f"Merge Model {name}" if n == 0 else f"Model {name}"
                     with gr.Tab(tabname, elem_classes=["mm_model_tab"]):
@@ -1083,7 +1083,7 @@ class ModelMixerScript(scripts.Script):
 
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
-                                mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff"], value="Sum")
+                                mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff", "DARE"], value="Sum")
                             with gr.Row():
                                 mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin", "Cosine", "Simple Cosine", "Inv. Cosine", "Simple Inv. Cosine"], value="Normal")
                             mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n, is_sdxl)
@@ -2454,6 +2454,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         recipe = f"{recipe} × (1 - α<sub>{n}</sub>) + {modelname} × α<sub>{n}</sub>"
                     elif "Add-Diff" in modes[n]:
                         recipe = f"{recipe} + ({modelname} - base) × α<sub>{n}</sub>"
+                    else:
+                        recipe = f"{recipe} + dare_weights(diff {modelname}) × α<sub>{n}</sub>"
 
             if recipe == "A":
                 recipe = "<h3></h3>"
@@ -3598,6 +3600,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         def add_difference(theta0, theta1, base, alpha):
             return theta0 + (theta1 - base) * alpha
 
+        def dare_merge(theta0, theta1, alpha, p):
+            delta = dare_weights(theta1 - theta0, p)
+            return torch.add(theta0.float(), delta.float(), alpha=alpha).to(theta0.dtype)
+
         # merge main
         weight_start = 0
         # total stage = number of models + key uninitialized stage + key remains stage
@@ -3922,8 +3928,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
                         if "Sum" in modes[n]:
                             theta_0[key] = weighted_sum(theta_0[key], theta_1[key], k)
-                        else:
+                        elif "Add-Diff" in modes[n]:
                             theta_0[key] = add_difference(theta_0[key], theta_1[key], model_base[key], k)
+                        elif "DARE" in modes[n]:
+                            theta_0[key] = dare_merge(theta_0[key], theta_1[key], alpha, 0.5)
                         return True
 
                     # unet only
@@ -3937,9 +3945,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             theta_0[key] = theta_1[key]
                         elif alpha != 0.0:
                             theta_0[key] = weighted_sum(theta_0[key], theta_1[key], alpha)
-                    else:
+                    elif "Add-Diff" in modes[n]:
                         if alpha != 0.0:
                             theta_0[key] = add_difference(theta_0[key], theta_1[key], model_base[key], alpha)
+                    elif "DARE" in modes[n]:
+                        if alpha != 0.0:
+                            theta_0[key] = dare_merge(theta_0[key], theta_1[key], alpha, 0.5)
+
 
             shared.state.nextjob()
 
@@ -3990,6 +4002,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     recipe_all = f"{recipe_all} * (1 - alpha_{n}) + {model_name} * alpha_{n}"
                 elif modes[n] in [ "Add-Diff" ]:
                     recipe_all = f"{recipe_all} + ({model_name} - {base_model}) * alpha_{n}"
+                else:
+                    recipe_all = f"{recipe_all} + dare_weights(diff {model_name}) * alpha_{n}"
 
             return recipe_all
 
@@ -4311,6 +4325,20 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         mm_weights = mm_weights_orig
         shared.state.textinfo = None
         return
+
+
+def dare_weights(delta, p):
+    # Calculate the delta of the weights
+    #delta = tensor2 - tensor1
+    # Generate the mask m^t from Bernoulli distribution
+    #m = torch.from_numpy(np.random.binomial(1, p, delta.shape)).to(tensor1.dtype) # slow
+    m = torch.bernoulli(torch.full_like(input=delta.float(), fill_value=p)).to(delta.dtype)
+    # Apply the mask to the delta to get δ̃^t
+    delta_tilde = m * delta
+    # Scale the masked delta by the dropout rate to get δ̂^t
+    delta_hat = delta_tilde / (1 - p)
+    return delta_hat
+
 
 
 def list_dirs(parent="None"):
