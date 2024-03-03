@@ -3888,10 +3888,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 if key in checkpoint_dict_skip_on_merge:
                     continue
 
-                if key not in theta_1 and theta_1f is not None:
-                    theta_1[key] = theta_1f.get_tensor(key)
-
                 if "model" in key and key in theta_1:
+                    if key not in theta_1 and theta_1f is not None:
+                        theta_1[key] = theta_1f.get_tensor(key)
+
                     if usembw:
                         i = _weight_index(key, isxl=isxl)
                         if i == -1:
