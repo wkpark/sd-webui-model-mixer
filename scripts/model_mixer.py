@@ -3808,6 +3808,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 # open checkpoint to reduce memory usage
                 theta_1f = open_state_dict(checkpointinfo1)
                 theta_1 = {}
+                checkpointinfo = checkpointinfo1
 
             elif checkpointinfo != checkpointinfo1:
                 print(f"Loading model {model_name}...")
