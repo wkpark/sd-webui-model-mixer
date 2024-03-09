@@ -3601,8 +3601,20 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             return theta0 + (theta1 - base) * alpha
 
         def dare_merge(theta0, theta1, alpha, p):
-            delta = dare_weights(theta1 - theta0, p)
-            return torch.add(theta0.float(), delta.float(), alpha=alpha).to(theta0.dtype)
+            # Calculate the delta of the weights
+            #delta = tensor2 - tensor1
+            # Generate the mask m^t from Bernoulli distribution
+            #m = torch.from_numpy(np.random.binomial(1, p, theta0.shape)).to(tensor1.dtype) # slow
+            m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=p))
+            # Apply the mask to the delta to get δ̃^t
+            #delta_tilde = m * delta
+            # Scale the masked delta by the dropout rate to get δ̂^t
+            #return torch.add(theta0.float(), delta_hat.float(), alpha=alpha).to(theta0.dtype)
+            #delta_hat = delta * m / (1 - p)
+            #other = delta_hat * alpha = delta * m / (1 - p) * alpha
+            alpha = alpha * m / (1 - p)
+            return torch.lerp(theta0.float(), theta1.float(), alpha).to(theta0.dtype)
+
 
         # merge main
         weight_start = 0
@@ -4353,20 +4365,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         mm_weights = mm_weights_orig
         shared.state.textinfo = None
         return
-
-
-def dare_weights(delta, p):
-    # Calculate the delta of the weights
-    #delta = tensor2 - tensor1
-    # Generate the mask m^t from Bernoulli distribution
-    #m = torch.from_numpy(np.random.binomial(1, p, delta.shape)).to(tensor1.dtype) # slow
-    m = torch.bernoulli(torch.full_like(input=delta.float(), fill_value=p)).to(delta.dtype)
-    # Apply the mask to the delta to get δ̃^t
-    delta_tilde = m * delta
-    # Scale the masked delta by the dropout rate to get δ̂^t
-    delta_hat = delta_tilde / (1 - p)
-    return delta_hat
-
 
 
 def list_dirs(parent="None"):
