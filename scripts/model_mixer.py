@@ -1071,7 +1071,7 @@ class ModelMixerScript(scripts.Script):
                     name_a = chr(66+n-1) if n == 0 else f"merge_{n}"
                     name = chr(66+n)
                     lowername = chr(98+n)
-                    merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha", "DARE": "{name_a} + dare_weights({name}-{name_a})×alpha" }
+                    merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha", "DARE": f"{name_a} + dare_weights({name}-{name_a})×alpha" }
                     default_merge_info = merge_method_info[n]["Sum"]
                     tabname = f"Merge Model {name}" if n == 0 else f"Model {name}"
                     with gr.Tab(tabname, elem_classes=["mm_model_tab"]):
