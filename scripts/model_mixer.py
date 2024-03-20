@@ -3605,8 +3605,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             #delta = tensor2 - tensor1
             # Generate the mask m^t from Bernoulli distribution
             #m = torch.from_numpy(np.random.binomial(1, p, theta0.shape)).to(tensor1.dtype) # slow
-            if calc_settings.index("GPU"):
-                m = torch.bernoulli(torch.full_like(input=theta0, fill_value=p)).to(device="gpu")
+            if "GPU" in calc_settings:
+                m = torch.bernoulli(torch.full_like(input=theta0, fill_value=p)).to(device="cuda")
             else:
                 m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=p))
             # Apply the mask to the delta to get δ̃^t
@@ -3617,7 +3617,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             #other = delta_hat * alpha = delta * m / (1 - p) * alpha
             # alpha = alpha / (1 - p) * m
             alpha = torch.mul(m, alpha / (1 - p))
-            if calc_settings.index("GPU"):
+            if "GPU" in calc_settings:
                 return torch.lerp(theta0, theta1, alpha).to(theta0.dtype).cpu()
 
             return torch.lerp(theta0.float(), theta1.float(), alpha).to(theta0.dtype)
