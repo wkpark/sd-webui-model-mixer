@@ -3804,7 +3804,11 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         sel_keys = changed_keys if partial_update else keys
 
         # save some dicts
-        checkpoint_dict_skip_on_merge = ["cond_stage_model.transformer.text_model.embeddings.position_ids", "conditioner.embedders.1.model.transformer.text_model.embeddings.position_ids" ]
+        checkpoint_dict_skip_on_merge = [
+            "cond_stage_model.transformer.text_model.embeddings.position_ids",
+            "conditioner.embedders.0.transformer.text_model.embeddings.position_ids",
+            "conditioner.embedders.1.model.transformer.text_model.embeddings.position_ids",
+        ]
         for k in checkpoint_dict_skip_on_merge:
             if k in sel_keys:
                 sel_keys.remove(k)
