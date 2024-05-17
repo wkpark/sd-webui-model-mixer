@@ -3237,6 +3237,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             # restore
             args_ = tuple(args)
 
+        # random seed for dare merge
+        dare_rand_seed = shared.opts.data.get("mm_dare_merger_random_seed", 1324)
+
         mm_copy_states = mm_states.copy()
         calc_settings = mm_copy_states.pop("calc_settings", {})
         # exclude calc_settings from fake hash
@@ -3606,9 +3609,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             # Generate the mask m^t from Bernoulli distribution
             #m = torch.from_numpy(np.random.binomial(1, p, theta0.shape)).to(tensor1.dtype) # slow
             if "GPU" in calc_settings:
-                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=p)).to(device="cuda")
+                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=p), generator=rand_generator).to(device="cuda")
             else:
-                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=p))
+                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=p), generator=rand_generator)
             # Apply the mask to the delta to get δ̃^t
             #delta_tilde = m * delta
             # Scale the masked delta by the dropout rate to get δ̂^t
@@ -3901,6 +3904,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     # model_b is inpainting or instruct-pix2pix2
                     theta_0_inpaint = theta_1[key].clone()
                     theta_1[key] = theta_1[key][:, 0:a.shape[1], :, :]
+
+            # prepare random generator for dare merge
+            if "DARE" in modes[n]:
+                rand_generator = torch.Generator()
+                if dare_rand_seed > 0:
+                    rand_generator.manual_seed(dare_rand_seed + n)
 
             # main routine
             shared.state.sampling_steps = len(sel_keys)
@@ -5638,6 +5647,17 @@ def on_ui_settings():
         shared.OptionInfo(
             default=False,
             label="Always use safe_open() checkpoint to reduce memory usage",
+            section=section,
+        ),
+    )
+
+    shared.opts.add_option(
+        "mm_dare_merger_random_seed",
+        shared.OptionInfo(
+            default=1324, # arbitrary random seed
+            label="Random seed for DARE merge to reproduce merged model (default: 1324. set 0 to disable random seed)",
+            component=gr.Number,
+            component_args={"precision": 0, "minimum": 0},
             section=section,
         ),
     )
