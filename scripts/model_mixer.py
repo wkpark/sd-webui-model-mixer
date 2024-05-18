@@ -4316,13 +4316,21 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
           checkpoint_info = fake_checkpoint(checkpoint_info, metadata, model_name, sha256 if sha256 else confighash)
           if shared.sd_model is not None and hasattr(shared.sd_model, 'lowvram') and shared.sd_model.lowvram:
             print("WARN: lowvram/medvram load_model() with minor workaround")
-            sd_models.unload_model_weights()
+            if partial_update:
+                print(" - unload old merge from memory...")
+                sd_models.send_model_to_trash(shared.sd_model)
+                sd_models.model_data.sd_model = None
+                shared.sd_model = None
+                devices.torch_gc()
+            else:
+                sd_models.unload_model_weights()
             #sd_models.model_data.__init__()
 
           if sd_models.model_data.sd_model:
             send_model_to_cpu(sd_models.model_data.sd_model)
             sd_models.model_data.sd_model = None
 
+          if sd_models.model_data.sd_model is None:
             # the follow procedure normally called at the reuse_model_from_already_loaded()
             # manully check shared.opts.sd_checkpoints_limit here before call load_model()
             if getattr(sd_models.model_data, "loaded_sd_models", None) is not None:
