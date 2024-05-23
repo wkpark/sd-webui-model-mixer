@@ -2219,8 +2219,11 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             if len(gallery) == 0:
                 return gr.update(), gr.update()
             if isinstance(gallery[0], dict) and gallery[0].get("name", None) is not None:
-                print("Import ", gallery[0]["name"])
-                image = Image.open(gallery[0]["name"])
+                filename = gallery[0]["name"]
+                if filename.find("?") > 0:
+                    filename = filename[:filename.rfind("?")]
+                print("Import ", filename)
+                image = Image.open(filename)
                 geninfo, _ = images.read_info_from_image(image)
                 if geninfo is not None:
                     params = parse_generation_parameters(geninfo)
