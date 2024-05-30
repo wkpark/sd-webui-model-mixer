@@ -1020,7 +1020,7 @@ class ModelMixerScript(scripts.Script):
                 is_sdxl = gr.Checkbox(label="is SDXL", value=False, visible=True)
             with gr.Row():
                 calc_settings = gr.CheckboxGroup(label=f"Calculation options", info="Optional paramters for calculation if needed. e.g.) Rebasin",
-                    choices=[("Use GPU", "GPU"), ("Use CPU", "CPU"), ("Fast Rebasin", "fastrebasin"), ("use FP16 to reduce RAM usage", "usefp16"),], value=["GPU", "fastrebasin"])
+                    choices=[("Use GPU", "GPU"), ("Use CPU", "CPU"), ("Fast Rebasin", "fastrebasin"), ("use FP16 to reduce RAM usage", "usefp16"), ("Full merge", "full")], value=["GPU", "fastrebasin"])
 
 
             def update_basic_settings(basic_settings):
@@ -3655,6 +3655,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 current = { "hashes": [ checkpoint_info.shorthash ], "weights": [], "adjust": "" }
 
         use_unet_partial_update = shared.opts.data.get("mm_use_unet_partial_update", False)
+
+        # force to full merge
+        if "full" in calc_settings:
+            use_unet_partial_update = False
         if use_unet_partial_update and current is not None:
             # check same models used
             hashes = current["hashes"]
