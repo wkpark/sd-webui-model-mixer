@@ -3818,6 +3818,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             "cond_stage_model.transformer.text_model.embeddings.position_ids",
             "conditioner.embedders.0.transformer.text_model.embeddings.position_ids",
             "conditioner.embedders.1.model.transformer.text_model.embeddings.position_ids",
+            "conditioner.embedders.1.model.logit_scale",
+            "conditioner.embedders.1.model.text_projection",
         ]
         for k in checkpoint_dict_skip_on_merge:
             if k in sel_keys:
