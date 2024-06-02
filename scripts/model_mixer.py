@@ -3460,7 +3460,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         print("compact_mode = ", compact_mode)
 
         # check base_model
-        model_base = {}
+        theta_base_f = None
+        use_safe_open = shared.opts.data.get("mm_use_safe_open", False)
+
+        theta_base = {}
         if True in mm_use and "Add-Diff" in mm_modes:
             if base_model is None:
                 # check SD version
@@ -3492,10 +3495,18 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 raise Exception('No base model selected and automatic detection failed')
 
             checkpointinfo = sd_models.get_closet_checkpoint_match(base_model)
-            model_base = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu")
+
+            # preload base model or open base model
+            if isxl or use_safe_open:
+                # open checkpoint to reduce memory usage
+                theta_base_f = open_state_dict(checkpointinfo)
+                theta_base = {}
+            else:
+                theta_base = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu")
+
             if "usefp16" in calc_settings:
                 # use fp16 to reduce RAM usage
-                model_base = to_half(model_base, True)
+                theta_base = to_half(theta_base, True)
 
         # setup selected keys
         theta_0 = {}
@@ -3831,7 +3842,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         stage = 1
         theta_1 = None
         theta_1f = None
-        use_safe_open = shared.opts.data.get("mm_use_safe_open", False)
         checkpointinfo = checkpoint_info # checkpointinfo of model_a
         for n, file in enumerate(mm_models,start=weight_start):
             checkpointinfo1 = sd_models.get_closet_checkpoint_match(file)
@@ -3841,6 +3851,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             model_name = checkpointinfo1.model_name
             if isxl or use_safe_open:
                 # open checkpoint to reduce memory usage
+                del theta_1f
                 theta_1f = open_state_dict(checkpointinfo1)
                 theta_1 = {}
                 checkpointinfo = checkpointinfo1
@@ -3933,6 +3944,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 if "model" in key and key not in theta_1 and theta_1f is not None:
                     theta_1[key] = theta_1f.get_tensor(key)
 
+                if "Add-Diff" in modes[n] and "model" in key and key not in theta_base and theta_base_f is not None:
+                    theta_base[key] = theta_base_f.get_tensor(key)
+
                 if "model" in key and key in theta_1:
                     if usembw:
                         i = _weight_index(key, isxl=isxl)
@@ -3991,7 +4005,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         if "Sum" in modes[n]:
                             theta0 = weighted_sum(theta0, theta1, k)
                         elif "Add-Diff" in modes[n]:
-                            theta0 = add_difference(theta0, theta1, model_base[key], k)
+                            # read theta_base
+                            theta0 = add_difference(theta0, theta1, theta_base[key], k)
                         elif "DARE" in modes[n]:
                             theta0 = dare_merge(theta0, theta1, alpha, 0.5)
                         return True
@@ -4010,15 +4025,17 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             theta_0[key] = weighted_sum(theta0, theta1, alpha)
                     elif "Add-Diff" in modes[n]:
                         if alpha != 0.0:
-                            theta_0[key] = add_difference(theta0, theta1, model_base[key], alpha)
+                            # read theta_base
+                            theta_0[key] = add_difference(theta0, theta1, theta_base[key], alpha)
                     elif "DARE" in modes[n]:
                         if alpha != 0.0:
                             theta_0[key] = dare_merge(theta0, theta1, alpha, 0.5)
 
-                if use_safe_open:
+                if isxl or use_safe_open:
                     # reset theta_1 to reduce ram usage
                     del theta_1[key]
-
+                    if "Add-Diff" in modes[n] and theta_base_f is not None:
+                        del theta_base[key]
 
             shared.state.nextjob()
 
@@ -4056,6 +4073,15 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         del theta_1
         timer.record("merging")
+
+        # cleanup
+        del theta_base
+        if theta_base_f is not None:
+            del theta_base_f
+        if theta_1f is not None:
+            del theta_1f
+
+        gc.collect()
 
         def make_recipe(modes, model_a, models):
             weight_start = 0
