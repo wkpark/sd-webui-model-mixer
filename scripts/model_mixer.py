@@ -1084,7 +1084,7 @@ class ModelMixerScript(scripts.Script):
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
                                 mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info,
-                                    choices=[("Sum", "Sum"), ("Add-Diff", "Add-Diff"), ("DARE old", "DARE"), ("DARE", "Dare-Fixed")], value="Sum")
+                                    choices=[("Sum", "Sum"), ("Add-Diff", "Add-Diff"), ("DARE (fixed droprate=0.5)", "DARE"), ("DARE (fixed lamda=1.0)", "Dare-Fixed")], value="Sum")
                             with gr.Row():
                                 mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin", "Cosine", "Simple Cosine", "Inv. Cosine", "Simple Inv. Cosine"], value="Normal")
                             mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n, is_sdxl)
@@ -3618,17 +3618,17 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         def add_difference(theta0, theta1, base, alpha):
             return theta0 + (theta1 - base) * alpha
 
-        def dare_merge(theta0, theta1, alpha, p):
-            if p >= 1:
+        def dare_merge(theta0, theta1, alpha, density, rescale=True):
+            if density >= 1:
                 return theta0
             # Calculate the delta of the weights
             #delta = tensor2 - tensor1
             # Generate the mask m^t from Bernoulli distribution
             #m = torch.from_numpy(np.random.binomial(1, p, theta0.shape)).to(tensor1.dtype) # slow
             if "GPU" in calc_settings:
-                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=1-p), generator=rand_generator).to(device="cuda")
+                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=density), generator=rand_generator).to(device="cuda")
             else:
-                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=1-p), generator=rand_generator)
+                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=density), generator=rand_generator)
             # Apply the mask to the delta to get δ̃^t
             #delta_tilde = m * delta
             # Scale the masked delta by the dropout rate to get δ̂^t
@@ -3636,7 +3636,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             #delta_hat = delta * m / (1 - p)
             #other = delta_hat * alpha = delta * m / (1 - p) * alpha
             # alpha = alpha / (1 - p) * m
-            alpha = torch.mul(m, alpha / (1 - p))
+            if rescale:
+                alpha = torch.mul(m, alpha / density)
+            else:
+                alpha = torch.mul(m, alpha)
             if "GPU" in calc_settings:
                 return torch.lerp(theta0.float(), theta1.float(), alpha.float().cpu()).to(theta0.dtype)
 
@@ -4013,7 +4016,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         elif "DARE" in modes[n]:
                             theta0 = dare_merge(theta0, theta1, alpha, 0.5) # fixed fill_in
                         elif "Dare-Fixed" in modes[n]:
-                            theta0 = dare_merge(theta0, theta1, 1.0, 1.0 - alpha) # fixed alpha
+                            theta0 = dare_merge(theta0, theta1, 1.0, alpha, False) # fixed alpha, rescale=False
                         return True
 
                     # unet only
@@ -4037,7 +4040,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             theta_0[key] = dare_merge(theta0, theta1, alpha, 0.5) # fixed fill_in
                     elif "Dare-Fixed" in modes[n]:
                         if alpha != 0.0:
-                            theta_0[key] = dare_merge(theta0, theta1, 1.0, 1 - alpha) # fixed alpha
+                            theta_0[key] = dare_merge(theta0, theta1, 1.0, alpha, False) # fixed alpha
 
                 if isxl or use_safe_open:
                     # reset theta_1 to reduce ram usage
