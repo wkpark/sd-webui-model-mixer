@@ -1071,7 +1071,7 @@ class ModelMixerScript(scripts.Script):
                     name_a = chr(66+n-1) if n == 0 else f"merge_{n}"
                     name = chr(66+n)
                     lowername = chr(98+n)
-                    merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha", "DARE": f"{name_a} + dare_weights({name}-{name_a})×alpha" }
+                    merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha", "DARE": f"{name_a} + dare_weights({name}-{name_a})×alpha", "Dare-Fixed": f"{name_a} + dare_weights({name}-{name_a})" }
                     default_merge_info = merge_method_info[n]["Sum"]
                     tabname = f"Merge Model {name}" if n == 0 else f"Model {name}"
                     with gr.Tab(tabname, elem_classes=["mm_model_tab"]):
@@ -1083,7 +1083,8 @@ class ModelMixerScript(scripts.Script):
 
                         with gr.Group(visible=False) as model_options[n]:
                             with gr.Row():
-                                mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info, choices=["Sum", "Add-Diff", "DARE"], value="Sum")
+                                mm_modes[n] = gr.Radio(label=f"Merge Mode for Model {name}", info=default_merge_info,
+                                    choices=[("Sum", "Sum"), ("Add-Diff", "Add-Diff"), ("DARE old", "DARE"), ("DARE", "Dare-Fixed")], value="Sum")
                             with gr.Row():
                                 mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin", "Cosine", "Simple Cosine", "Inv. Cosine", "Simple Inv. Cosine"], value="Normal")
                             mm_alpha[n], mm_usembws[n], mm_usembws_simple[n], mbw_use_advanced[n], mbw_advanced[n], mbw_simple[n], mm_explain[n], mm_weights[n], mm_use_elemental[n], mm_elementals[n], mm_setalpha[n], mm_readalpha[n], mm_set_elem[n] = self._model_option_ui(n, is_sdxl)
@@ -3618,14 +3619,16 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             return theta0 + (theta1 - base) * alpha
 
         def dare_merge(theta0, theta1, alpha, p):
+            if p >= 1:
+                return theta0
             # Calculate the delta of the weights
             #delta = tensor2 - tensor1
             # Generate the mask m^t from Bernoulli distribution
             #m = torch.from_numpy(np.random.binomial(1, p, theta0.shape)).to(tensor1.dtype) # slow
             if "GPU" in calc_settings:
-                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=p), generator=rand_generator).to(device="cuda")
+                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=1-p), generator=rand_generator).to(device="cuda")
             else:
-                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=p), generator=rand_generator)
+                m = torch.bernoulli(torch.full_like(input=theta0.float(), fill_value=1-p), generator=rand_generator)
             # Apply the mask to the delta to get δ̃^t
             #delta_tilde = m * delta
             # Scale the masked delta by the dropout rate to get δ̂^t
@@ -3926,7 +3929,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     theta_1[key] = theta_1[key][:, 0:a.shape[1], :, :]
 
             # prepare random generator for dare merge
-            if "DARE" in modes[n]:
+            if "DARE" in modes[n] or "Dare-Fixed" in modes[n]:
                 rand_generator = torch.Generator()
                 if dare_rand_seed > 0:
                     rand_generator.manual_seed(dare_rand_seed + n)
@@ -4008,7 +4011,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             # read theta_base
                             theta0 = add_difference(theta0, theta1, theta_base[key], k)
                         elif "DARE" in modes[n]:
-                            theta0 = dare_merge(theta0, theta1, alpha, 0.5)
+                            theta0 = dare_merge(theta0, theta1, alpha, 0.5) # fixed fill_in
+                        elif "Dare-Fixed" in modes[n]:
+                            theta0 = dare_merge(theta0, theta1, 1.0, 1.0 - alpha) # fixed alpha
                         return True
 
                     # unet only
@@ -4029,7 +4034,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             theta_0[key] = add_difference(theta0, theta1, theta_base[key], alpha)
                     elif "DARE" in modes[n]:
                         if alpha != 0.0:
-                            theta_0[key] = dare_merge(theta0, theta1, alpha, 0.5)
+                            theta_0[key] = dare_merge(theta0, theta1, alpha, 0.5) # fixed fill_in
+                    elif "Dare-Fixed" in modes[n]:
+                        if alpha != 0.0:
+                            theta_0[key] = dare_merge(theta0, theta1, 1.0, 1 - alpha) # fixed alpha
 
                 if isxl or use_safe_open:
                     # reset theta_1 to reduce ram usage
