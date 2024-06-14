@@ -1276,7 +1276,7 @@ class ModelMixerScript(scripts.Script):
                     with gr.Column(scale=1, min_width=100):
                         contrast = gr.Slider(label="Contrast", minimum=-10, maximum=10, step=0.01, value=0, info="Contrast/\U0000200BDetail")
                     with gr.Column(scale=1, min_width=100):
-                        bri = gr.Slider(label="Brightness", minimum=-10, maximum=10, step=0.01, value=0, info="Dark(-)-Bright(+)")
+                        bri = gr.Slider(label="Bright/Bokeh", minimum=-10, maximum=10, step=0.01, value=0, info="Dark(-)-Bright(+)")
                 with gr.Row():
                     with gr.Column(scale=1, min_width=100):
                         col1 = gr.Slider(label="Cyan-Red", minimum=-10, maximum=10, step=0.01, value=0, info="Color1, Cyan(-)-Red(+)")
@@ -4203,11 +4203,14 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 print(f"Apply fine tune {fines}")
                 shared.state.textinfo = "Apply adjust..."
                 if old_finetune: print(" - Old adjust")
+                print(" - <<<< out.2.bias", theta_0["model.diffusion_model.out.2.bias"])
                 for i, key in enumerate(tunekeys):
                     if i == 5:
                         theta_0[key] = theta_0[key] + torch.tensor(fines[5], device=theta_0[key].device)
                     elif fines[i] != 1.0:
                         theta_0[key] = theta_0[key] * fines[i]
+
+                print(" - >>>> out.2.bias", theta_0["model.diffusion_model.out.2.bias"])
 
         # save recipe
         alphastr = ','.join(['(' + ','.join(map(lambda x: str(int(x)) if x == int(x) else str(x), sub)) + ')' for sub in alphas])
