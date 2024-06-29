@@ -1073,8 +1073,8 @@ class ModelMixerScript(scripts.Script):
                     name = chr(66+n)
                     lowername = chr(98+n)
                     merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha",
-                        "DARE": f"{name_a} + dare_weights({name}-{name_a})×alpha", "Dare-Fixed": f"{name_a} + dare_weights({name}-{name_a})",
-                        "TIES": f"{name_a} + dare_ties({name}-{name_a})", "Ties-Fixed": f"{name_a} + dare_ties({name}-{name_a})xalpha",
+                        "DARE": f"{name_a} + dare_weights({name}-{name_a},drop=0.5)×alpha", "Dare-Fixed": f"{name_a} + dare_weights({name}-{name_a}, density=alpha)",
+                        "TIES": f"{name_a} + dare_ties({name}-{name_a},drop=0.5)×alpha", "Ties-Fixed": f"{name_a} + dare_ties({name}-{name_a}, density=alpha)",
                         "Self": f"{name_a}×alpha + {name}×0", "Replace": f"{name_a}×0 + {name}×alpha", }
                     default_merge_info = merge_method_info[n]["Sum"]
                     tabname = f"Merge Model {name}" if n == 0 else f"Model {name}"
@@ -2468,8 +2468,18 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         recipe = f"{recipe} × (1 - α<sub>{n}</sub>) + {modelname} × α<sub>{n}</sub>"
                     elif "Add-Diff" in modes[n]:
                         recipe = f"{recipe} + ({modelname} - base) × α<sub>{n}</sub>"
-                    else:
-                        recipe = f"{recipe} + dare_weights(diff {modelname}) × α<sub>{n}</sub>"
+                    elif "DARE" in modes[n]:
+                        recipe = f"{recipe} + dare_weights(diff {modelname}, drop=0.5) × α<sub>{n}</sub>"
+                    elif "Dare-Fixed" in modes[n]:
+                        recipe = f"{recipe} + dare_weights(diff {modelname}, density=α<sub>{n}</sub>)"
+                    elif "TIES" in modes[n]:
+                        recipe = f"{recipe} + ties_weights(diff {modelname}, drop=0.5) × α<sub>{n}</sub>"
+                    elif "TIES-Fixed" in modes[n]:
+                        recipe = f"{recipe} + ties_weights(diff {modelname}, density=α<sub>{n}</sub>)"
+                    elif "Self" in modes[n]:
+                        recipe = f"{recipe} × α<sub>{n}</sub>"
+                    elif "Replace" in modes[n]:
+                        recipe = f"{modelname} × α<sub>{n}</sub>"
 
             if recipe == "A":
                 recipe = "<h3></h3>"
@@ -4175,8 +4185,18 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     recipe_all = f"{recipe_all} * (1 - alpha_{n}) + {model_name} * alpha_{n}"
                 elif modes[n] in [ "Add-Diff" ]:
                     recipe_all = f"{recipe_all} + ({model_name} - {base_model}) * alpha_{n}"
-                else:
-                    recipe_all = f"{recipe_all} + dare_weights(diff {model_name}) * alpha_{n}"
+                elif "DARE" in modes[n]:
+                    recipe_all = f"{recipe_all} + dare_weights(diff {model_name}, drop=0.5) * alpha_{n}"
+                elif "Dare-Fixed" in modes[n]:
+                    recipe_all = f"{recipe_all} + dare_weights(diff {model_name}, density=alpha_{n})"
+                elif "TIES" in modes[n]:
+                    recipe_all = f"{recipe_all} + ties_weights(diff {model_name}, drop=0.5) * alpha_{n}"
+                elif "Ties-Fixed" in modes[n]:
+                    recipe_all = f"{recipe_all} + ties_weights(diff {model_name}, density=alpha_{n})"
+                elif "Self" in modes[n]:
+                    recipe_all = f"{recipe_all} * alpha_{n}"
+                elif "Replace" in modes[n]:
+                    recipe_all = f"{model_name} * alpha_{n}"
 
             return recipe_all
 
