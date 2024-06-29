@@ -1074,7 +1074,8 @@ class ModelMixerScript(scripts.Script):
                     lowername = chr(98+n)
                     merge_method_info[n] = {"Sum": f"Weight sum: {name_a}×(1-alpha)+{name}×alpha", "Add-Diff": f"Add difference:{name_a}+({name}-model_base)×alpha",
                         "DARE": f"{name_a} + dare_weights({name}-{name_a})×alpha", "Dare-Fixed": f"{name_a} + dare_weights({name}-{name_a})",
-                        "TIES": f"{name_a} + dare_ties({name}-{name_a})", "Ties-Fixed": f"{name_a} + dare_ties({name}-{name_a})xalpha", }
+                        "TIES": f"{name_a} + dare_ties({name}-{name_a})", "Ties-Fixed": f"{name_a} + dare_ties({name}-{name_a})xalpha",
+                        "Self": f"{name_a}×alpha + {name}×0", "Replace": f"{name_a}×0 + {name}×alpha", }
                     default_merge_info = merge_method_info[n]["Sum"]
                     tabname = f"Merge Model {name}" if n == 0 else f"Model {name}"
                     with gr.Tab(tabname, elem_classes=["mm_model_tab"]):
@@ -1092,6 +1093,7 @@ class ModelMixerScript(scripts.Script):
                                         ("DARE (lambda=1.0)", "Dare-Fixed"),
                                         ("Ties (droprate=0.5)", "TIES"),
                                         ("Ties (lambda=1.0)", "Ties-Fixed"),
+                                        ("Self", "Self"), ("Replace", "Replace"),
                                     ], value="Sum")
                             with gr.Row():
                                 mm_calcmodes[n] = gr.Radio(label=f"Calcmode for Model {name}", info="Calculation mode (rebasin will not work for SDXL)", choices=["Normal", "Rebasin", "Cosine", "Simple Cosine", "Inv. Cosine", "Simple Inv. Cosine"], value="Normal")
@@ -3975,6 +3977,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 if dare_rand_seed > 0:
                     rand_generator.manual_seed(dare_rand_seed + n)
 
+            # for Self or Replace merge mode. based on supermerger method
+            SELFKEYS = ["to_out", "proj_out", "norm"]
+
             # main routine
             shared.state.sampling_steps = len(sel_keys)
             shared.state.sampling_step = 0
@@ -4062,7 +4067,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         return True
 
                     # unet only
-                    if "Cosine" in calcmodes[n] and "model.diffusion_model" in key and alpha != 0.0:
+                    if modes[n] not in ["Self", "Replace"] and "Cosine" in calcmodes[n] and "model.diffusion_model" in key and alpha != 0.0:
                         ret = cosim(theta0, theta1, calcmodes[n])
                         if ret:
                             theta_0[key] = theta0
@@ -4089,6 +4094,20 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     elif "Ties-Fixed" in modes[n]:
                         if alpha != 0.0:
                             theta_0[key] = dare_merge(theta0, theta1, 1.0, alpha, False, "magnitude")
+                    elif "Self" in modes[n]:
+                        if any(selfkey in key for selfkey in SELFKEYS): continue
+                        if alpha == 0.0 or alpha == 1.0:
+                            pass
+                        if alpha != 0.0:
+                            theta_0[key] = theta0.clone() * alpha
+                    elif "Replace" in modes[n]:
+                        if any(selfkey in key for selfkey in SELFKEYS): continue
+                        if alpha == 0.0:
+                            pass
+                        elif alpha == 1.0:
+                            theta_0[key] = theta1.clone()
+                        else:
+                            theta_0[key] = theta1.clone() * alpha
 
                 if isxl or use_safe_open:
                     # reset theta_1 to reduce ram usage
