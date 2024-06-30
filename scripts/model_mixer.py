@@ -3671,7 +3671,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         def dare_merge(theta0, theta1, alpha, density, rescale=True, mode='random'):
             if density >= 1:
-                return theta0
+                return theta1
 
             m = gen_mask(theta0, theta1, density, mode)
 
