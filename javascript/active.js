@@ -14,7 +14,8 @@ onUiUpdate(() => {
     function updateActiveState(checkbox, accordion) {
         // change checkbox state
         const badge = accordion.querySelector('.label-wrap span input');
-        badge?.checked = checkbox.checked;
+        if (badge)
+            badge.checked = checkbox.checked;
     }
 
     function attachEnabledButtonListener(checkbox, accordion) {
