@@ -1985,6 +1985,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         modes = parsed.get("mode", ["Sum"] * wlen)
                         uses = parsed.get("uses", ["False"] * wlen)
                         use_mbws = parsed.get("use_mbw", ["False"] * wlen)
+                        default_blocks = parsed.get("blocks", "")
                         calcmodes = parsed.get("calcmode", ["Normal"] * wlen)
                         elementals = parsed.get("elemental", [""] * wlen)
                         use_elementals = parsed.get("use_elemental", ["False"] * wlen)
@@ -2027,7 +2028,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                                         params[f"ModelMixer model {name}"] = model
 
                                     params[f"ModelMixer calcmode {name}"] = calcmodes[n]
-                                    params[f"ModelMixer mbw {name}"] = blocks
+                                    params[f"ModelMixer mbw {name}"] = blocks or default_blocks
                                     params[f"ModelMixer mbw mode {name}"] = str(use_mbws[n])
                                     params[f"ModelMixer use model {name}"] = str(uses[n] and model != "None")
                                     params[f"ModelMixer use elemental {name}"] = str(use_elementals[n])
