@@ -924,14 +924,19 @@ class ModelMixerScript(scripts.Script):
                 mm_set_elem = gr.Button(value="↑ Set elemental merge weights")
 
         # some interactions between controls
-        mm_usembws.change(fn=lambda a,b: [gr.update(visible=len(a)>0 or len(b)>0), gr_enable(len(a)==0 and len(b)==0)],
+        usembws_args = dict(fn=lambda a,b: [gr.update(visible=len(a)>0 or len(b)>0), gr_enable(len(a)==0 and len(b)==0)],
             inputs=[mm_usembws, mm_usembws_simple], outputs=[mbw_ui, mm_alpha], show_progress=False)
-        mm_usembws_simple.change(fn=lambda a,b: [gr.update(visible=len(a)>0 or len(b)>0), gr_enable(len(a)==0 and len(b)==0)],
+        mm_usembws.select(**usembws_args)
+        mm_usembws.input(**usembws_args)
+
+        mm_usembws_simple.select(fn=lambda a,b: [gr.update(visible=len(a)>0 or len(b)>0), gr_enable(len(a)==0 and len(b)==0)],
             inputs=[mm_usembws, mm_usembws_simple], outputs=[mbw_ui, mm_alpha], show_progress=False)
-        mm_use_elemental.select(fn=lambda u: gr.update(visible=u), inputs=[mm_use_elemental], outputs=[elemental_ui])
+        mm_use_elemental.input(fn=lambda u: gr.update(visible=u), inputs=[mm_use_elemental], outputs=[elemental_ui])
         mm_use_elemental.change(fn=lambda u: gr.update(visible=u), inputs=[mm_use_elemental], outputs=[elemental_ui])
-        mbw_use_advanced.change(fn=lambda mode: [gr.update(visible=True), gr.update(visible=False)] if mode==True else [gr.update(visible=False),gr.update(visible=True)],
+        mbw_args = dict(fn=lambda mode: [gr.update(visible=True), gr.update(visible=False)] if mode==True else [gr.update(visible=False),gr.update(visible=True)],
             inputs=[mbw_use_advanced], outputs=[mbw_advanced, mbw_simple])
+        mbw_use_advanced.change(**mbw_args)
+        mbw_use_advanced.select(**mbw_args)
 
         return mm_alpha, mm_usembws, mm_usembws_simple, mbw_use_advanced, mbw_advanced, mbw_simple, mm_explain, mm_weights, mm_use_elemental, mm_elemental, mm_setalpha, mm_readalpha, mm_set_elem
 
@@ -1979,6 +1984,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         alphas = parsed.get("alpha", [0.5] * wlen)
                         modes = parsed.get("mode", ["Sum"] * wlen)
                         uses = parsed.get("uses", ["False"] * wlen)
+                        use_mbws = parsed.get("use_mbw", ["False"] * wlen)
                         calcmodes = parsed.get("calcmode", ["Normal"] * wlen)
                         elementals = parsed.get("elemental", [""] * wlen)
                         use_elementals = parsed.get("use_elemental", ["False"] * wlen)
@@ -2022,6 +2028,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
                                     params[f"ModelMixer calcmode {name}"] = calcmodes[n]
                                     params[f"ModelMixer mbw {name}"] = blocks
+                                    params[f"ModelMixer mbw mode {name}"] = str(use_mbws[n])
                                     params[f"ModelMixer use model {name}"] = str(uses[n] and model != "None")
                                     params[f"ModelMixer use elemental {name}"] = str(use_elementals[n])
                                     if elementals[n].strip() != "":
@@ -2303,11 +2310,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 if MM.components.get(elem_id, None) is None:
                     MM.components[elem_id] = component
                     # component is the setting_sd_model_checkpoint
-                    model_a.select(fn=sync_main_checkpoint,
+                    model_a_args = dict(fn=sync_main_checkpoint,
                         inputs=[enable_sync, model_a],
                         outputs=[is_sdxl, model_a, component],
                         show_progress=False,
                     )
+                    model_a.change(**model_a_args)
 
                     enable_sync.select(fn=sync_main_checkpoint,
                         inputs=[enable_sync, model_a],
@@ -5865,6 +5873,8 @@ def on_infotext_pasted(infotext, results):
                 hashes.add(h)
 
         if k.find(" elemental ") > 0:
+            if v.strip() == "":
+                continue
             if v in [ "True", "False"]:
                 continue
             if v[0] == '"' and v[-1] == '"':
@@ -5874,6 +5884,9 @@ def on_infotext_pasted(infotext, results):
             updates[k] = "\n".join(arr)
 
         if k.find(" mbw ") > 0:
+            if v.strip() == "":
+                updates[k] = []
+                continue
             if v in [ "True", "False"]:
                 continue
             elif k.find(" weights ") > 0:
@@ -5886,6 +5899,8 @@ def on_infotext_pasted(infotext, results):
 
         # fix for old adjust value
         if k.find(" adjust") > 0:
+            if v.strip() == "":
+                continue
             tmp = v.split(",")
             if len(tmp) == 7: # old
                 tmp.insert(4, "0")
