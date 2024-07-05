@@ -4464,17 +4464,22 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             sd_models.unload_model_weights()
             #sd_models.model_data.__init__()
 
+          if shared.sd_model is not None:
+            if partial_update:
+              if getattr(sd_models.model_data, "loaded_sd_models", None) is not None:
+                if len(sd_models.model_data.loaded_sd_models) > shared.opts.sd_checkpoints_limit > 1:
+                    try:
+                        print(" - unload current merged model from loaded_sd_models...")
+                        sd_models.model_data.loaded_sd_models.remove(shared.sd_model)
+                    except ValueError:
+                        print(f" - Failed to unload current merged model...")
+                    else:
+                        print(" - trash unloaded model...")
+                        sd_models.send_model_to_trash(shared.sd_model)
 
-          if partial_update:
-            if getattr(sd_models.model_data, "loaded_sd_models", None) is not None:
-                try:
-                    print(" - unload current merged model from loaded_sd_models...")
-                    sd_models.model_data.loaded_sd_models.remove(shared.sd_model)
-                except ValueError:
-                    print(f" - Failed to unload current merged model...")
-                    pass
-
-                sd_models.send_model_to_trash(shared.sd_model)
+              sd_models.model_data.sd_model = None
+              shared.sd_model = None
+              devices.torch_gc()
 
           if sd_models.model_data.sd_model:
             send_model_to_cpu(sd_models.model_data.sd_model)
