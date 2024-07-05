@@ -4463,6 +4463,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             print("WARN: lowvram/medvram load_model() with minor workaround")
             sd_models.unload_model_weights()
             #sd_models.model_data.__init__()
+          elif shared.sd_model is not None:
+            # same workaround here.
+            print("WARN: workaround load_model() to fix 'copy out of meta tensor' error (launched without --medvram cmd option case.)")
+            sd_models.unload_model_weights()
 
           if shared.sd_model is not None:
             if partial_update:
