@@ -6135,6 +6135,9 @@ def on_before_ui():
         )
 
 
+#
+# move the current merged model first in the sd_models.model_data.loaded_sd_models
+#
 def on_model_loaded(model):
     shared.modelmixer_config = None
     shared.modelmixer_overrides = None
@@ -6142,32 +6145,129 @@ def on_model_loaded(model):
     if getattr(sd_models.model_data, "loaded_sd_models", None) is None:
         return
 
+    # only work for sd_checkpoints_limit > 1
+    if shared.opts.sd_checkpoints_limit <= 1:
+        return
+
     # check merged model
     merged = None
     for i in range(len(sd_models.model_data.loaded_sd_models)):
-        model = sd_models.model_data.loaded_sd_models[i]
-        if getattr(model.sd_checkpoint_info, "modelmixer_config", None) is not None:
+        loaded_model = sd_models.model_data.loaded_sd_models[i]
+        if getattr(loaded_model.sd_checkpoint_info, "modelmixer_config", None) is not None:
             merged = i
             break
-    if merged is not None:
+
+    if merged is not None and merged > 0:
         # merged model first
-        merged_model = sd_models.model_data.loaded_sd_models.pop(merged)
-        sd_models.model_data.loaded_sd_models.insert(0, merged_model)
+        try:
+            sd_models.model_data.loaded_sd_models.remove(loaded_model)
+        except ValueError:
+            pass
+        sd_models.model_data.loaded_sd_models.insert(0, loaded_model)
+        print(" - move merged model first at on_model_loaded()")
 
 
-def hook_list_models(demo, app):
-    """hook sd_models.list_models() to preserve current fake checkpointinfo"""
+def hook_sd_models(demo, app):
+    """hook some sd_models methods"""
     global orig_list_models
 
-    if orig_list_models is None:
-        orig_list_models = sd_models.orig_list_models = sd_models.list_models
+    if getattr(sd_models.model_data, "loaded_sd_models", None) is None:
+        return
 
+    def hook_reuse_model_from_already_loaded(sd_model, checkpoint_info, timer):
+        already_loaded = None
+        loaded_model = None
+
+        for i in reversed(range(len(sd_models.model_data.loaded_sd_models))):
+            loaded_model = sd_models.model_data.loaded_sd_models[i]
+            if loaded_model.sd_checkpoint_info.filename == checkpoint_info.filename:
+                already_loaded = i
+                break
+
+        ret = orig_reuse_model_from_already_loaded(sd_model, checkpoint_info, timer)
+
+        # to work this hook, you need to set shared.opts.sd_checkpoints_limit > 1
+        if shared.opts.sd_checkpoints_limit <= 1:
+            return
+
+        if ret and already_loaded is not None: # in this case, move merged model first.
+            if getattr(loaded_model.sd_checkpoint_info, "modelmixer_config", None) is not None:
+                return ret
+
+            print(" - move loaded model second at reuse_model_from_already_loaded() hook")
+            try:
+                sd_models.model_data.loaded_sd_models.remove(ret)
+            except ValueError:
+                pass
+            sd_models.model_data.loaded_sd_models.insert(1, ret)
+
+            return loaded_model
+
+        return ret
+
+
+    def set_sd_model(v, already_loaded=False):
+        """hook sd_models.model_data.set_sd_model"""
+
+        orig_set_sed_model(v, already_loaded)
+
+        if shared.opts.sd_checkpoints_limit <= 1:
+            return
+
+        # get merged model
+        merged = None
+        for i in range(len(sd_models.model_data.loaded_sd_models)):
+            loaded_model = sd_models.model_data.loaded_sd_models[i]
+            if getattr(loaded_model.sd_checkpoint_info, "modelmixer_config", None) is not None:
+                merged = i
+                break
+
+        if merged is not None and merged > 0:
+            # move merged model first
+            print("set_sd_model: sd_models.model_data len = ", len(sd_models.model_data.loaded_sd_models))
+            try:
+                sd_models.model_data.loaded_sd_models.remove(loaded_model)
+            except ValueError:
+                pass
+            sd_models.model_data.loaded_sd_models.insert(0, loaded_model)
+            print(" - move merged model first at set_sd_model().")
+
+
+    # Hook sd_models.list_models()
+    if orig_list_models is None:
+        orig_list_models = sd_models.mm_orig_list_models = sd_models.list_models
+
+    # hook sd_models.list_models() to preserve current fake checkpointinfo
     sd_models.list_models = mm_list_models
 
+    # hooks
+    if getattr(sd_models.model_data, "loaded_sd_models", None) is not None:
+        # hook reuse_model_from_already_loaded
+        orig_reuse_model_from_already_loaded = sd_models.reuse_model_from_already_loaded
+        sd_models.mm_orig_reuse_model_from_already_loaded = orig_reuse_model_from_already_loaded
+        sd_models.reuse_model_from_already_loaded = hook_reuse_model_from_already_loaded
 
-script_callbacks.on_app_started(hook_list_models)
+        # hook sd_models.model_data.set_sd_model
+        orig_set_sd_model = sd_models.model_data.set_sd_model
+        sd_models.model_data.mm_orig_set_sd_model = orig_set_sd_model
+        sd_models.model_data.set_sd_model = set_sd_model
+
+
+def unload():
+    global orig_list_models
+
+    sd_models.reuse_model_from_already_loaded = sd_models.mm_orig_reuse_model_from_already_loaded
+    sd_models.list_models = orig_list_models
+    orig_list_models = None
+    sd_models.model_data.set_sd_model = sd_models.model_data.mm_orig_set_sd_model
+    delattr(sd_models, "mm_orig_reuse_model_from_already_loaded")
+    delattr(sd_models.model_data, "mm_orig_set_sd_model")
+
+
+script_callbacks.on_app_started(hook_sd_models)
 script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_before_image_saved(on_image_save)
 script_callbacks.on_infotext_pasted(on_infotext_pasted)
 script_callbacks.on_before_ui(on_before_ui)
 script_callbacks.on_model_loaded(on_model_loaded)
+script_callbacks.on_script_unloaded(unload)
