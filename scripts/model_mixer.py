@@ -6209,7 +6209,7 @@ def hook_sd_models(demo, app):
     def set_sd_model(v, already_loaded=False):
         """hook sd_models.model_data.set_sd_model"""
 
-        orig_set_sed_model(v, already_loaded)
+        orig_set_sd_model(v, already_loaded)
 
         if shared.opts.sd_checkpoints_limit <= 1:
             return
