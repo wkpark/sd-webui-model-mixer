@@ -44,18 +44,6 @@ function mm_slider_to_text() {
     return res;
 }
 
-function mm_sync_checkpoint() {
-    let res = Array.from(arguments);
-
-    let enable_sync = res[0];
-    if (enable_sync && res[1]) {
-        let model = res[1].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
-        console.log("change to " + model);
-        selectCheckpoint(model);
-    }
-    return res;
-}
-
 var mm_text_to_slider = function() {};
 var slider_to_text = mm_slider_to_text;
 
