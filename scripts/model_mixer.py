@@ -5887,12 +5887,12 @@ def on_infotext_pasted(infotext, results):
             updates[k] = "\n".join(arr)
 
         if k.find(" mbw ") > 0:
-            if v.strip() == "":
-                updates[k] = []
-                continue
             if v in [ "True", "False"]:
                 continue
             elif k.find(" weights ") > 0:
+                continue
+            if v.strip() == "":
+                updates[k] = []
                 continue
 
             if v[0] == '"' and v[-1] == '"':
