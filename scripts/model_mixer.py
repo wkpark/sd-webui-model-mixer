@@ -2219,15 +2219,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             return gr.update(value = value)
 
         def sync_main_checkpoint(enable_sync, model):
-            ret = [gr.update(value=True if is_xl(model) else False, interactive=True if is_xl(model) is None else False)]
-            ret.append(gr.update(value=model))
-            # load checkpoint
-            if enable_sync:
-                shared.opts.data['sd_model_checkpoint'] = model
-                ret.append(gr.update(value=model))
-                modules.sd_models.reload_model_weights()
-            else:
-                ret.append(gr.update())
+            isxl = is_xl(model)
+            ret = gr.update(value=True if isxl else False, interactive=True if isxl is None else False)
 
             prepare_model(model)
 
@@ -2313,14 +2306,18 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     # component is the setting_sd_model_checkpoint
                     model_a_args = dict(fn=sync_main_checkpoint,
                         inputs=[enable_sync, model_a],
-                        outputs=[is_sdxl, model_a, component],
+                        outputs=is_sdxl,
                         show_progress=False,
                     )
-                    model_a.change(**model_a_args)
+                    model_a.change(**model_a_args).then(fn=None,
+                        _js="mm_sync_checkpoint",
+                        inputs=[enable_sync, model_a],
+                        outputs=[], show_progress=False,
+                    )
 
                     enable_sync.select(fn=sync_main_checkpoint,
                         inputs=[enable_sync, model_a],
-                        outputs=[is_sdxl, model_a, component],
+                        outputs=is_sdxl,
                         show_progress=False,
                     )
 

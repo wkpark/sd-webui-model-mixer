@@ -44,6 +44,15 @@ function mm_slider_to_text() {
     return res;
 }
 
+function mm_sync_checkpoint() {
+    let res = Array.from(arguments);
+
+    if (res[0] && res[1]) {
+        let model = res[1].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+        selectCheckpoint(model);
+    }
+}
+
 var mm_text_to_slider = function() {};
 var slider_to_text = mm_slider_to_text;
 
