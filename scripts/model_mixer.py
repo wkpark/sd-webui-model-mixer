@@ -4468,7 +4468,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
           if shared.sd_model is not None:
             if partial_update:
               if getattr(sd_models.model_data, "loaded_sd_models", None) is not None:
-                if len(sd_models.model_data.loaded_sd_models) > shared.opts.sd_checkpoints_limit > 1:
+                if len(sd_models.model_data.loaded_sd_models) >= shared.opts.sd_checkpoints_limit > 1:
                     try:
                         print(" - unload current merged model from loaded_sd_models...")
                         sd_models.model_data.loaded_sd_models.remove(shared.sd_model)
