@@ -4125,11 +4125,11 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         else:
                             theta_0[key] = theta1.clone() * alpha
 
-                if isxl or use_safe_open:
-                    # reset theta_1 to reduce ram usage
-                    del theta_1[key]
-                    if "Add-Diff" in modes[n] and theta_base_f is not None:
-                        del theta_base[key]
+                    if isxl or use_safe_open:
+                        # reset theta_1 to reduce ram usage
+                        del theta_1[key]
+                        if "Add-Diff" in modes[n] and theta_base_f is not None:
+                            del theta_base[key]
 
             shared.state.nextjob()
 
