@@ -899,7 +899,7 @@ class ModelMixerScript(scripts.Script):
             mm_alpha = gr.Slider(label=f"Multiplier for Model {name}", minimum=-1.0, maximum=2, step=0.001, value=0.5)
         with gr.Group():
             with gr.Row():
-                with gr.Group(Visible=True) as mbw_advanced:
+                with gr.Group(visible=True) as mbw_advanced:
                     mm_usembws = gr.Dropdown(["ALL","BASE","INP*","MID","OUT*"]+BLOCKID[1:], value=[], multiselect=True, label="Merge Block Weights", show_label=False, info="or use Merge Block Weights for selected blocks")
                 with gr.Group(visible=False) as mbw_simple:
                     mm_usembws_simple = gr.CheckboxGroup(["BASE","INP*","MID","OUT*"], value=[], label="Merge Block Weights", show_label=False, info="or use Merge Block Weights for selected blocks")
@@ -1107,7 +1107,7 @@ class ModelMixerScript(scripts.Script):
             with gr.Accordion("Load settings", open=False, elem_classes=["model_mixer_load_settings"]) as mbw_load_settings:
                 with gr.Group(), gr.Tabs():
                     with gr.Tab("from image"):
-                        with gr.Row(size=3):
+                        with gr.Row():
                             with gr.Column(elem_classes=["mm_infotext_image"], scale=1):
                                 infotext_image1 = gr.Image(elem_id="mm_infotext_image1", type="pil")
                                 infotext_image1_load = gr.Button('Load settings', variant='secondary', elem_id=f'mm_load_settings_from_image1')
@@ -1306,7 +1306,7 @@ class ModelMixerScript(scripts.Script):
                     with gr.Column(variant="compact"):
                         with gr.Row():
                             not_elements = gr.Checkbox(value=False, label="Not Elements", show_label=False, info="NOT", scale=1, min_width=30, elem_classes=["not-button"])
-                            elements = gr.Dropdown(["time_embed", "time_embed.0", "time_embed.2", "out", "out.0", "out.2"], values=[], label="Elements", show_label=False, multiselect=True, info="Select Elements", elem_id="mm_elemental_elements", scale=7)
+                            elements = gr.Dropdown(["time_embed", "time_embed.0", "time_embed.2", "out", "out.0", "out.2"], value=[], label="Elements", show_label=False, multiselect=True, info="Select Elements", elem_id="mm_elemental_elements", scale=7)
                     with gr.Column(variant="compact"):
                         with gr.Row():
                             elemental_ratio = gr.Slider(minimum=0, maximum=2, value=0.5, step=0.01, label="Ratio", scale=8)
@@ -1898,7 +1898,7 @@ class ModelMixerScript(scripts.Script):
                             checkbox = gr.Checkbox(label=f"", show_label=False, value=False, visible=use_model_dl, elem_classes=["downloaded"], interactive=False, container=False)
                         with gr.Column(scale=10, min_width=160):
                             downfile = gr.HTML(label=f"Download File {i}", show_label=False, value="<p></p>")
-                        with gr.Column(scale=1, label="Download Button", visible=use_model_dl, show_label=False, min_width=10):
+                        with gr.Column(scale=1, visible=use_model_dl, min_width=10):
                             downbtn = gr.Button(' ', elem_classes=["download"])
 
                     downbtn.click(fn=downloader, inputs=[downloadfile], outputs=[checkbox, download_status], show_progress=False)
