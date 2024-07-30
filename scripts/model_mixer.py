@@ -680,7 +680,11 @@ def mm_list_models():
 
     # save current checkpoint_info and call register() again to restore
     checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
-    orig_list_models()
+    if orig_list_models is not None:
+        orig_list_models()
+    else:
+        sd_models.list_models()
+
     if checkpoint_info is not None:
         if getattr(sd_models.model_data, "loaded_sd_models", None) is None:
             return
@@ -6251,9 +6255,10 @@ def unload():
     global orig_list_models
 
     sd_models.reuse_model_from_already_loaded = sd_models.mm_orig_reuse_model_from_already_loaded
-    sd_models.list_models = orig_list_models
+    if orig_list_models is not None:
+        sd_models.list_models = orig_list_models
+        sd_models.model_data.set_sd_model = sd_models.model_data.mm_orig_set_sd_model
     orig_list_models = None
-    sd_models.model_data.set_sd_model = sd_models.model_data.mm_orig_set_sd_model
     delattr(sd_models, "mm_orig_reuse_model_from_already_loaded")
     delattr(sd_models.model_data, "mm_orig_set_sd_model")
 
