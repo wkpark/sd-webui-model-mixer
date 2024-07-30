@@ -6168,9 +6168,6 @@ def hook_sd_models(demo, app):
     """hook some sd_models methods"""
     global orig_list_models
 
-    if getattr(sd_models.model_data, "loaded_sd_models", None) is None:
-        return
-
     def hook_reuse_model_from_already_loaded(sd_model, checkpoint_info, timer):
         already_loaded = None
         loaded_model = None
