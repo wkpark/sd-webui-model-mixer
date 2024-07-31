@@ -1161,7 +1161,7 @@ class ModelMixerScript(scripts.Script):
                                     mulweight = gr.Button(elem_classes=["reset"], value="Mul")
 
                         with gr.Tab("Weight Sum Calculator"):
-                            gr.HTML(label="weight sum helper", show_labe=False, value="<p>Calculate alphas of series of model weights. e.g.) model_a * ca + model_b * cb ... = model_a * (1 - alpha) + model_b * alpha...</p>")
+                            gr.HTML(label="weight sum helper", show_label=False, value="<p>Calculate alphas of series of model weights. e.g.) model_a * ca + model_b * cb ... = model_a * (1 - alpha) + model_b * alpha...</p>")
                             with gr.Row():
                                 model_weights = [0.0] * num_models
                                 for n in range(num_models):
