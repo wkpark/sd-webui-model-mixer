@@ -6254,13 +6254,17 @@ def hook_sd_models(demo, app):
 def unload():
     global orig_list_models
 
-    sd_models.reuse_model_from_already_loaded = sd_models.mm_orig_reuse_model_from_already_loaded
     if orig_list_models is not None:
         sd_models.list_models = orig_list_models
-        sd_models.model_data.set_sd_model = sd_models.model_data.mm_orig_set_sd_model
     orig_list_models = None
-    delattr(sd_models, "mm_orig_reuse_model_from_already_loaded")
-    delattr(sd_models.model_data, "mm_orig_set_sd_model")
+
+    if getattr(sd_models.model_data, "mm_orig_set_sd_model", None) is not None:
+        sd_models.model_data.set_sd_model = sd_models.model_data.mm_orig_set_sd_model
+        delattr(sd_models.model_data, "mm_orig_set_sd_model")
+
+    if getattr(sd_models, "mm_orig_reuse_model_from_already_loaded", None) is not None:
+        sd_models.reuse_model_from_already_loaded = sd_models.mm_orig_reuse_model_from_already_loaded
+        delattr(sd_models, "mm_orig_reuse_model_from_already_loaded")
 
 
 script_callbacks.on_app_started(hook_sd_models)
