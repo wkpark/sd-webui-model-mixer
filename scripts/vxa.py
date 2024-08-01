@@ -319,7 +319,10 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
 
     devices.torch_gc()
 
+    # add layer_name to image filename
+    suffix = layer_name.replace("model.diffusion_model.", "-")
+
     image_to_save = Image.fromarray(output)
-    images.save_image(image_to_save, shared.opts.outdir_img2img_samples if is_img2img else shared.opts.outdir_txt2img_samples, basename, info=geninfo)
+    images.save_image(image_to_save, shared.opts.outdir_img2img_samples if is_img2img else shared.opts.outdir_txt2img_samples, basename + suffix, info=geninfo)
     print("Done")
     return image_to_save
