@@ -5598,8 +5598,8 @@ def parse_elemental(elemental):
         return elemental_weights
     return None
 
-# from modules/generation_parameters_copypaste.py
-re_param_code = r'\s*([\w ]+):\s*("(?:\\"[^,]|\\"|\\|[^\"])+"|[^,]*)(?:,|$)'
+# from modules/generation_parameters_copypaste.py or modules/infotext_utils.py
+re_param_code = r'\s*(\w[\w \-/]+):\s*("(?:\\.|[^\\"])+"|[^,]*)(?:,|$)'
 re_param = re.compile(re_param_code)
 
 def quote(text):
