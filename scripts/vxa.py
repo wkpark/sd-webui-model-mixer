@@ -13,13 +13,20 @@ from modules.generation_parameters_copypaste import parse_generation_parameters
 from torch import nn, einsum
 from einops import rearrange
 import math
-from ldm.modules.attention import CrossAttention
-from ldm.modules.encoders.modules import FrozenCLIPEmbedder, FrozenOpenCLIPEmbedder
 from modules.ui import create_refresh_button
+
+
+has_ldm = importlib.util.find_spec("ldm") is not None
+if has_ldm:
+    from ldm.modules.attention import CrossAttention
+else:
+    CrossAttention = None
 
 has_sgm = importlib.util.find_spec("sgm") is not None
 if has_sgm:
     from sgm.modules.attention import CrossAttention as CrossAttention2
+else:
+    CrossAttention2 = None
 
 hidden_layer_names = []
 default_hidden_layer_name = "model.diffusion_model.middle_block.1.transformer_blocks.0.attn2"
@@ -64,8 +71,12 @@ def tokenize(text, current_step=1, total_step=1, block=0, ignore_webui=True, inp
 
     typename = type(cond_stage_model.wrapped).__name__
     if typename == "FrozenCLIPEmbedder":
+        from ldm.modules.encoders.modules import FrozenCLIPEmbedder
+
         clip = VanillaClip(cond_stage_model.wrapped)
     elif typename == "FrozenOpenCLIPEmbedder":
+        from ldm.modules.encoders.modules import FrozenCLIPEmbedder
+
         clip = OpenClip(cond_stage_model.wrapped)
     else:
         raise gr.Error(f'Unknown CLIP model: {typename}')
@@ -185,8 +196,15 @@ def get_layer_names(model=None):
             model = shared.sd_model
 
     hidden_layers = []
+
+    if not hasattr(model, "named_modules"):
+        return [default_hidden_layer_name]
+
     for n, m in model.named_modules():
-        if isinstance(m, CrossAttention) or (has_sgm and isinstance(m, CrossAttention2)):
+        if CrossAttention is not None or (has_sgm and CrossAttention2 is not None):
+            if isinstance(m, CrossAttention) or (has_sgm and isinstance(m, CrossAttention2)):
+                hidden_layers.append(n)
+        elif n.endswith(".attn2"):
             hidden_layers.append(n)
     return list(filter(lambda s : "attn2" in s, hidden_layers))
 
@@ -258,7 +276,7 @@ def generate_vxa(image, prompt, stripped, idx, time, layer_name, output_mode, is
     layer = None
     print(f"Search {layer_name}...")
     for n, m in model.named_modules():
-        if (isinstance(m, CrossAttention) or (has_sgm and isinstance(m, CrossAttention2))) and n == layer_name:
+        if n == layer_name:
             print("layer found = ", n)
             layer = m
             break

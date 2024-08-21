@@ -38,7 +38,6 @@ from modules.sd_models import model_hash, model_path, checkpoints_loaded
 from modules.scripts import basedir
 from modules.timer import Timer
 from modules.ui import create_refresh_button
-from ldm.modules.attention import CrossAttention
 
 from scripts.vxa import generate_vxa, default_hidden_layer_name, get_layer_names
 from scripts.vxa import tokenize
@@ -653,7 +652,11 @@ def sdversion(modelname):
 
 
 def get_valid_checkpoint_title():
-    checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
+    if shared.sd_model and hasattr(shared.sd_model, "sd_checkpoint_info"):
+        checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
+    else:
+        checkpoint_info = None
+
     # check validity of current checkpoint_info
     if checkpoint_info is not None:
         filename = checkpoint_info.filename
@@ -679,7 +682,11 @@ def mm_list_models():
     global orig_list_models
 
     # save current checkpoint_info and call register() again to restore
-    checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
+    if shared.sd_model and hasattr(shared.sd_model, "sd_checkpoint_info"):
+        checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
+    else:
+        checkpoint_info = None
+
     if orig_list_models is not None:
         orig_list_models()
     else:
@@ -690,7 +697,7 @@ def mm_list_models():
             return
         for i in range(len(sd_models.model_data.loaded_sd_models)):
             model = sd_models.model_data.loaded_sd_models[i]
-            if getattr(model.sd_checkpoint_info, "modelmixer_config", None) is not None:
+            if hasattr(model, "sd_checkpoint_info") and getattr(model.sd_checkpoint_info, "modelmixer_config", None) is not None:
                 model.sd_checkpoint_info.register()
                 break
 
@@ -1000,7 +1007,7 @@ class ModelMixerScript(scripts.Script):
         default_use[0] = True
 
         def initial_checkpoint():
-            if shared.sd_model is not None and shared.sd_model.sd_checkpoint_info is not None:
+            if shared.sd_model is not None and hasattr(shared.sd_model, "sd_checkpoint_info"):
                 return shared.sd_model.sd_checkpoint_info.title
             return sd_models.checkpoint_tiles()[0]
 
@@ -2326,7 +2333,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     )
 
         def current_metadata():
-            if shared.sd_model and shared.sd_model.sd_checkpoint_info:
+            if shared.sd_model and hasattr(shared.sd_model, "sd_checkpoint_info"):
                 metadata = shared.sd_model.sd_checkpoint_info.metadata
                 data = json.dumps(metadata, indent=4, ensure_ascii=False)
 
@@ -3302,12 +3309,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         confighash = hashlib.sha256(json.dumps([model_a, base_model, mm_finetune, mm_elementals, mm_use_elemental, mm_models, mm_modes, mm_calcmodes, mm_copy_states, mm_alpha, mm_usembws, mm_weights, xyz]).encode("utf-8")).hexdigest()
         print("config hash = ", confighash)
         current = getattr(shared, "modelmixer_config", None)
-        if current is None and getattr(shared.sd_model.sd_checkpoint_info, "modelmixer_config", None) is not None:
+        if current is None and hasattr(shared.sd_model, "sd_checkpoint_info") and getattr(shared.sd_model.sd_checkpoint_info, "modelmixer_config", None) is not None:
             print(" - restore modelmixer_config")
             shared.modelmixer_config = shared.sd_model.sd_checkpoint_info.modelmixer_config
             current = shared.modelmixer_config
 
-        if shared.sd_model is not None and shared.sd_model.sd_checkpoint_info is not None:
+        if shared.sd_model is not None and hasattr(shared.sd_model, "sd_checkpoint_info") and shared.sd_model.sd_checkpoint_info is not None:
             if shared.sd_model.sd_checkpoint_info.sha256 == confighash and sd_models.get_closet_checkpoint_match(shared.sd_model.sd_checkpoint_info.title) is not None:
                 # already mixed
                 print(f"  - use current mixed model {confighash}")
@@ -3378,7 +3385,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         def load_state_dict(checkpoint_info):
             # is it already loaded model?
-            already_loaded = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
+
+            if shared.sd_model and hasattr(shared.sd_model, "sd_checkpoint_info"):
+                already_loaded = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
+            else:
+                already_loaded = None
+
             if already_loaded is not None and already_loaded.title == checkpoint_info.title:
                 # model is already loaded
                 print(f"Loading {checkpoint_info.title} from loaded model...")
@@ -3739,7 +3751,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         if current is None and shared.sd_model is not None:
             # no current mixed model but model_a == shared.sd_model case.
-            info = shared.sd_model.sd_checkpoint_info
+            info = shared.sd_model.sd_checkpoint_info if hasattr(shared.sd_model, "sd_checkpoint_info") else None
             if info == checkpoint_info:
                 current = { "hashes": [ checkpoint_info.shorthash ], "weights": [], "adjust": "" }
 
@@ -4353,7 +4365,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         # partial update
         state_dict = theta_0.copy()
         make_fake = True
-        if partial_update:
+        if partial_update and shared.sd_model and hasattr(shared.sd_model, "sd_checkpoint_info"):
             shared.state.textinfo = "Partial update UNet..."
             # in this case, use sd_model's checkpoint_info
             checkpoint_info = shared.sd_model.sd_checkpoint_info
@@ -4727,6 +4739,9 @@ def extract_lora_from_current_model(save_lora_mode, model_orig, model_tuned, dif
         custom_name, extract_mode, lin_dim, conv_dim, lin_slider, conv_slider, lora_dim, min_diff, clamp_quantile,
         precision, calc_device, save_settings, metadata_settings, extra_settings): #, progress=gr.Progress(track_tqdm=False)):
 
+    if shared.sd_model and not hasattr(shared.sd_model, "sd_checkpoint_info"):
+        return gr.update(value="Have no valid current model")
+
     if shared.sd_model and shared.sd_model.sd_checkpoint_info:
         metadata = shared.sd_model.sd_checkpoint_info.metadata.copy()
     else:
@@ -4998,6 +5013,9 @@ def save_as_diffusers(custom_name, save_settings, metadata_settings, state_dict=
         if current is None:
             print(" - Current model is not a merged model. ignored...")
 
+        if shared.sd_model and not hasattr(shared.sd_model, "sd_checkpoint_info"):
+            return gr.update(value="Not supported!")
+
         if shared.sd_model and shared.sd_model.sd_checkpoint_info:
             metadata = shared.sd_model.sd_checkpoint_info.metadata.copy()
         else:
@@ -5094,6 +5112,9 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
         current = getattr(shared, "modelmixer_config", None)
         if current is None:
             return gr.update(value="No merged model found")
+
+        if shared.sd_model and not hasattr(shared.sd_model, "sd_checkpoint_info"):
+            return gr.update(value="Not supported")
 
         if shared.sd_model and shared.sd_model.sd_checkpoint_info:
             metadata = shared.sd_model.sd_checkpoint_info.metadata.copy()
@@ -5638,6 +5659,11 @@ def on_image_save(params):
     model = getattr(shared, "modelmixer_config", None)
     if model is None: return
     sha256 = model["hash"]
+
+    if shared.sd_model and not hasattr(shared.sd_model, "sd_checkpoint_info"):
+        # FIXME ignore
+        return
+
     if shared.sd_model is None or shared.sd_model.sd_checkpoint_info is None or shared.sd_model.sd_checkpoint_info.sha256 != sha256:
         return
 
