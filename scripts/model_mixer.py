@@ -5358,6 +5358,9 @@ class ReadSafetensorsDict:
         self.metadata_len = length
         self.index = index
 
+        # fake settable dict
+        self._data = {}
+
     def _load_metadata(self):
         # read metadaa from safetensors
         with open(self.filepath, 'rb') as f:
@@ -5372,6 +5375,9 @@ class ReadSafetensorsDict:
                     del header["__metadata__"]
 
         return metadata_len, header
+
+    def __setitem__(self, key, value):
+        self._data[key] = value
 
     def __getitem__(self, key):
         def _np_dtype_to_storage_type_map():
@@ -5419,6 +5425,9 @@ class ReadSafetensorsDict:
                 "F8_E4M3": torch.float8_e4m3fn,
             }
 
+        if key in self._data:
+            return self._data[key]
+
         if key not in self.index:
             raise KeyError(f"{key} not found in safetensors file")
 
@@ -5465,6 +5474,7 @@ class ReadSafetensorsDict:
 
     def close(self):
         self.index = None
+        self._data = {}
 
 
 class SafeopenSafetensorsDict:
@@ -5473,9 +5483,18 @@ class SafeopenSafetensorsDict:
         self.filepath = filepath
         self.safe = safe_open(filepath, framework="pt", device="cpu")
 
+        # fake settable dict
+        self._data = {}
+
     def __getitem__(self, key):
+        if key in self._data:
+            return self._data[key]
+
         tensor = self.safe.get_tensor(key)
         return tensor
+
+    def __setitem__(self, key, value):
+        self._data[key] = value
 
     def keys(self):
         return list(self.safe.keys())
@@ -5500,6 +5519,7 @@ class SafeopenSafetensorsDict:
     def close(self):
         self.index = None
         self.safe = None
+        self._data = {}
 
 
 class ReadPickleDict:
@@ -5515,6 +5535,9 @@ class ReadPickleDict:
 
         self.opened_file = opened_file
         self.opened_zipfile = ZipFile(opened_file)
+
+        # fake settable dict
+        self._data = {}
 
 
     def __getitem__(self, key):
@@ -5547,6 +5570,10 @@ class ReadPickleDict:
                 'bfloat2': torch.bfloat16,
             }
 
+        if key in self._data:
+            return self._data[key]
+
+
         if key not in self.index:
             raise KeyError(f"{key} not found in safetensors file")
 
@@ -5569,6 +5596,8 @@ class ReadPickleDict:
 
             return tensor
 
+    def __setitem__(self, key, value):
+        self._data[key] = value
 
     def keys(self):
         return list(self.index.keys())
@@ -5594,6 +5623,7 @@ class ReadPickleDict:
         self.opened_zipfile.close()
         self.opened_file.close()
         self.index = None
+        self._data = {}
 
 
 def get_safetensors_header(filename):
