@@ -533,7 +533,7 @@ def get_ckpt_header(file):
         storage_type, key, location, numel = data
         dtype = storage_type.dtype
         # return dtype only
-        return dtype
+        return {"dtype": dtype, "key": key, "numel": numel }
 
     load_module_mapping: Dict[str, str] = {
         # See https://github.com/pytorch/pytorch/pull/51633
@@ -547,8 +547,20 @@ def get_ckpt_header(file):
 
     def _rebuild_hook_tensor(storage, storage_offset, size, stride, *_args):
         # storage is returned by dummy_persistent_load()
-        # in this case, storage == dtype
-        return {"shape": list(size), "type": str(storage)}
+        return {"shape": list(size), "dtype": str(storage["dtype"]), "key": storage["key"], "numel": storage["numel"]}
+
+    class Checkpoint:
+        """
+        Abstract base class from pytorch_lightning/callbacks/checkpoint.py
+        """
+
+        @property
+        def state_key(self) -> str:
+            return self.__class__.__qualname__
+
+        @property
+        def _legacy_state_key(self) -> Type["Callback"]:
+            return type(self)
 
     class UnpicklerWrapper(pickle.Unpickler):  # type: ignore[name-defined]
         # from https://stackoverflow.com/questions/13398462/unpickling-python-objects-with-a-changed-module-path/13405732
@@ -563,6 +575,9 @@ def get_ckpt_header(file):
             mod_name = load_module_mapping.get(mod_name, mod_name)
             if mod_name == "torch._utils" and name in ["_rebuild_tensor_v2", "_rebuild_tensor"]:
                 return _rebuild_hook_tensor
+
+            if mod_name == "pytorch_lightning.callbacks.model_checkpoint":
+                return Checkpoint
 
             return super().find_class(mod_name, name)
 
@@ -602,6 +617,23 @@ def get_safetensors_header(filename):
 
         # invalid safetensors
         return None
+
+
+def get_header(filename):
+    """get safetensors/ckpt file header """
+
+    is_safetensors = filename.endswith(".safetensors")
+    if is_safetensors:
+        header = get_safetensors_header(filename)
+        if "__metadata__" in header:
+            del header["__metadata__"]
+    elif checkpointinfo.filename.endswith(".ckpt"):
+        header = get_ckpt_header(filename)
+    else:
+        return None
+
+    return header
+
 
 def is_xl(modelname):
     checkpointinfo = sd_models.get_closet_checkpoint_match(modelname)
@@ -643,6 +675,12 @@ def sdversion(modelname):
     if header is not None:
         if "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in header:
             return 'XL'
+
+        if "model.diffusion_model.context_embedder.weight" in header:
+            return 'v3'
+
+        if "model.diffusion_model.double_blocks.0.img_attn.proj.weight" in header:
+            return 'FLUX'
 
         v2 = False
         if 'model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight' in header:
@@ -3419,30 +3457,24 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             print(f"Loading from file {checkpoint_info.filename}...")
             return sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
 
-        models['model_a'] = load_state_dict(checkpoint_info)
 
-        # check SDXL
-        isxl = "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in models['model_a']
-        recheck_xl = "model.diffusion_model.input_blocks.11.0.out_layers.3.weight" not in models['model_a']
-        if recheck_xl and not isxl:
-            print(f"WARN: Loaded SDXL from shared.sd_model has size mismatch. Loading again from file {checkpoint_info.filename}...")
-            del models['model_a']
-            models['model_a'] = sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
-            isxl = True
+        # check SDXL, FLUX etc.
+        sdv = sdversion(model_a)
+        isxl = sdv == 'XL'
+        isflux = sdv == 'FLUX'
+        isv3 = sdv == 'v3'
+        isv20 = sdv == 'v2'
 
-        if "usefp16" in calc_settings:
-            # use fp16 to reduce RAM usage
-            models['model_a'] = to_half(models['model_a'], True)
+        print("isxl =", isxl, ", sd2 =", isv20, ", sd3 =", isv3, ", flux =", isflux)
 
-        # check SD2
-        isv20 = False
-        if not isxl:
-            for k in ["transformer.resblocks.0.attn.in_proj_weight"]:
-                if f"cond_stage_model.model.{k}" in models['model_a']:
-                    isv20 = True
-                    break
+        # check base_model
+        use_safe_open = shared.opts.data.get("mm_use_safe_open", False)
 
-        print("isxl =", isxl, ", sd2 =", isv20)
+        if sdv in ["XL", "FLUX", "v3"] or use_safe_open:
+            # read dict like safetensors / ckpt
+            models['model_a'] = readCheckpointDict(checkpoint_info.filename)
+        else:
+            models['model_a'] = load_state_dict(checkpoint_info)
 
         # get all selected elemental blocks
         elemental_selected = []
@@ -3514,17 +3546,16 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         print("compact_mode = ", compact_mode)
 
-        # check base_model
-        theta_base_f = None
-        use_safe_open = shared.opts.data.get("mm_use_safe_open", False)
-
         theta_base = {}
         if True in mm_use and "Add-Diff" in mm_modes:
             if base_model is None:
                 # check SD version
-                if not isxl:
+                if sdv == "v1":
+                    # FIXME
                     w = models['model_a']["model.diffusion_model.input_blocks.1.1.proj_in.weight"]
-                    if len(w.shape) == 4:
+                    shape = w["shape"] if type(w) == dict else w.shape
+
+                    if len(shape) == 4:
                         candidates = [ "v1-5-pruned-emaonly", "v1-5-pruned-emaonly.safetensors [6ce0161689]", "v1-5-pruned-emaonly.ckpt [cc6cb27103]",
                                     "v1-5-pruned.safetensors [1a189f0be6]", "v1-5-pruned.ckpt [e1441589a6]" ]
                     else:
@@ -3554,14 +3585,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             # preload base model or open base model
             if isxl or use_safe_open:
                 # open checkpoint to reduce memory usage
-                theta_base_f = open_state_dict(checkpointinfo)
-                theta_base = {}
+                theta_base = readCheckpointDict(checkpointinfo.filename)
             else:
                 theta_base = sd_models.read_state_dict(checkpointinfo.filename, map_location = "cpu")
-
-            if "usefp16" in calc_settings:
-                # use fp16 to reduce RAM usage
-                theta_base = to_half(theta_base, True)
 
         # setup selected keys
         theta_0 = {}
@@ -3600,7 +3626,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         else:
             # get all keys()
             keys = list(models['model_a'].keys())
-            theta_0 = models['model_a'].copy()
+            theta_0 = {k: v for k, v in models['model_a'].items()}
 
         # check finetune
         if mm_finetune.rstrip(",0") != "":
@@ -3931,7 +3957,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         timer.record("prepare")
         stage = 1
         theta_1 = None
-        theta_1f = None
         checkpointinfo = checkpoint_info # checkpointinfo of model_a
         for n, file in enumerate(mm_models,start=weight_start):
             checkpointinfo1 = sd_models.get_closet_checkpoint_match(file)
@@ -3941,17 +3966,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             model_name = checkpointinfo1.model_name
             if isxl or use_safe_open:
                 # open checkpoint to reduce memory usage
-                del theta_1f
-                theta_1f = open_state_dict(checkpointinfo1)
-                theta_1 = {}
+                theta_1 = readCheckpointDict(checkpointinfo1.filename)
                 checkpointinfo = checkpointinfo1
 
             elif checkpointinfo != checkpointinfo1:
                 print(f"Loading model {model_name}...")
                 theta_1 = load_state_dict(checkpointinfo1)
                 checkpointinfo = checkpointinfo1
-                if "usefp16" in calc_settings:
-                    theta_1 = to_half(theta_1, True)
             else:
                 print("use already loaded model...")
                 theta_1 = theta_1 if theta_1 is not None else models["model_a"]
@@ -3983,12 +4004,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             theta_0_inpaint = None
             key = "model.diffusion_model.input_blocks.0.0.weight"
 
-            if key not in theta_1 and theta_1f is not None:
-                theta_1[key] = theta_1f.get_tensor(key)
-
             if key in theta_0:
                 a = theta_0[key]
-                b = theta_1[key] if key in theta_1 else theta_1f.get_tensor(key)
+                b = theta_1[key]
 
             # this enables merging an inpainting model (A) with another one (B);
             # where normal model would have 4 channels, for latenst space, inpainting model would
@@ -4034,11 +4052,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 if key in checkpoint_dict_skip_on_merge:
                     continue
 
-                if "model" in key and key not in theta_1 and theta_1f is not None:
-                    theta_1[key] = theta_1f.get_tensor(key)
-
-                if "Add-Diff" in modes[n] and "model" in key and key not in theta_base and theta_base_f is not None:
-                    theta_base[key] = theta_base_f.get_tensor(key)
 
                 if "model" in key and key in theta_1:
                     if usembw:
@@ -4153,12 +4166,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         else:
                             theta_0[key] = theta1.clone() * alpha
 
-                    if isxl or use_safe_open:
-                        # reset theta_1 to reduce ram usage
-                        del theta_1[key]
-                        if "Add-Diff" in modes[n] and theta_base_f is not None:
-                            del theta_base[key]
-
             shared.state.nextjob()
 
             if n == weight_start:
@@ -4170,8 +4177,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                                 s = f"model.diffusion_model.{s}"
                             if s in key and key not in theta_0 and key not in checkpoint_dict_skip_on_merge:
                                 print(f" +{k}")
-                                if key not in theta_1 and theta_1f is not None:
-                                    theta_1[key] = theta_1f.get_tensor(key)
                                 theta_0[key] = theta_1[key]
 
             if not isxl and not isv20 and "Rebasin" in calcmodes[n]:
@@ -4198,10 +4203,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         # cleanup
         del theta_base
-        if theta_base_f is not None:
-            del theta_base_f
-        if theta_1f is not None:
-            del theta_1f
 
         gc.collect()
 
@@ -5346,6 +5347,253 @@ def open_state_dict(checkpoint_info):
         f = BinDataHandler(data)
         return f
     return None
+
+
+class ReadSafetensorsDict:
+    """Readonly dict like safetensors reader"""
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.index = {}
+        length, index = self._load_metadata()
+        self.metadata_len = length
+        self.index = index
+
+    def _load_metadata(self):
+        # read metadaa from safetensors
+        with open(self.filepath, 'rb') as f:
+            metadata_len = f.read(8)
+            metadata_len = int.from_bytes(metadata_len, "little")
+            json_start = f.read(2)
+
+            if metadata_len > 2 and json_start in (b'{"', b"{'"):
+                json_data = json_start + f.read(metadata_len-2)
+                header = json.loads(json_data)
+                if "__metadata__" in header:
+                    del header["__metadata__"]
+
+        return metadata_len, header
+
+    def __getitem__(self, key):
+        def _np_dtype_to_storage_type_map():
+            return {
+                "double": 'F64',
+                "float32": 'F32', # fix for numpy
+                "half": 'F16',
+                "int64": 'I64', # fix for numpy
+                "int": 'I32',
+                "int16": 'I16',
+                "int8": 'I8',
+                "uint8": 'U8',
+                "bool": 'BOOL',
+                "bfloat16": 'BF16',
+                #"cdouble": 'ComplexDoubleStorage',
+                #"cfloat": 'ComplexFloatStorage',
+                #"qint8": 'QInt8Storage',
+                #"qint32": 'QInt32Storage',
+                #"quint8": 'QUInt8Storage',
+                #"quint4x2": 'QUInt4x2Storage',
+                #"quint2x4": 'QUInt2x4Storage',
+            }
+
+        @lru_cache(maxsize=None)
+        def _np_storage_type_to_dtype_map():
+            dtype_map = {
+                val: key for key, val in _np_dtype_to_storage_type_map().items()}
+            return dtype_map
+
+        def _storage_type_to_dtype_map():
+            # see also https://pytorch.org/docs/stable/tensors.html
+            # https://github.com/huggingface/safetensors/blob/main/safetensors/src/tensor.rs#L677
+            return {
+                'F64': torch.float64,
+                'F32': torch.float32,
+                'F16': torch.float16,
+                'I64': torch.int64,
+                'I32': torch.int32,
+                'I16': torch.int16,
+                'I8': torch.int8,
+                'U8': torch.uint8,
+                'BOOL': torch.bool,
+                'BF16': torch.bfloat16,
+                "F8_E5M2": torch.float8_e5m2,
+                "F8_E4M3": torch.float8_e4m3fn,
+            }
+
+        if key not in self.index:
+            raise KeyError(f"{key} not found in safetensors file")
+
+        tensor_info = self.index[key]
+        try:
+            dtype = _storage_type_to_dtype_map()[tensor_info['dtype']]
+        except KeyError as e:
+            raise KeyError(
+                "dtype '{}' is not recognized".format(tensor_info['dtype'])) from e
+
+        shape = tuple(tensor_info['shape'])
+        offset = tensor_info['data_offsets'][0]
+        size = tensor_info['data_offsets'][1] - offset
+        start_offset = 8 + self.metadata_len + offset
+
+        # direct access saftetensors
+        with open(self.filepath, 'rb') as f:
+            f.seek(start_offset)
+            tensor_data = f.read(size)
+            #tensor = np.frombuffer(tensor_data, dtype=dtype).reshape(shape)
+            tensor = torch.frombuffer(bytearray(tensor_data), dtype=dtype).reshape(shape)
+
+        return tensor
+
+    def keys(self):
+        return list(self.index.keys())
+
+    def __len__(self):
+        return len(self.index)
+
+    def __contains__(self, key):
+        return key in self.index
+
+
+class ReadPickleDict:
+    """Readonly dict like CKPT checkpoint reader"""
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.index = get_ckpt_header(filepath)
+
+        opened_file = open(filepath, 'rb')
+        if not is_zipfile(opened_file):
+            opened_file.close()
+            raise RuntimeError("only zipfile style checkpoint supported.")
+
+        self.opened_file = opened_file
+        self.opened_zipfile = ZipFile(opened_file)
+
+
+    def __getitem__(self, key):
+        def _dtype_size_map():
+            return {
+                "double": 8,
+                "float": 4,
+                "half": 2,
+                "long": 8,
+                "int": 4,
+                "int16": 2,
+                "int8": 1,
+                "uint8": 1,
+                "bool": 1,
+                "bfloat16": 2,
+            }
+
+        def _storage_type_to_dtype_map():
+            # see also https://pytorch.org/docs/stable/tensors.html
+            return {
+                'double': torch.float64,
+                'float': torch.float32,
+                'half': torch.float16,
+                'long': torch.int64,
+                'int': torch.int32,
+                'int16': torch.int16,
+                'int8': torch.int8,
+                'uint8': torch.uint8,
+                'bool': torch.bool,
+                'bfloat2': torch.bfloat16,
+            }
+
+        if key not in self.index:
+            raise KeyError(f"{key} not found in safetensors file")
+
+        tensor_info = self.index[key]
+        try:
+            dtype = _storage_type_to_dtype_map()[tensor_info['dtype']]
+        except KeyError as e:
+            raise KeyError(
+                "dtype '{}' is not recognized".format(tensor_info['dtype'])) from e
+
+        shape = tuple(tensor_info['shape'])
+        name = 'archive/data/{}'.format(tensor_info["key"])
+        numel = int(tensor_info["numel"])
+        nbytes = numel * _dtype_size_map()[tensor_info['dtype']]
+
+        with self.opened_zipfile.open(name, 'r') as f:
+            tensor_data = f.read(nbytes)
+            #tensor = np.frombuffer(tensor_data, dtype=dtype).reshape(shape)
+            tensor = torch.frombuffer(bytearray(tensor_data), dtype=dtype).reshape(shape)
+
+            return tensor
+
+
+    def keys(self):
+        return list(self.index.keys())
+
+    def __len__(self):
+        return len(self.index)
+
+    def __contains__(self, key):
+        return key in self.index
+
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        self.opened_zipfile.close()
+        self.opened_file.close()
+        self.index = None
+
+
+def get_safetensors_header(filename):
+    if not os.path.exists(filename):
+        return None
+
+    with open(filename, mode="rb") as file:
+        metadata_len = file.read(8)
+        metadata_len = int.from_bytes(metadata_len, "little")
+        json_start = file.read(2)
+
+        if metadata_len > 2 and json_start in (b'{"', b"{'"):
+            json_data = json_start + file.read(metadata_len-2)
+            return json.loads(json_data)
+
+        # invalid safetensors
+        return None
+
+
+def get_header(filename):
+    """get safetensors/ckpt file header """
+
+    is_safetensors = filename.endswith(".safetensors")
+    if is_safetensors:
+        header = get_safetensors_header(filename)
+    elif filename.endswith(".ckpt"):
+        header = get_ckpt_header(filename)
+    else:
+        return None
+
+    return header
+
+
+def readCheckpointDict(filename):
+    if filename.endswith(".safetensors"):
+        return ReadSafetensorsDict(filename)
+    elif filename.endswith(".ckpt"):
+        return ReadPickleDict(filename)
+
+    return None
+
+
+def get_safetensors_header(filename):
+    if not os.path.exists(filename):
+        return None
+
+    with open(filename, mode="rb") as file:
+        metadata_len = file.read(8)
+        metadata_len = int.from_bytes(metadata_len, "little")
+        json_start = file.read(2)
+
+        if metadata_len > 2 and json_start in (b'{"', b"{'"):
+            json_data = json_start + file.read(metadata_len-2)
+            return json.loads(json_data)
+
+        # invalid safetensors
+        return None
 
 
 def prepare_model(model):
