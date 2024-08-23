@@ -3550,8 +3550,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         if True in mm_use and "Add-Diff" in mm_modes:
             if base_model is None:
                 # check SD version
-                if sdv == "v1":
-                    # FIXME
+                if sdv in ["v1", "v2"]:
                     w = models['model_a']["model.diffusion_model.input_blocks.1.1.proj_in.weight"]
                     shape = w["shape"] if type(w) == dict else w.shape
 
@@ -3567,7 +3566,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         if check is not None:
                             base_model = a
                             break
-                else:
+                elif isxl:
                     candidates = [ "sd_xl_base_1.0", "sd_xl_base_1.0_0.9vae",
                         "sd_xl_base_1.0.safetensors [31e35c80fc4]", "sd_xl_base_1.0_0.9vae.safetensors [e6bb9ea85b]", "sdXL_v10VAEFix.safetensors [e6bb9ea85b]" ]
                     for a in candidates:
@@ -3583,7 +3582,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             checkpointinfo = sd_models.get_closet_checkpoint_match(base_model)
 
             # preload base model or open base model
-            if isxl or use_safe_open:
+            if sdv in ["XL", "FLUX", "v3"] or use_safe_open:
                 # open checkpoint to reduce memory usage
                 theta_base = readCheckpointDict(checkpointinfo.filename)
             else:
@@ -3964,7 +3963,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 raise RuntimeError(f"No checkpoint found for {file}")
 
             model_name = checkpointinfo1.model_name
-            if isxl or use_safe_open:
+            if sdv in ["XL", "FLUX", "v3"] or use_safe_open:
                 # open checkpoint to reduce memory usage
                 theta_1 = readCheckpointDict(checkpointinfo1.filename)
                 checkpointinfo = checkpointinfo1
