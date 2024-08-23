@@ -5446,11 +5446,60 @@ class ReadSafetensorsDict:
     def keys(self):
         return list(self.index.keys())
 
+    def values(self):
+        for key in self.keys():
+            yield self[key]
+
+    def items(self):
+        for key in self.keys():
+            yield key, self[key]
+
     def __len__(self):
         return len(self.index)
 
     def __contains__(self, key):
         return key in self.index
+
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        self.index = None
+
+
+class SafeopenSafetensorsDict:
+    """Readonly dict like safetensors reader using safe_open()"""
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.safe = safe_open(filepath, framework="pt", device="cpu")
+
+    def __getitem__(self, key):
+        tensor = self.safe.get_tensor(key)
+        return tensor
+
+    def keys(self):
+        return list(self.safe.keys())
+
+    def values(self):
+        for key in self.keys():
+            yield self[key]
+
+    def items(self):
+        for key in self.keys():
+            yield key, self[key]
+
+    def __len__(self):
+        return len(self.safe.keys())
+
+    def __contains__(self, key):
+        return key in self.safe.keys()
+
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        self.index = None
+        self.safe = None
 
 
 class ReadPickleDict:
@@ -5524,6 +5573,14 @@ class ReadPickleDict:
     def keys(self):
         return list(self.index.keys())
 
+    def values(self):
+        for key in self.keys():
+            yield self[key]
+
+    def items(self):
+        for key in self.keys():
+            yield key, self[key]
+
     def __len__(self):
         return len(self.index)
 
@@ -5572,7 +5629,8 @@ def get_header(filename):
 
 def readCheckpointDict(filename):
     if filename.endswith(".safetensors"):
-        return ReadSafetensorsDict(filename)
+        return SafeopenSafetensorsDict(filename)
+        #return ReadSafetensorsDict(filename)
     elif filename.endswith(".ckpt"):
         return ReadPickleDict(filename)
 
