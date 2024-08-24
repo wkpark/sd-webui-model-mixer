@@ -1,25 +1,43 @@
 function mm_slider_to_text() {
     let res = Array.from(arguments);
-    const ISXLBLOCK = [
-        /* base, in01, in02,... */
-        true, true, true, true, true, true, true, true, true, true, false, false, false,
-        /* mid, out01, out02,... */
-        true, true, true, true, true, true, true, true, true, true, false, false, false,
-    ];
-    let isxl = res[0];
+
+    function is_block_sliders(sdversion) {
+        let sliders = Array(1 + 38 + 1 + 38).fill(false); //  base + in 38 blocks + middle + out 38 blocks
+        if (sdversion == "v1" || sdversion == "v2") {
+            sliders[0] = true; // base
+            sliders.splice(1, 12, ...Array(12).fill(true)); // input blocks 00-11
+            sliders[39] = true; // middle
+            sliders.splice(40, 12, ...Array(12).fill(true)); // output blocks 00-11
+        } else if (sdversion == "XL") {
+            sliders[0] = true; // base
+            sliders.splice(1, 9, ...Array(9).fill(true)); // input blocks 00-08
+            sliders[39] = true; // middle
+            sliders.splice(40, 9, ...Array(9).fill(true)); // output blocks 00-08
+        } else if (sdversion == "v3") {
+            sliders[0] = true; // base
+            sliders.splice(1, 12, ...Array(12).fill(true)); // joint blocks 00-11
+            sliders[39] = false; // no middle
+            sliders.splice(40, 12, ...Array(12).fill(true)); // joint blocks 12-23
+        } else if (sdversion == "FLUX") {
+            sliders[0] = true; // base
+            sliders.splice(1, 19, ...Array(19).fill(true)); // double blocks 00-11
+            sliders[39] = false; // no middle
+            sliders.splice(40, 38, ...Array(38).fill(true)); // single blocks 00-37
+        }
+        return sliders;
+    }
+
+    let sdv = res[0];
 
     let selected = [];
-    let slider = res.slice(1);
-    if (isxl) {
-        selected = []
-        for (let i = 0; i < slider.length; i++) {
-            if (ISXLBLOCK[i]) {
-                selected.push(slider[i]);
-            }
+    const slider = res.slice(1);
+    const block_sliders = is_block_sliders(sdv);
+    for (let i = 0; i < slider.length; i++) {
+        if (block_sliders[i]) {
+            selected.push(slider[i]);
         }
-    } else {
-        selected = slider;
     }
+
     let mbw = null;
     let mbws = gradioApp().querySelectorAll(".mm_mbw textarea");
     for (let i = 0; i < mbws.length; i++) {
