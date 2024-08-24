@@ -17,14 +17,14 @@ from PIL import Image
 
 from .classifier import get_classifiers, classifier_score
 from .optimizers import optimizer_types
-from .utils import all_blocks, _all_blocks, load_module
+from .utils import all_blocks, _all_blocks, normalize_blocks, load_module
 
 
 classifiers = get_classifiers()
 
 def para_to_weights(para, weights=None, alpha=None, isxl=False):
-    BLOCKS = all_blocks(isxl)
-    BLOCKLEN = (12 if not isxl else 9)*2 + 2
+    BLOCKIDS = all_blocks(isxl)
+    BLOCKLEN = len(BLOCKIDS)
 
     weights = {} if weights is None else dict(zip(range(len(weights)), weights))
     alpha = {}
@@ -36,7 +36,7 @@ def para_to_weights(para, weights=None, alpha=None, isxl=False):
             continue
 
         weight = weights.get(modelidx, [0.0]*BLOCKLEN)
-        j = BLOCKS.index(name[1])
+        j = BLOCKIDS.index(name[1])
         weight[j] = para[k]
         weights[modelidx] = weight
 
@@ -53,43 +53,6 @@ def para_to_weights(para, weights=None, alpha=None, isxl=False):
             nalpha[i] = alpha[i]
 
     return nweights, nalpha
-
-
-def normalize_mbw(mbw, isxl):
-    """Normalize Merge Block Weights"""
-    MAXLEN = 26 - (0 if not isxl else 6)
-    BLOCKLEN = 12 - (0 if not isxl else 3)
-    
-    # no mbws blocks selected or have 'ALL' alias
-    if len(mbw) == 0 or 'ALL' in mbw:
-        # select all blocks
-        mbw = [ 'BASE', 'INP*', 'MID', 'OUT*' ]
-
-    # fix alias
-    if 'MID' in mbw:
-        i = mbw.index('MID')
-        mbw[i] = 'M00'
-
-    # expand some aliases
-    if 'INP*' in mbw:
-        for i in range(BLOCKLEN):
-            name = f"IN{i:02d}"
-            if name not in mbw:
-                mbw.append(name)
-    if 'OUT*' in mbw:
-        for i in range(BLOCKLEN):
-            name = f"OUT{i:02d}"
-            if name not in mbw:
-                mbw.append(name)
-
-    BLOCKS = all_blocks(isxl)
-
-    sort = []
-    for b in BLOCKS[:MAXLEN]:
-        if b in mbw:
-            sort.append(b)
-
-    return sort
 
 
 def unquote(text):
@@ -370,7 +333,7 @@ def hyper_optimizer(
     # setup search space
     search_space = {}
     if variable_blocks is not None and len(variable_blocks) > 0:
-        variable_blocks = normalize_mbw(variable_blocks, isxl)
+        variable_blocks, _ = normalize_blocks(variable_blocks, isxl)
     else:
         variable_blocks = None
 
@@ -408,7 +371,7 @@ def hyper_optimizer(
             continue
 
         weight = weights[k]
-        mbw = normalize_mbw(usembws[k], isxl)
+        mbw, _ = normalize_blocks(usembws[k], isxl)
         for b in selected_blocks:
             j = blocks.index(b)
             if j < len(weight) and _BLOCKS[j] in mbw:
@@ -456,7 +419,7 @@ def hyper_optimizer(
                 continue
 
             weight = _weights[k]
-            mbw = normalize_mbw(_usembws[k], isxl)
+            mbw, _ = normalize_blocks(_usembws[k], isxl)
             for b in _selected_blocks:
                 j = blocks.index(b)
                 if j < len(weight) and _BLOCKS[j] in mbw:

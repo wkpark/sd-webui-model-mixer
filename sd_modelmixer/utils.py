@@ -14,33 +14,152 @@ from pathlib import Path
 scriptdir = basedir()
 
 
-def all_blocks(isxl=False):
-    BLOCKLEN = 12 if not isxl else 9
-    # return all blocks
-    blocks = [ "BASE" ]
-    for i in range(0, BLOCKLEN):
-        blocks.append(f"IN{i:02d}")
-    blocks.append("M00")
-    for i in range(0, BLOCKLEN):
-        blocks.append(f"OUT{i:02d}")
 
-    blocks += [ "TIME_EMBED", "OUT" ]
+def all_blocks(sdversion):
+    """simple BLOCKIDS"""
+
+    if type(sdversion) is bool:
+        # for old behavior called by all_blocks(isxl)
+        sdversion = "XL" if sdversion else "v1"
+
+    blocks = [ 'BASE' ]
+    if sdversion in ["v1", "v2", "XL"]:
+        BLOCKLEN = 12 - (0 if sdversion != "XL" else 3)
+        # return all blocks
+        for i in range(0, BLOCKLEN):
+            blocks.append(f"IN{i:02d}")
+        blocks.append("M00")
+        for i in range(0, BLOCKLEN):
+            blocks.append(f"OUT{i:02d}")
+
+    elif sdversion == "v3":
+        for i in range(0, 24):
+            blocks.append(f"IN{i:02d}")
+
+    elif sdversion == "FLUX":
+        for i in range(0, 19):
+            blocks.append(f"DOUBLE{i:02d}")
+        for i in range(0, 38):
+            blocks.append(f"SINGLE{i:02d}")
+
     return blocks
 
 
-def _all_blocks(isxl=False):
-    BLOCKLEN = 12 - (0 if not isxl else 3)
-    # return all blocks
-    base_prefix = "cond_stage_model." if not isxl else "conditioner."
-    blocks = [ base_prefix ]
-    for i in range(0, BLOCKLEN):
-        blocks.append(f"input_blocks.{i}.")
-    blocks.append("middle_block.")
-    for i in range(0, BLOCKLEN):
-        blocks.append(f"output_blocks.{i}.")
+def _all_blocks(sdversion):
+    """1:1 mapping BLOCKIDS to tensor keys"""
 
-    blocks += [ "time_embed.", "out." ]
+    if type(sdversion) is bool:
+        # for old behavior called by all_blocks(isxl)
+        sdversion = "XL" if sdversion else "v1"
+
+    if sdversion is True:
+        # for old behavior called by _all_blocks(isxl)
+        sdversion = "XL"
+
+    if sdversion in ["v1", "v2", "XL"]:
+        BLOCKLEN = 12 - (0 if sdversion != "XL" else 3)
+        # return all blocks
+        base_prefix = "cond_stage_model." if sdversion != "XL" else "conditioner."
+        blocks = [ base_prefix ]
+        for i in range(0, BLOCKLEN):
+            blocks.append(f"input_blocks.{i}.")
+        blocks.append("middle_block.")
+        for i in range(0, BLOCKLEN):
+            blocks.append(f"output_blocks.{i}.")
+
+        blocks += [ "time_embed.", "out." ]
+        if sdversion == "XL":
+            blocks += [ "label_emb." ]
+
+    elif sdversion == "v3":
+        #blocks = [ "text_encoders.clip_l.", "text_encoders.clip_g.", "text_encoders.t5xxl." ]
+        blocks = [ "text_encoders." ]
+        for i in range(0, 24):
+            blocks.append(f"joint_blocks.{i}.")
+
+        blocks += [ "x_embedder.", "t_embedder.", "y_embedder.", "context_embedder.", "pos_embed", "final_layer." ]
+
+    elif sdversion == "FLUX":
+        #blocks = [ "text_encoders.clip_l.", "text_encoders.t5xxl." ]
+        blocks = [ "text_encoders." ]
+        for i in range(0, 19):
+            blocks.append(f"double_blocks.{i}.")
+        for i in range(0, 38):
+            blocks.append(f"single_blocks.{i}.")
+
+        blocks += [ "img_in.", "time_in.", "vector_in.", "guidance_in.", "txt_in.", "final_layer." ]
+
     return blocks
+
+
+def normalize_blocks(blocks, sdv):
+    """Normalize Merge Block Weights"""
+
+    if type(sdv) is bool:
+        # for old behavior
+        sdv = "XL" if sdv else "v1"
+
+    # no mbws blocks selected or have 'ALL' alias
+    if len(blocks) == 0 or 'ALL' in blocks:
+        # select all blocks
+        blocks = [ 'BASE', 'INP*', 'MID', 'OUT*' ]
+
+    # fix alias
+    if 'MID' in blocks:
+        i = blocks.index('MID')
+        blocks[i] = 'M00'
+
+    if sdv in ["v1", "v2", "XL"]:
+        isxl = sdv == "XL"
+        BLOCKLEN = 12 - (0 if not isxl else 3)
+
+        # expand some aliases
+        if 'INP*' in blocks:
+            for i in range(0, BLOCKLEN):
+                name = f"IN{i:02d}"
+                if name not in blocks:
+                    blocks.append(name)
+        if 'OUT*' in blocks:
+            for i in range(0, BLOCKLEN):
+                name = f"OUT{i:02d}"
+                if name not in blocks:
+                    blocks.append(name)
+
+    elif sdv == "FLUX":
+        # expand some aliases
+        if 'INP*' in blocks or 'DOUBLE*' in blocks:
+            for i in range(0, 19):
+                name = f"DOUBLE{i:02d}"
+                if name not in blocks:
+                    blocks.append(name)
+        if 'OUT*' in blocks or 'SINGLE*' in blocks:
+            for i in range(0, 38):
+                name = f"SINGLE{i:02d}"
+                if name not in blocks:
+                    blocks.append(name)
+
+    elif sdv == "v3":
+        # expand some aliases
+        if 'INP*' in blocks:
+            for i in range(0, 24):
+                name = f"IN{i:02d}"
+                if name not in blocks:
+                    blocks.append(name)
+
+    blocks = list(set(blocks))
+
+    # filter valid blocks
+    BLOCKIDS = all_blocks(sdv)
+    MAXLEN = len(BLOCKIDS)
+    selected = [False]*MAXLEN
+
+    normalized = []
+    for i, name in enumerate(BLOCKIDS):
+        if name in blocks:
+            selected[i] = True
+            normalized.append(name)
+
+    return normalized, selected
 
 
 def module_name(path):
