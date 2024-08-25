@@ -3631,7 +3631,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         # save original mm_elementals
         orig_elementals = mm_elementals.copy()
 
-        mm_weights_orig = mm_weights
+        mm_weights_orig = mm_weights.copy()
 
         # check model_a
         checkpoint_info = sd_models.get_closet_checkpoint_match(model_a)
