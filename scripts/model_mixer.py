@@ -218,56 +218,6 @@ def find_preset_by_name(preset, presets=None, reload=False):
     return None
 
 
-def get_selected_blocks(mbw_blocks, isxl=False):
-    MAXLEN = 26 - (0 if not isxl else 6)
-    BLOCKLEN = 12 - (0 if not isxl else 3)
-    BLOCKOFFSET = 13 if not isxl else 10
-    selected = [False]*MAXLEN
-    BLOCKIDS = BLOCKID if not isxl else BLOCKIDXL
-
-    # no mbws blocks selected or have 'ALL' alias
-    if 'ALL' in mbw_blocks:
-        # select all blocks
-        mbw_blocks += [ 'BASE', 'INP*', 'MID', 'OUT*' ]
-
-    # fix alias
-    if 'MID' in mbw_blocks:
-        i = mbw_blocks.index('MID')
-        mbw_blocks[i] = 'M00'
-
-    # expand some aliases
-    if 'INP*' in mbw_blocks:
-        for i in range(0, BLOCKLEN):
-            name = f"IN{i:02d}"
-            if name not in mbw_blocks:
-                mbw_blocks.append(name)
-    if 'OUT*' in mbw_blocks:
-        for i in range(0, BLOCKLEN):
-            name = f"OUT{i:02d}"
-            if name not in mbw_blocks:
-                mbw_blocks.append(name)
-
-    for i, name in enumerate(BLOCKIDS):
-        if name in mbw_blocks:
-            if name[0:2] == 'IN':
-                num = int(name[2:])
-                selected[num + 1] = True
-            elif name[0:3] == 'OUT':
-                num = int(name[3:])
-                selected[num + BLOCKOFFSET + 1] = True
-            elif name == 'M00':
-                selected[BLOCKOFFSET] = True
-            elif name == 'BASE':
-                selected[0] = True
-
-    all_blocks = _all_blocks(isxl)
-    selected_blocks = []
-    for i, v in enumerate(selected):
-        if v:
-            selected_blocks.append(all_blocks[i])
-    return selected_blocks
-
-
 def normalize_blocks(blocks, sdv):
     # no mbws blocks selected or have 'ALL' alias
     if len(blocks) == 0 or 'ALL' in blocks:
@@ -512,23 +462,6 @@ def print_blocks(blocks):
             block = "OUT"
             str.append(block)
     return ','.join(str)
-
-def _selected_blocks_and_weights(mbw, isxl=False):
-    if type(mbw) is str:
-        weights = [t.strip() for t in mbw.split(",")]
-    else:
-        weights = mbw
-    # get all blocks
-    all_blocks = _all_blocks(isxl)
-
-    sel_blocks = []
-    sel_mbws = []
-    for i, w in enumerate(weights):
-        v = float(w)
-        if v != 0.0:
-            sel_blocks.append(all_blocks[i])
-            sel_mbws.append(v)
-    return sel_blocks, sel_mbws
 
 
 def _weight_index(key, sdversion):
@@ -880,7 +813,7 @@ def mm_list_models():
 
 
 permutation_spec = None
-def get_rebasin_perms(mbws, isxl):
+def get_rebasin_perms(mbws, sdver):
     """all blocks permutations of selected blocks"""
     global permutation_spec
 
@@ -895,13 +828,13 @@ def get_rebasin_perms(mbws, isxl):
 
     if True in mbws or False in mbws: # already have selected
         _selected = mbws
-        all_blocks = _all_blocks(isxl)
+        all_blocks = _all_blocks(sdver)
         selected = []
         for i, v in enumerate(_selected):
             if v:
                 selected.append(all_blocks[i])
     else:
-        selected = get_selected_blocks(mbws, isxl)
+        normalized, selected = normalize_blocks(mbws, sdv)
 
     if len(selected) > 0:
         axes = []
@@ -920,10 +853,10 @@ def get_rebasin_perms(mbws, isxl):
     return None
 
 
-def get_rebasin_axes(mbws, isxl):
+def get_rebasin_axes(mbws, sdver):
     """select all blocks correspond their permutation groups"""
 
-    perms = get_rebasin_perms(mbws, isxl)
+    perms = get_rebasin_perms(mbws, sdver)
     if perms is None:
         return None
 
@@ -937,11 +870,13 @@ def get_rebasin_axes(mbws, isxl):
     return axes
 
 
-def _get_rebasin_blocks(mbws, isxl):
+def _get_rebasin_blocks(mbws, sdver):
     """select all blocks correspond their permutation groups"""
 
-    perms = get_rebasin_perms(mbws, isxl)
+    perms = get_rebasin_perms(mbws, sdver)
     if perms is None:
+        return None
+    if sdver != "v1": # only v1 supported. FIXME
         return None
 
     # get all axes and corresponde blocks
@@ -952,13 +887,11 @@ def _get_rebasin_blocks(mbws, isxl):
     axes = list(set(axes))
 
     # get all block representations to show gr.Dropdown
-    MAXLEN = 26 - (0 if not isxl else 6)
-    BLOCKLEN = 12 - (0 if not isxl else 3)
-    BLOCKOFFSET = 13 if not isxl else 10
+    BLOCKIDS = all_blocks(sdver)
+    MAXLEN = len(BLOCKIDS)
     selected = [False]*MAXLEN
-    BLOCKIDS = BLOCKID if not isxl else BLOCKIDXL
 
-    all_blocks = _all_blocks(isxl)
+    all_blocks = _all_blocks(sdver)
     for j, block in enumerate(all_blocks[:MAXLEN]):
         if block not in ["cond_stage_model.", "conditioner."]:
             block = f"model.diffusion_model.{block}"
@@ -2214,6 +2147,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             def load_mm_settings(text_or_image=None, reset=True):
                 """load weight settings from text or image"""
 
+                sdver = None
                 if text_or_image is None:
                     # load from the current selected checkpoint
                     current_model = shared.opts.data.get("sd_model_checkpoint", None)
@@ -2221,6 +2155,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     if checkpoint_info is None:
                         raise gr.Error("Not a valid image or text")
                     text_or_image = checkpoint_info.title
+                    sdver = sdversion(checkpoint_info.model_name)
 
                 if type(text_or_image) is str:
                     geninfo = text_or_image.replace("\n", "").strip()
@@ -2240,6 +2175,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             checkpoint = sd_models.get_closet_checkpoint_match(geninfo)
                             if checkpoint is not None:
                                 parsed = read_metadata_from_safetensors(checkpoint.filename)
+                                sdver = sdversion(checkpoint.model_name)
 
                     if parsed is not None:
                         recipe = parsed.get("sd_merge_recipe", None)
@@ -2261,7 +2197,31 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         params["ModelMixer adjust"] = parsed.get("adjust", "")
                         params["ModelMixer model a"] = parsed.get("model_a", "None")
 
-                        BLOCKIDS = BLOCKID if len(weights[0]) > 20 else BLOCKIDXL
+                        if sdver is None:
+                            # no version info. check model
+                            model = parsed.get(f"model_a", "None")
+                            if model is not None and model != "None":
+                                checkpointinfo = sd_models.get_closet_checkpoint_match(model)
+                                if checkpointinfo is not None:
+                                    sdver = sdversion(checkpointinfo.model_name)
+
+                        if sdver is None:
+                            print("Can't detect SD version. try to parse weight info...")
+                            if len(weights[0]) == 20: # BASE + MID + 9 * 2
+                                sdver = "XL"
+                            elif len(weights[0]) == 26: # BASE + MID + 12 * 2
+                                sdver = "v1"
+                            elif len(weights[0]) == 25: # BASE + 24
+                                sdver = "v3"
+                            elif len(weights[0]) == 58: # BASE + 19 + 38 = 58
+                                sdver = "FLUX"
+                            else:
+                                raise gr.Error(f"Can't detect SD version!")
+                            print(f"Detected SD version is '{sdver}'")
+                        else:
+                            print(f"SD version is '{sdver}'")
+
+                        BLOCKIDS = all_blocks(sdver)
                         if weights is not None:
                             if type(weights) is list:
                                 for n, mbw in enumerate(weights):
@@ -2863,13 +2823,14 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             elements = sorted(elements)
             return gr.update(choices=elements)
 
-        def write_elemental(not_blocks, not_elements, blocks, elements, ratio, elemental):
+        def write_elemental(not_blocks, not_elements, blocks, elements, ratio, elemental, sdver):
             # update elemental information
             if len(blocks) == 0 and len(elements) == 0:
                 return gr.update()
 
             # newly added
-            info = ("NOT " if not_blocks else "") + " ".join(zipblocks(blocks, BLOCKID))
+            BLOCKIDS = all_blocks(sdver)
+            info = ("NOT " if not_blocks else "") + " ".join(zipblocks(blocks, BLOCKIDS))
             info += ":" + ("NOT " if not_elements else "") + " ".join(elements) + ":" + str(ratio)
 
             # old
@@ -2884,7 +2845,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             info = "\n".join(newtmp) + "\n"
             return gr.update(value=info)
 
-        def read_elemental(elemental):
+        def read_elemental(elemental, sdver):
             tmp = elemental.strip()
             if len(tmp) == 0:
                 return [gr.update()]*5
@@ -2902,7 +2863,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 not_blks = True
                 blks = blks[1:]
             # expand any block ranges
-            blks = prepblocks(blks, BLOCKID)
+            BLOCKIDS = all_blocks(sdver)
+            blks = prepblocks(blks, BLOCKIDS)
 
             elem = tmp[1].strip().split(" ")
             elem = list(filter(None, elem))
@@ -2915,8 +2877,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         elemblks.change(fn=select_block_elements, inputs=[elemblks, model_a], outputs=[elements])
         elemental_reset.click(fn=lambda: [gr.update(value=False)]*2 + [gr.update(value=[])]*2+[gr.update(value=0.5)], inputs=[], outputs=[not_elemblks, not_elements, elemblks, elements, elemental_ratio])
-        elemental_write.click(fn=write_elemental, inputs=[not_elemblks, not_elements, elemblks, elements, elemental_ratio, mm_elemental_main], outputs=mm_elemental_main)
-        elemental_read.click(fn=read_elemental, inputs=mm_elemental_main, outputs=[not_elemblks, not_elements, elemblks, elements, elemental_ratio])
+        elemental_write.click(fn=write_elemental, inputs=[not_elemblks, not_elements, elemblks, elements, elemental_ratio, mm_elemental_main, is_sdxl], outputs=mm_elemental_main)
+        elemental_read.click(fn=read_elemental, inputs=[mm_elemental_main,is_sdxl], outputs=[not_elemblks, not_elements, elemblks, elements, elemental_ratio])
 
         is_sdxl.change(fn=config_sliders, inputs=[is_sdxl, mm_max_models], outputs=[elemblks, *members, *mm_usembws, *mm_weights])
 
@@ -3078,7 +3040,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         preset_weight.change(fn=on_change_preset_weight, inputs=[preset_weight], outputs=members)
         preset_save.click(
-            fn=lambda isxl, *mem: [slider2text(isxl, *mem), gr.update(visible=True)],
+            fn=lambda sdver, *mem: [slider2text(sdver, *mem), gr.update(visible=True)],
             inputs=[is_sdxl, *members],
             outputs=[preset_edit_weight, preset_edit_dialog],
             show_progress=False,
@@ -3482,7 +3444,12 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     j = k.rfind(" ")
                     name = k[j+1:] # model name: model b -> get "b"
                     idx = ord(name) - 98 # model index: model b -> get 0
-                    if pinpoint in BLOCKID:
+
+                    # check sdversion and get blockids
+                    sdv = sdversion(model_a)
+                    blockids = all_blocks(sdv)
+
+                    if pinpoint in blockids:
                         if f"pinpoint alpha {name}" in p.modelmixer_xyz:
                             alpha = p.modelmixer_xyz[f"pinpoint alpha {name}"]
                         else:
@@ -3653,7 +3620,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         for j in range(len(mm_models)):
             elemental_ws = None
             if mm_use_elemental[j]:
-                elemental_ws = parse_elemental(mm_elementals[j])
+                elemental_ws = parse_elemental(mm_elementals[j], sdv)
                 if "elemental merge" in debugs: print(" Elemental merge wegiths = ", elemental_ws)
                 if elemental_ws is not None:
                     mm_elementals[j] = elemental_ws
@@ -3747,6 +3714,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             elemental_selected = selected_elemental_blocks(all_elemental_blocks, sdv)
 
         # prepare for merges
+        BLOCKIDS = all_blocks(sdv)
         compact_mode = None
         mm_selected = [[]] * num_models
         for j, model in enumerate(mm_models):
@@ -3764,17 +3732,16 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         for j in range(len(mm_models)):
             # get original model index
             n = modelindex[j]
-            BLOCKS = BLOCKID if not isxl else BLOCKIDXL
+
             if len(xyz_pinpoint_blocks[n]) > 0:
                 for pin in xyz_pinpoint_blocks[n].keys():
-                    if pin in BLOCKS:
-                        mm_weights[j][BLOCKS.index(pin)] = xyz_pinpoint_blocks[n][pin]
+                    if pin in BLOCKIDS:
+                        mm_weights[j][BLOCKIDS.index(pin)] = xyz_pinpoint_blocks[n][pin]
                     else:
                         print("WARN: No pinpoint block found. ignore...")
 
         # get overall selected blocks
         if compact_mode:
-            BLOCKIDS = all_blocks(sdv)
             max_blocks = len(BLOCKIDS)
 
             selected_blocks = []
@@ -3795,7 +3762,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 print("check affected permutation blocks by rebasin merge...")
                 jj = 0
                 while True:
-                    xx_selected_all = _get_rebasin_blocks(mm_selected_all, isxl)
+                    xx_selected_all = _get_rebasin_blocks(mm_selected_all, sdv)
                     changed = [BLOCKIDS[i] for i, v in enumerate(mm_selected_all) if v != xx_selected_all[i]]
                     if len(changed) > 0:
                         print(f" - [{jj+1}] {changed} block{'s' if len(changed) > 1 else ''} added")
@@ -3890,7 +3857,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     keyremains.append(k)
 
             # add some missing extra_elements
-            BLOCKIDS = all_blocks(sdv)
             allblocks = _all_blocks(sdv)
 
             last_block = allblocks[len(BLOCKIDS)-1]
@@ -4277,7 +4243,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 item = theta_0.pop(k)
                 keyremains.append(k)
 
-        BLOCKIDS = all_blocks(sdv)
 
         timer.record("prepare")
         stage = 1
@@ -6279,12 +6244,13 @@ def zipblocks(blocks, blockids):
             i = start + 1
     return out
 
-def parse_elemental(elemental):
+def parse_elemental(elemental, sdver):
     if len(elemental) > 0:
         elemental = elemental.replace(",","\n").strip().split("\n")
         elemental = [f.strip() for f in elemental]
 
     elemental_weights = {}
+    BLOCKIDS = all_blocks(sdver)
     if len(elemental) > 0:
         for d in elemental:
             if d.count(":") != 2:
@@ -6301,7 +6267,7 @@ def parse_elemental(elemental):
             dbs = list(filter(None, dbs))
             if len(dbs) > 0:
                 dbn, dbs = (False, dbs[1:]) if dbs[0].upper() == "NOT" else (True, dbs)
-                dbs = prepblocks(dbs, BLOCKID, select=dbn)
+                dbs = prepblocks(dbs, BLOCKIDS, select=dbn)
             else:
                 dbn = True
 
@@ -6857,6 +6823,7 @@ def make_axis_on_xyz_grid():
                 f"[Model Mixer] Pinpoint block {Name}",
                 str,
                 partial(set_value, field=f"pinpoint block {name}"),
+                # XXX FIXME for FLUX
                 choices=lambda: BLOCKID,
             ),
             xyz_grid.AxisOption(
