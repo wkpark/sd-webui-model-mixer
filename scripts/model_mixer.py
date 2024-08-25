@@ -6126,7 +6126,8 @@ def get_blocks_elements(res):
 
     blocks = list(blockmap.keys())
 
-    key_re = re.compile(r"^(?:\d+\.)?(.*?)(?:\.\d+)?$")
+    key_re = re.compile(r"^(?:\d+\.)?(.*?)$")
+    #key_re = re.compile(r"^(?:\d+\.)?(.*?)(?:\.\d+)?$")
     key_split_re = re.compile(r"\.\d+\.")
 
     elements = {}
@@ -6137,7 +6138,7 @@ def get_blocks_elements(res):
             if res.get(k, None) is not None:
                 continue
         tmp = key.split(".")
-        if tmp[0] not in ["cond_stage_model", "conditioner"]:
+        if tmp[0] not in ["cond_stage_model", "conditioner", "text_encoders"]:
             if tmp[0] == "model" and tmp[1] == "diffusion_model":
                 pass
             else:
@@ -6145,7 +6146,12 @@ def get_blocks_elements(res):
 
         k = key.replace(".weight", "") # strip .weight
         k = k.replace("model.diffusion_model.", "")
-        k = k.replace("cond_stage_model.transformer.text_model.", "BASE.")
+        k = k.replace("cond_stage_model.transformer.", "BASE.")
+        k = k.replace("conditioner.embedders.0.transformer.", "CLIP_L.") # XL
+        k = k.replace("conditioner.embedders.1.model.", "CLIP_G.") # XL
+        k = k.replace("text_encoders.t5xxl.", "T5XXL.")
+        k = k.replace("text_encoders.clip_l.", "CLIP_L.")
+        k = k.replace("text_encoders.clip_g.", "CLIP_G.")
 
         name = None
         # only for block level keys
@@ -6156,14 +6162,17 @@ def get_blocks_elements(res):
             if name in [ "M00", "M01", "M02" ]:
                 name = "M00" # supermerger does not distinguish M01 and M02
             last = tmp[2]
-        elif "BASE" in k:
+        elif any(prefix in k for prefix in ["BASE", "CLIP_L", "CLIP_G", "T5XXL"]):
             if "position_ids" in k: continue
             tmp = k.split(".",1)
-            name = "BASE"
+            name = tmp[0] #"BASE"
             last = tmp[1]
-            last = last.replace("encoder.layers.", "")
+            last = last.replace("text_model.", "").replace("transformer.", "")
+        else:
+            name = ""
+            last = k
 
-        if name and last != "":
+        if name is not None and last != "":
             m = key_re.match(last) # trim out some numbering: 0.foobar.1 => foobar
             if m:
                 elem = elements.get(name, None)
@@ -6176,14 +6185,16 @@ def get_blocks_elements(res):
                     for e in tmp:
                         if e == "0": # for IN00 case, only has 0.bias and 0.weight -> "0" remain
                             continue
-                        elem[e] = 1
+                        if e.rstrip("012345") != "":
+                            elem[e] = 1
                         if e.find(".") != -1: # split attn1.to_q -> attn1, to_q
                             tmp1 = e.split(".")
                             if len(tmp1) > 0:
                                 for e1 in tmp1:
-                                    elem[e1] = 1
-                                    e2 = e1.rstrip("12345") # attn1 -> attn
-                                    if e1 != e2:
+                                    if e1.rstrip("012345") != "":
+                                        elem[e1] = 1
+                                    e2 = e1.rstrip("012345") # attn1 -> attn
+                                    if e2 != "" and e1 != e2:
                                         elem[e2] = 1
 
     # sort elements
