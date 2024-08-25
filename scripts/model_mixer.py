@@ -3301,8 +3301,25 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
             self.init_on_app_started = True
 
+        # dynamic change xyz-grid
+        def fix_xyz_grid_options(demo, app):
+            xyz_grid = [x for x in scripts.scripts_data if x.script_class.__module__ == "xyz_grid.py"][0].module
+
+            def update_blockids(sdv):
+                axis_options = [x for x in xyz_grid.axis_options
+                    if type(x) == xyz_grid.AxisOption or x.is_img2img == is_img2img and x.label.startswith("[Model Mixer] Pinpoint block ")]
+
+                blockids = all_blocks(sdv)
+                for axis_option in axis_options:
+                    axis_option.choices = lambda: blockids
+
+            with demo:
+                is_sdxl.change(fn=update_blockids, inputs=[is_sdxl], outputs=[], queue=False)
+
+
         if self.init_on_app_started is False:
             script_callbacks.on_app_started(on_app_started)
+            script_callbacks.on_app_started(fix_xyz_grid_options)
 
 
         generate_button = MM.components["img2img_generate" if is_img2img else "txt2img_generate"]
@@ -6823,7 +6840,7 @@ def make_axis_on_xyz_grid():
                 f"[Model Mixer] Pinpoint block {Name}",
                 str,
                 partial(set_value, field=f"pinpoint block {name}"),
-                # XXX FIXME for FLUX
+                # fix blockids in the fix_xyz_grid_options(()
                 choices=lambda: BLOCKID,
             ),
             xyz_grid.AxisOption(
