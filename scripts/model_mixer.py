@@ -3631,6 +3631,22 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         # save original mm_elementals
         orig_elementals = mm_elementals.copy()
 
+        mm_weights_orig = mm_weights
+
+        # check model_a
+        checkpoint_info = sd_models.get_closet_checkpoint_match(model_a)
+        if checkpoint_info is None:
+            print(f"ERROR: Fail to get {model_a}")
+            return
+        model_a = checkpoint_info.model_name
+        print(f"model_a = {model_a}")
+
+        # check SDXL, FLUX etc.
+        sdv = sdversion(model_a)
+        isxl = sdv == 'XL'
+
+        print("sdversion =", sdv)
+
         # parse elemental weights
         if "elemental merge" in debugs: print("  - Parse elemental merge...")
         all_elemental_blocks = []
@@ -3659,16 +3675,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     elemental_selected[j] = True
             return elemental_selected
 
-        mm_weights_orig = mm_weights
-
-        # load model_a
-        # check model_a
-        checkpoint_info = sd_models.get_closet_checkpoint_match(model_a)
-        if checkpoint_info is None:
-            print(f"ERROR: Fail to get {model_a}")
-            return
-        model_a = checkpoint_info.model_name
-        print(f"model_a = {model_a}")
 
         # load models
         models = {}
@@ -3709,12 +3715,6 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             print(f"Loading from file {checkpoint_info.filename}...")
             return sd_models.read_state_dict(checkpoint_info.filename, map_location = "cpu").copy()
 
-
-        # check SDXL, FLUX etc.
-        sdv = sdversion(model_a)
-        isxl = sdv == 'XL'
-
-        print("sdversion =", sdv)
 
         # check base_model
         use_safe_open = shared.opts.data.get("mm_use_safe_open", False)
