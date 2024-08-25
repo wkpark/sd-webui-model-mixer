@@ -464,6 +464,18 @@ def all_blocks(sdversion):
     return blocks
 
 
+def alias_blocks(sdversion):
+    aliases = []
+    if sdversion == "XL":
+        aliases = ["CLIP_L", "CLIP_G"]
+    elif sdversion == "v3":
+        aliases = ["CLIP_L", "CLIP_G", "T5XXL"]
+    elif sdversion == "FLUX":
+        aliases = ["CLIP_L", "T5XXL"]
+
+    return aliases
+
+
 def print_blocks(blocks):
     str = []
     for i,x in enumerate(blocks):
@@ -2798,7 +2810,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         def config_sliders(sdver, num_models):
             BLOCKS = all_blocks(sdver)
-            ret = [gr.update(choices=BLOCKS)]
+            aliases = alias_blocks(sdver)
+
+            ret = [gr.update(choices=BLOCKS+aliases)]
 
             is_selected_blocks = is_block_sliders(sdver)
             labs = []
@@ -2828,14 +2842,22 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             return ret
 
 
-        def select_block_elements(blocks):
+        def select_block_elements(blocks, model):
             # change choices for selected blocks
             elements = []
-            if elemental_blocks is None or len(elemental_blocks) == 0:
-                return gr.update(choices=["time_embed", "time_embed.0", "time_embed.2", "out", "out.0", "out.2"])
+            if elemental_blocks is None:
+                prepare_model(model)
+
+            if len(blocks) == 0:
+                sdv = sdversion(model)
+                max_blocks = all_blocks(sdv)
+                allblocks = _all_blocks(sdv)
 
             for b in blocks:
                 elements += elemental_blocks.get(b, [])
+
+            if len(blocks) == 0:
+                elements += elemental_blocks.get("", [])
 
             elements = list(set(elements))
             elements = sorted(elements)
@@ -2891,7 +2913,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
             return [gr.update(value=not_blks), gr.update(value=not_elem), gr.update(value=blks), gr.update(value=elem), gr.update(value=ratio)]
 
-        elemblks.change(fn=select_block_elements, inputs=[elemblks], outputs=[elements])
+        elemblks.change(fn=select_block_elements, inputs=[elemblks, model_a], outputs=[elements])
         elemental_reset.click(fn=lambda: [gr.update(value=False)]*2 + [gr.update(value=[])]*2+[gr.update(value=0.5)], inputs=[], outputs=[not_elemblks, not_elements, elemblks, elements, elemental_ratio])
         elemental_write.click(fn=write_elemental, inputs=[not_elemblks, not_elements, elemblks, elements, elemental_ratio, mm_elemental_main], outputs=mm_elemental_main)
         elemental_read.click(fn=read_elemental, inputs=mm_elemental_main, outputs=[not_elemblks, not_elements, elemblks, elements, elemental_ratio])
