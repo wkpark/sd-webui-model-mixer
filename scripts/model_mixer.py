@@ -452,7 +452,7 @@ def print_blocks(blocks):
             n = int(x[13:len(x)-1])
             block = f"IN{n:02d}"
             str.append(block)
-        elif "cond_stage_model" in x or "conditioner." in x:
+        elif "cond_stage_model" in x or "conditioner." in x or "text_encoders." in x:
             block = f"BASE"
             str.append(block)
         elif "time_embed." in x:
@@ -4480,7 +4480,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 for key in (tqdm(sel_keys, desc=f"Check uninitialized #{n+2-weight_start}/{stages}")):
                     if "model" in key:
                         for s in selected_blocks:
-                            if s not in ["cond_stage_model.", "conditioner."]:
+                            if s not in ["cond_stage_model.", "conditioner.", "text_encoders."]:
                                 s = f"model.diffusion_model.{s}"
                             if s in key and key not in theta_0 and key not in checkpoint_dict_skip_on_merge:
                                 print(f" +{k}")
@@ -4730,7 +4730,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             unet_updated = 0
             for s in weight_changed_blocks:
                 shared.state.textinfo = "Update UNet Blocks..."
-                if s in ["cond_stage_model.", "conditioner."]:
+                if s in ["cond_stage_model.", "conditioner.", "text_encoders."]:
                     # Textencoder(BASE)
                     continue
                 print(" - update UNet block", s)
@@ -4746,7 +4746,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 print(" - \033[92mUNet partial blocks have been successfully updated\033[0m")
 
             # textencoder partial update does not work as expected. read state_dict() and set state_dict.
-            if "cond_stage_model." in weight_changed_blocks or "conditioner." in weight_changed_blocks:
+            if any(prefix in weight_changed_blocks for prefix in ["cond_stage_model.", "conditioner.", "text_encoders."]):
                 print(" - \033[93mReload full state_dict...\033[0m")
                 shared.state.textinfo = "Reload full state_dict..."
                 state_dict = shared.sd_model.state_dict().copy()
