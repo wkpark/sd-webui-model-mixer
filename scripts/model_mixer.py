@@ -743,6 +743,8 @@ def sdversion(modelname_or_header):
             header = get_ckpt_header(checkpointinfo.filename)
         else:
             return None
+    else:
+        header = modelname_or_header
 
     if header is not None:
         if "conditioner.embedders.1.model.transformer.resblocks.9.mlp.c_proj.weight" in header:
@@ -756,7 +758,11 @@ def sdversion(modelname_or_header):
 
         v2 = False
         if 'model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight' in header:
-            v2 = header['model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight']["shape"][1] == 1024
+            w = header['model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight']
+            if type(w) == dict:
+                v2 = w["shape"][1] == 1024
+            else:
+                v2 = w.shape[1] == 1024
         return 'v1' if not v2 else 'v2'
     return None
 
