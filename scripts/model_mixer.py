@@ -4983,7 +4983,7 @@ def precalculate_safetensors_hashes(state_dict, metadata, save_settings, sdver, 
 def fixclip(theta_0, settings, sdver):
     """fix/check bad CLIP ids"""
     if sdver in ["v1", "v2", "XL"]:
-        base_prefix = "cond_stage_model." if sdver != "XL" else "conditioner."
+        base_prefix = "cond_stage_model." if sdver != "XL" else "conditioner.embedders.0."
         position_id_key = f"{base_prefix}transformer.text_model.embeddings.position_ids"
     elif sdver in ["v3", "FLUX"]:
         # ignore
