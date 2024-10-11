@@ -4728,12 +4728,10 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     key = k[len(prefix):]
                     if k in theta_0:
                         base_dict[key] = theta_0[k]
-                if prefix == "conditioner.":
-                    shared.sd_model.conditioner.load_state_dict(base_dict, strict=False)
-                elif prefix == "cond_stage_model.":
-                    shared.sd_model.cond_stage_model.load_state_dict(base_dict, strict=False)
-                elif prefix == "text_encoders.":
-                    shared.sd_model.text_encoders.load_state_dict(base_dict, strict=False)
+
+                if prefix in ("conditioner.", "cond_stage_model.", "text_encoders."):
+                    module = getattr(shared.sd_model, prefix[:-1])
+                    module.load_state_dict(base_dict, strict=False)
                 print(" - \033[92mTextencoder(BASE) has been successfully updated\033[0m")
                 shared.state.textinfo = "Update Textencoder..."
 
@@ -4764,6 +4762,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                 print(" - \033[93mReload full state_dict...\033[0m")
                 shared.state.textinfo = "Reload full state_dict..."
                 state_dict = shared.sd_model.state_dict().copy()
+                shared.sd_model.to("meta") # reduce memory usage
+                devices.torch_gc()
             else:
                 state_dict = None
 
