@@ -1868,6 +1868,14 @@ class ModelMixerScript(scripts.Script):
                                     bake_in_vae = gr.Dropdown(choices=["None"] + list(sd_vae.vae_dict), value="None", label="Bake in VAE", elem_id="model_mixer_bake_in_vae")
                                     create_refresh_button(bake_in_vae, sd_vae.refresh_vae_list, lambda: {"choices": ["None"] + list(sd_vae.vae_dict)}, "model_mixer_refresh_bake_in_vae")
                         with gr.Row():
+                            with gr.Column():
+                                with gr.Row():
+                                    save_fp8 = gr.Dropdown(choices=["UNet",], value=[], multiselect=True, label="Save as FP8", elem_id="model_mixer_save_fp8")
+                                    create_refresh_button(save_fp8, lambda: None, lambda: {"choices": ["UNet"]}, "model_mixer_refresh_save_fp8")
+                            with gr.Column():
+                                with gr.Row():
+                                    fp8_type = gr.Dropdown(choices=["e4m3fn", "e5m2"], value="e4m3fn", label="FP8 Type", elem_id="model_mixer_fp8_type")
+                        with gr.Row():
                             save_current = gr.Button("Save current model")
 
                     with gr.Tab("Save as LoRA/LyCORIS"):
@@ -2687,7 +2695,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
         read_metadata.click(fn=current_metadata, inputs=[], outputs=[metadata_json])
         read_model_a_metadata.click(fn=model_metadata, inputs=[model_a], outputs=[metadata_json])
         read_model_b_metadata.click(fn=model_metadata, inputs=[mm_models[0]], outputs=[metadata_json])
-        save_current.click(fn=save_current_model, inputs=[custom_name, bake_in_vae, save_settings, metadata_settings], outputs=[logging])
+        save_current.click(fn=save_current_model, inputs=[custom_name, bake_in_vae, save_fp8, fp8_type, save_settings, metadata_settings], outputs=[logging])
 
         extract_lora.click(
             fn=extract_lora_from_current_model,
@@ -4671,7 +4679,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             save_settings = shared.opts.data.get("mm_save_model", ["safetensors", "fp16"])
             save_filename = shared.opts.data.get("mm_save_model_filename", "modelmixer-[hash].safetensors")
             save_filename = save_filename.replace("[hash]", f"{sha256[0:10] if sha256 else confighash[0:10]}").replace("[model_name]", f"{model_name}")
-            save_current_model(save_filename, "None", save_settings, ["merge recipe"], state_dict=theta_0, metadata=metadata.copy())
+            save_current_model(save_filename, "None", ["None"], "e4m3fn", save_settings, ["merge recipe"], state_dict=theta_0, metadata=metadata.copy())
             t.record("save model")
         if t.total > 0:
             print(f' - post process in {t.summary()}.')
@@ -5426,11 +5434,13 @@ def save_as_diffusers(custom_name, save_settings, metadata_settings, state_dict=
     return log
 
 
-def save_current_model(custom_name, bake_in_vae, save_settings, metadata_settings, state_dict=None, metadata=None):
+def save_current_model(custom_name, bake_in_vae, save_fp8, fp8_type, save_settings, metadata_settings, state_dict=None, metadata=None):
     if state_dict is None:
         current = getattr(shared, "modelmixer_config", None)
-        if current is None:
+        if current is None and custom_name == "":
             return gr.update(value="No merged model found")
+        elif current is None:
+            print("Save current checkpoint...")
 
         if shared.sd_model and not hasattr(shared.sd_model, "sd_checkpoint_info"):
             return gr.update(value="Not supported")
@@ -5440,18 +5450,18 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
         else:
             return gr.update(value="Not a valid merged model")
 
-        sha256 = current["hash"]
-        if shared.sd_model.sd_checkpoint_info.sha256 != sha256:
+        sha256 = current["hash"] if current is not None else None
+        if sha256 is not None and shared.sd_model.sd_checkpoint_info.sha256 != sha256:
             err_msg = "Current checkpoint is not a merged one."
             print(err_msg)
             return gr.update(value=err_msg)
 
-    if "sd_merge_recipe" not in metadata or "sd_merge_models" not in metadata:
+    if current is not None and ("sd_merge_recipe" not in metadata or "sd_merge_models" not in metadata):
         return gr.update(value="Not a valid merged model")
 
-    if metadata_settings is not None and "merge recipe" in metadata_settings:
+    if metadata_settings is not None and "merge recipe" in metadata_settings and "sd_merge_recipe" in metadata:
         metadata["sd_merge_recipe"] = json.dumps(metadata["sd_merge_recipe"], separators=(',', ':'))
-    else:
+    elif "sd_merge_recipe" in metadata:
         del metadata["sd_merge_recipe"]
     if "sd_merge_models" in metadata:
         metadata["sd_merge_models"] = json.dumps(metadata["sd_merge_models"], separators=(',', ':'))
@@ -5467,7 +5477,9 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
         return gr.update(value="No loaded model found")
 
     # setup file, imported from supermerger
-    if "fp16" in save_settings:
+    if "UNet" in save_fp8:
+        pre = ".fp8"
+    elif "fp16" in save_settings:
         pre = ".fp16"
     else:
         pre = ""
@@ -5536,6 +5548,13 @@ def save_current_model(custom_name, bake_in_vae, save_settings, metadata_setting
         v = state_dict[key]
         v = v.detach().cpu().contiguous()
         state_dict[key] = v
+
+    if "UNet" in save_fp8:
+        fp8_type = {"e4m3fn": torch.float8_e4m3fn, "e5m2": torch.float8_e5m2}.get(fp8_type, torch.float8_e4m3fn)
+        for key in state_dict:
+            if "model.diffusion_model." in key:
+                v = state_dict[key]
+                state_dict[key] = v.to(fp8_type)
 
     try:
         if ext == ".safetensors":
