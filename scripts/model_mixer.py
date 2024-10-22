@@ -6941,7 +6941,7 @@ def hook_sd_models(demo, app):
 
         # to work this hook, you need to set shared.opts.sd_checkpoints_limit > 1
         if shared.opts.sd_checkpoints_limit <= 1:
-            return
+            return ret
 
         if ret and already_loaded is not None: # in this case, move merged model first.
             if getattr(loaded_model.sd_checkpoint_info, "modelmixer_config", None) is not None:
