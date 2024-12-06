@@ -4176,7 +4176,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         weight_changed_blocks += allblocks[max_blocks:]
 
                     # fix for compatiblity
-                    if sdv == "XL" and weight_changed_blocks[-1] == "label_emb.":
+                    if sdv == "XL" and len(weight_changed_blocks) > 0 and weight_changed_blocks[-1] == "label_emb.":
                         # FIXME
                         weight_changed_blocks = weight_changed_blocks[:-1]
 
