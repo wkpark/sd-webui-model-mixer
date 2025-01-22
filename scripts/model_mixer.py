@@ -4267,6 +4267,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
             "conditioner.embedders.1.model.transformer.text_model.embeddings.position_ids",
             "conditioner.embedders.1.model.logit_scale",
             "conditioner.embedders.1.model.text_projection",
+            "v_pred", # A1111/ComfyUI
+            "ztsnr", # A1111 specific
         ]
         for k in checkpoint_dict_skip_on_merge:
             if k in sel_keys:
@@ -4589,6 +4591,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                             weight_changed[remain] = weight_changed.get(remain, [])
                             weight_changed[remain].append(k)
                             break
+
+        # reset v_pred, ztsnr
+        if "v_pred" in keyremains:
+            theta_0['v_pred'] = torch.tensor([])
+        if "ztsnr" in keyremains:
+            theta_0['ztsnr'] = torch.tensor([]) # A1111 specific
+
 
         # apply finetune
         if sdv in ["v1", "v2", "XL"] and mm_finetune.rstrip(",0") != "":
