@@ -2470,12 +2470,14 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
             return gr.update(value=sdv, interactive=True if sdv == "v1" else False)
 
-        def import_image_from_gallery(gallery):
+        def import_image_from_gallery(gallery, idx):
             prompt = ""
             if len(gallery) == 0:
                 return gr.update(), gr.update()
-            if isinstance(gallery[0], dict) and gallery[0].get("name", None) is not None:
-                filename = gallery[0]["name"]
+            if idx > len(gallery):
+                idx = len(gallery) - 1
+            if isinstance(gallery[idx], dict) and gallery[idx].get("name", None) is not None:
+                filename = gallery[idx]["name"]
                 if filename.find("?") > 0:
                     filename = filename[:filename.rfind("?")]
                 print("Import ", filename)
@@ -2485,8 +2487,8 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     params = parse_generation_parameters(geninfo)
                     prompt = params.get("Prompt", "")
                 return image, prompt
-            elif isinstance(gallery[0], np.ndarray):
-                return gallery[0], prompt
+            elif isinstance(gallery[idx], np.ndarray):
+                return gallery[idx], prompt
             else:
                 print("Invalid gallery image {type(gallery[0]}")
             return gr.update(), prompt
@@ -2539,8 +2541,9 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                     )
 
                     import_image.click(
+                        _js="mm_vxa_prepare",
                         fn=import_image_from_gallery,
-                        inputs=[component],
+                        inputs=[component, dummy_component],
                         outputs=[input_image, vxa_prompt]
                     )
 
