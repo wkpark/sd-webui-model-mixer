@@ -3903,6 +3903,13 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
                         "out.0.bias", "out.0.weight",
                         "out.2.bias", "out.2.weight",
                     ]
+                    if sdv == "XL":
+                        selected_blocks += [ "label_emb." ]
+                        add_extra_elements += [
+                            "label_emb.0.0.bias", "label_emb.0.0.weight",
+                            "label_emb.0.2.bias", "label_emb.0.2.weight",
+                        ]
+
                 elif sdv == "FLUX":
                     selected_blocks += [ "img_in.", "time_in.", "vector_in.", "guidance_in.", "txt_in.", "final_layer." ]
                     add_extra_elements = [
@@ -4571,6 +4578,7 @@ Direct Download: <a href="{s['downloadUrl']}" target="_blank">{s["filename"]} [{
 
         # store unmodified remains
         for key in (tqdm(keyremains, desc=f"Save unchanged weights #{stages}/{stages}")):
+            if "first_stage_model" not in key: print(" -", key)
             theta_0[key] = models['model_a'][key]
 
         # check for partial update
